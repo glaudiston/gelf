@@ -9,6 +9,8 @@
 # x86 Instruction set
 # https://en.wikipedia.org/wiki/X86_instruction_listings#Original_8086.2F8088_instructions
 #
+# Intel i64 and IA-32 Architectures
+# https://software.intel.com/sites/default/files/managed/39/c5/325462-sdm-vol-1-2abcd-3abcd.pdf
 
 export LC_ALL=C
 # given a value and a size(defalt 8), return the expected hex dumped bytes in little endianness
@@ -53,8 +55,7 @@ function print_elf_header()
 	EM_X86_64=62
 	EI_MACHINE="$(printLittleEndian $EM_X86_64 2)";
 	EI_MACHINE_VERSION="$(printLittleEndian 1 4)" # 1 in little endian
-	#EI_ENTRY="\x54\x00\x00\x00\xbf\x2a\x00\x00";	# TODO: program code entry point uint64_t
-	EI_ENTRY="\x78\x00\x00\x00\xbf\x2a\x00\x00";	# TODO: program code entry point uint64_t
+	EI_ENTRY="\x78\x00\x01\x00\x00\x00\x00\x00";	# TODO: VADDR relative program code entry point uint64_t
 	EI_PHOFF="\x40\x00\x00\x00\x00\x00\x00\x00";	# TODO: program header offset in bytes
 	EI_SHOFF="\x00\x00\x00\x00\x00\x00\x00\x00";	# TODO: section header offset in bytes
 	EI_FLAGS="\x00\x00\x00\x00";	# uint32_t
@@ -89,7 +90,7 @@ function print_elf_body()
 	PH_TYPE="\x01\x00\x00\x00"	# Elf64_Word p_type 4;
 	PH_FLAGS="\x05\x00\x00\x00"	# Elf64_Word p_flags 4;
 	PH_OFFSET="\x00\x00\x00\x00\x00\x00\x00\x00"	# Elf64_Off p_offset 8;
-	PH_VADDR="\x00\x00\x00\x00\xbf\x2a\x00\x00"	# Elf64_Addr p_vaddr 8;
+	PH_VADDR="\x00\x00\x01\x00\x00\x00\x00\x00"	# VADDR where to load program, must be after the current program size. Elf64_Addr p_vaddr 8;
 	PH_PADDR="\x00\xb8\x3c\x00\x00\x00\x0f\x05"	# Elf64_Addr p_paddr 8;
 	PH_FILESZ="\x78\x00\x00\x00\x00\x00\x00\x00"	# Elf64_Xword p_filesz 8;
 	PH_MEMSZ="\x78\x00\x00\x00\x00\x00\x00\x00"	# Elf64_Xword p_memsz 8;
@@ -107,15 +108,43 @@ function print_elf_body()
 	SECTION_HEADERS="" # test empty
 
 	# code section start
-	MOV_EAX="\xb8"
-	MOV_EDI="\xbf"
-	SYSCALL="\x0f\x05"
-	CODE="${CODE}${MOV_EAX}\x3c"
-	CODE="${CODE}${SYSCALL}"
-	CODE="\xbf\x2a\x00\x00\x00\xb8\x3c\x00\x00\x00\x0f\x05"
-	SECTION_ELF_DATA="${PROGRAM_HEADERS}${SECTION_HEADERS}${CODE}";
+	CODE="";
+	STRTAB="HELLO WORLD";
+	CODE="${CODE}$(system_call_write "Hello world")"
+	CODE="${CODE}$(system_call_exit 42)"
+	SECTION_ELF_DATA="${PROGRAM_HEADERS}${SECTION_HEADERS}${CODE}${STRTAB}";
 
 	echo -n "${SECTION_ELF_DATA}"
+}
+# See Table A-2. One-byte Opcode Map on Intel i64 documentation (page 2626)
+MOV_RAX="\xb8"
+MOV_RDX="\xba"
+MOV_RSI="\xbe"
+MOV_RDI="\xbf" #32 bit register (4 bytes)
+SYSCALL="\x0f\x05"
+
+function system_call_write()
+{
+	local string="$1";
+	local CODE=""
+	STDOUT=1
+	CODE="${CODE}${MOV_RAX}$(printLittleEndian 1 4)"
+	CODE="${CODE}${MOV_RDI}$(printLittleEndian $STDOUT 4)"
+	CODE="${CODE}${MOV_RSI}\x9a\x00\x01\x00"
+	CODE="${CODE}${MOV_RDX}$(printLittleEndian 11 4)"
+	CODE="${CODE}${SYSCALL}"
+	echo "${CODE}"
+}
+
+function system_call_exit()
+{
+	local exit_code="$1"
+	local CODE="";
+	local EXIT="$(printLittleEndian 60 4)";
+	CODE="${CODE}${MOV_RDI}$(printLittleEndian ${exit_code:=0} 4)"
+	CODE="${CODE}${MOV_RAX}${EXIT}"
+	CODE="${CODE}${SYSCALL}"
+	echo -n "${CODE}"
 }
 
 function write_elf()
