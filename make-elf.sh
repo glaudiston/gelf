@@ -77,10 +77,11 @@ function print_elf_header()
 
 function print_elf_body()
 {
+	elf_header_size="$1"
 	# SECTION PROGRAM HEADERS START
 
-	SH_NAME="\x01\x00\x00\x00"; # Section name (String table index) uint32_t
-	SH_TYPE="\x00\x00\x00\x00"; # Section type
+	SH_NAME="$(printLittleEndian 1 4)"; # Section name (String table index) uint32_t
+	SH_TYPE="$(printLittleEndian 0 4)"; # Section type
 	SH_FLAGS="\x00\x00\x00\x00\x00\x00\x00\x00" # uint64_t
 
 	SECTION_HEADERS="${SH_NAME}"; # Elf64_Shdr
@@ -109,10 +110,14 @@ function print_elf_body()
 
 	# code section start
 	CODE="";
-	STRTAB="HELLO WORLD";
-	CODE="${CODE}$(system_call_write "Hello world")"
+	TEXT="Hello world"
+	CODE="${CODE}$(system_call_write "$TEXT")"
 	CODE="${CODE}$(system_call_exit 42)"
-	SECTION_ELF_DATA="${PROGRAM_HEADERS}${SECTION_HEADERS}${CODE}${STRTAB}";
+	SECTION_ELF_DATA="${PROGRAM_HEADERS}${SECTION_HEADERS}${CODE}";
+	P="${#SECTION_ELF_DATA}"
+	VS=${#TEXT}
+	T="$( echo -en "${SECTION_ELF_DATA/${TEXT}/$(printLittleEndian $(( 16#01009a )) 4)}" | wc -l )"
+	SECTION_ELF_DATA="${SECTION_ELF_DATA/${TEXT}/$(printLittleEndian $(( 16#01009a )) 4)}$TEXT"
 
 	echo -n "${SECTION_ELF_DATA}"
 }
@@ -130,8 +135,9 @@ function system_call_write()
 	STDOUT=1
 	CODE="${CODE}${MOV_RAX}$(printLittleEndian 1 4)"
 	CODE="${CODE}${MOV_RDI}$(printLittleEndian $STDOUT 4)"
-	CODE="${CODE}${MOV_RSI}\x9a\x00\x01\x00"
-	CODE="${CODE}${MOV_RDX}$(printLittleEndian 11 4)"
+	CODE="${CODE}${MOV_RSI}${string}"
+	#CODE="${CODE}${MOV_RSI}\x9a\x00\x01\x00"
+	CODE="${CODE}${MOV_RDX}$(printLittleEndian ${#string} 4)"
 	CODE="${CODE}${SYSCALL}"
 	echo "${CODE}"
 }
@@ -150,7 +156,7 @@ function system_call_exit()
 function write_elf()
 {
 	local ELF_HEADER="$(print_elf_header "$1")"
-	local ELF_BODY="$(print_elf_body)"
+	local ELF_BODY="$(print_elf_body "$(echo -en "${ELF_HEADER}" | wc -c)")"
 	echo -ne "${ELF_HEADER}${ELF_BODY}" > elf
 }
 
