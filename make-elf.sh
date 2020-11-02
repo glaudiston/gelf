@@ -10,6 +10,7 @@
 # https://en.wikipedia.org/wiki/X86_instruction_listings#Original_8086.2F8088_instructions
 #
 
+export LC_ALL=C
 # given a value and a size(defalt 8), return the expected hex dumped bytes in little endianness
 function printBigEndian(){
 	local VALUE="$1"
@@ -52,7 +53,8 @@ function print_elf_header()
 	EM_X86_64=62
 	EI_MACHINE="$(printLittleEndian $EM_X86_64 2)";
 	EI_MACHINE_VERSION="$(printLittleEndian 1 4)" # 1 in little endian
-	EI_ENTRY="\x54\x00\x00\x00\xbf\x2a\x00\x00";	# TODO: program code entry point uint64_t
+	#EI_ENTRY="\x54\x00\x00\x00\xbf\x2a\x00\x00";	# TODO: program code entry point uint64_t
+	EI_ENTRY="\x78\x00\x00\x00\xbf\x2a\x00\x00";	# TODO: program code entry point uint64_t
 	EI_PHOFF="\x40\x00\x00\x00\x00\x00\x00\x00";	# TODO: program header offset in bytes
 	EI_SHOFF="\x00\x00\x00\x00\x00\x00\x00\x00";	# TODO: section header offset in bytes
 	EI_FLAGS="\x00\x00\x00\x00";	# uint32_t
@@ -83,6 +85,7 @@ function print_elf_body()
 	SECTION_HEADERS="${SH_NAME}"; # Elf64_Shdr
 
 	# https://www.airs.com/blog/archives/45
+	# this point the current segment offset is 0x40
 	PH_TYPE="\x01\x00\x00\x00"	# Elf64_Word p_type 4;
 	PH_FLAGS="\x05\x00\x00\x00"	# Elf64_Word p_flags 4;
 	PH_OFFSET="\x00\x00\x00\x00\x00\x00\x00\x00"	# Elf64_Off p_offset 8;
@@ -109,7 +112,7 @@ function print_elf_body()
 	SYSCALL="\x0f\x05"
 	CODE="${CODE}${MOV_EAX}\x3c"
 	CODE="${CODE}${SYSCALL}"
-	CODE="\xb8\x3c\x00\x00\x00\xbf\x2a\x00\x00\x00\x0f\x05"
+	CODE="\xbf\x2a\x00\x00\x00\xb8\x3c\x00\x00\x00\x0f\x05"
 	SECTION_ELF_DATA="${PROGRAM_HEADERS}${SECTION_HEADERS}${CODE}";
 
 	echo -n "${SECTION_ELF_DATA}"
