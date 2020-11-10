@@ -1,6 +1,6 @@
 ELF
 ===
-Excecutable and Linkable Format(ELF) are the format used in all linux executables and libraries.
+Executable and Linkable Format(ELF) are the format used in all linux executables and libraries.
 
 This repo is my try to write them from scratch. Just for fun and learning.
 
