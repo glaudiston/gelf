@@ -2,4 +2,6 @@
 
 . elf_fn.sh
 
-write_elf elf "This does nothing but it is a valid elf that print this message =D "
+instructions="write This does nothing but it is a valid elf that print this message =D"
+
+write_elf elf "${instructions}"

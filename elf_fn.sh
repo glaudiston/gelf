@@ -17,6 +17,10 @@
 export LC_ALL=C
 . endianness.sh
 
+SIZE_16BITS_2BYTES=2
+SIZE_32BITS_4BYTES=4
+SIZE_64BITS_8BYTES=8
+
 function print_elf_header()
 {
 	local ELF_HEADER_SIZE="${1:-0}"
@@ -34,13 +38,13 @@ function print_elf_header()
 	EI_ABIVERSION="\x00"
 	EI_PAD="$(printBigEndian 0)" # reserved non used pad bytes
 	ET_EXEC=2 # Executable file
-	EI_ETYPE="$(printLittleEndian $ET_EXEC 2)";	# DYN (Shared object file) code 3
+	EI_ETYPE="$(printLittleEndian $ET_EXEC $SIZE_16BITS_2BYTES)";	# DYN (Shared object file) code 3
 	EM_X86_64=62
-	EI_MACHINE="$(printLittleEndian $EM_X86_64 2)";
-	EI_MACHINE_VERSION="$(printLittleEndian 1 4)" # 1 in little endian
-	printf "${ELF_HEADER_SIZE}" >&2
+	EI_MACHINE="$(printLittleEndian $EM_X86_64 $SIZE_16BITS_2BYTES)";
+	EI_MACHINE_VERSION="$(printLittleEndian 1 $SIZE_32BITS_4BYTES)" # 1 in little endian
+	printf "\nHD_SZ=[${ELF_HEADER_SIZE}]\n" >&2
 	EI_ENTRY="\x78\x00\x01\x00\x00\x00\x00\x00";	# TODO: VADDR relative program code entry point uint64_t
-	EI_PHOFF="$(printLittleEndian "${ELF_HEADER_SIZE}" 8)";	# program header offset in bytes, starts immediatelly after header, so the offset is the header size
+	EI_PHOFF="$(printLittleEndian "${ELF_HEADER_SIZE}" $SIZE_64BITS_8BYTES)";	# program header offset in bytes, starts immediatelly after header, so the offset is the header size
 	EI_SHOFF="\x00\x00\x00\x00\x00\x00\x00\x00";	# TODO: section header offset in bytes
 	EI_FLAGS="\x00\x00\x00\x00";	# uint32_t
 	EI_EHSIZE="$(printLittleEndian ${ELF_HEADER_SIZE} 2)";	# elf header size in bytes
@@ -61,7 +65,7 @@ function print_elf_header()
 
 function print_elf_body()
 {
-	local elf_header_size="$1"
+	local ELF_HEADER_SIZE="$1"
 	local ELF_SHELL_CODE="$2"
 	# SECTION PROGRAM HEADERS START
 
@@ -94,106 +98,83 @@ function print_elf_body()
 	SECTION_HEADERS="" # test empty
 
 	# code section start
-	local CODE="";
-	local TEXT="${ELF_SHELL_CODE}";
-	if [ "${ELF_SHELL_CODE:0:5}" == "echo " ]; then
-		TEXT="${ELF_SHELL_CODE:5}"
-	fi;
-	CODE="${CODE}$(system_call_write "$TEXT")"
-	CODE="${CODE}$(system_call_exec 192 )" #c0 == /bin/bash
-	CODE="${CODE}$(system_call_exit 42)"
+	# to define the final code we need the header address,
+	# but it depends on code size, because it is after the code.
+	# so, first do a first run to get the code size
+	local CODE_SIZE=$(get_elf_code_size "$ELF_SHELL_CODE")
+	local CODE="$(get_elf_code_and_data "${ELF_HEADER_SIZE}" "${CODE_SIZE}" "${ELF_SHELL_CODE}")";
 	SECTION_ELF_DATA="${PROGRAM_HEADERS}${SECTION_HEADERS}${CODE}";
-	P="${#SECTION_ELF_DATA}"
-	VS=${#TEXT}
-	T="$( echo -en "${SECTION_ELF_DATA//${TEXT}/$(printLittleEndian $(( 16#01009a )) 4)}" | wc -l )"
-	SECTION_ELF_DATA="${SECTION_ELF_DATA/${TEXT}/$(printLittleEndian $(( 16#0100b5 )) 4)}"
-	DATA="${TEXT}/bin/sh\x00"
-	SECTION_ELF_DATA="${SECTION_ELF_DATA}$DATA"
 
-	echo -n "${SECTION_ELF_DATA}"
+	echo -n "${SECTION_ELF_DATA}";
 }
 
-# See Table A-2. One-byte Opcode Map on Intel i64 documentation (page 2626)
-# See Table B-13.  General Purpose Instruction Formats and Encodings for Non-64-Bit Modes (Contd.) (page 2658)
-MOV_RAX="\xb8"
-MOV_RDX="\xba"
-MOV_RSI="\xbe"
-MOV_RDI="\xbf" #32 bit register (4 bytes)
-
-# LEA - Load Effective Address (page 1146)
-SYSCALL="\x0f\x05"
-
-function system_call_read()
+function get_elf_code_size()
 {
-	local string="$1";
-	local len="${2}";
-	local CODE="";
-	STDIN=0;
-	CODE="${CODE}${MOV_RAX}$(printLittleEndian 0 4)";
-	CODE="${CODE}${MOV_RDI}$(printLittleEndian $STDIN 4)";
-	CODE="${CODE}${MOV_RSI}${string}";
-	CODE="${CODE}${MOV_RDX}$(printLittleEndian ${len} 4)";
-	CODE="${CODE}${SYSCALL}";
-	echo "${CODE}";
+	# for now just getting the hex dump position - header size (64)
+	echo $(( 16#9a - 64 ));
 }
 
-function system_call_write()
+function append_data()
 {
-	local string="$1";
-	local CODE=""
-	STDOUT=1
-	CODE="${CODE}${MOV_RAX}$(printLittleEndian 1 4)"
-	CODE="${CODE}${MOV_RDI}$(printLittleEndian $STDOUT 4)"
-	CODE="${CODE}${MOV_RSI}${string}"
-	CODE="${CODE}${MOV_RDX}$(printLittleEndian ${#string} 4)"
-	CODE="${CODE}${SYSCALL}"
-	echo "${CODE}"
+	local DATA_SECTION="$1";
+	local TEXT="$2";
+	echo "$DATA_SECTION$TEXT";
 }
 
-function system_call_exit()
+function get_data()
 {
-	local exit_code="$1"
-	local BIN_CODE="";
-	local EXIT="$(printLittleEndian 60 4)";
-	BIN_CODE="${BIN_CODE}${MOV_RDI}$(printLittleEndian ${exit_code:=0} 4)"
-	BIN_CODE="${BIN_CODE}${MOV_RAX}${EXIT}"
-	BIN_CODE="${BIN_CODE}${SYSCALL}"
-	echo -n "${BIN_CODE}"
+	local ELF_SHELL_CODE="$1";
+	local TEXT="${ELF_SHELL_CODE}";
+	if [ "${ELF_SHELL_CODE:0:6}" == "write " ]; then
+		TEXT="${ELF_SHELL_CODE:6}"
+	fi;
+	echo "$TEXT"
 }
 
-function system_call_exec()
+function get_elf_code_and_data()
 {
-	local PTR_FILE="$1"
-	local CODE=""
-	#								mem       elf     str
-	# 401000:       48 bf 00 20 40 00 00    movabs $0x402000,%rdi #        == 2000 == /bin/sh
-	# 401007:       00 00 00
-	#CODE="${CODE}${MOV_RDI}$(printLittleEndian ${PTR_FILE:=0} 4)"
-	CODE="${CODE}\x48\xbf\xc0\x00\x01\x00\x00\x00\x00\x00"
+	local HEADER_SIZE="$1";
+	local CODE_SIZE="$2";
+	local ELF_SHELL_CODE="$3";
+	local DATA_SECTION="";
 
-	# LEA_RSP_RSI="\x48\x8d\x74\x24\x08";
-	# 40100a:       48 8d 74 24 08          lea    0x8(%rsp),%rsi
-	# CODE="${CODE}${LEA_RSP_RSI}"
-	CODE="${CODE}${MOV_RSI}$(printLittleEndian ${PTR_ARGS:=0} 4)"
+	# for each instruction statement
+	local TEXT="$(get_data "${ELF_SHELL_CODE}")";
+	local DATA_LEN="${#TEXT}"
+	# to write something we use a system_call_write passing the reference of the string on data section
+	# so... we need to write the data section and get the reference to that string
 
-	# 40100f:       ba 00 00 00 00          mov    $0x0,%edx
-	CODE="${CODE}${MOV_RDX}$(printLittleEndian ${PTR_ENV:=0} 4)" # const char *const envp[]
-
-	# 401014:       b8 3b 00 00 00          mov    $0x3b,%eax
-	CODE="${CODE}${MOV_RAX}$(printLittleEndian 59 4)" # sys_execve (3b)
-
-	# 401019:       0f 05                   syscall
-	CODE="${CODE}${SYSCALL}"
-	echo "${CODE}"
+	local DATA_ADDR="$(get_next_data_address "$HEADER_SIZE" "${CODE_SIZE}" "$DATA_SECTION")";
+	DATA_SECTION="$(append_data "${DATA_SECTION}" "$TEXT")"
+	CODE="${CODE}$(system_call_write "${DATA_ADDR}" "$DATA_LEN" )"
+	#CODE="${CODE}$(system_call_exec 192 )" #c0 == /bin/bash
+	local EXIT_NO_ERROR=0;
+	CODE="${CODE}$(system_call_exit $EXIT_NO_ERROR)";
+	echo -n "${CODE}${DATA_SECTION}";
 }
+
+function get_next_data_address()
+{
+	# is the start address of the DATA_SECTION... composed of 00010000 + ELF_HEADER_SIZE + ELF_BODY_SIZE (without DATA_SECTION)"
+	local ELF_MEM_DATA_START_AT=$(( 16#010000 ))
+	local ELF_HEADER_SIZE="$1"
+	local ELF_BODY_SIZE="$2"
+	local DATA_ADDRESS_BEGIN_AT=$(( ELF_MEM_DATA_START_AT + ELF_HEADER_SIZE + ELF_BODY_SIZE ))
+	local DATA_SECTION_SIZE=0;
+	local NEXT_DATA_ADDRESS=$(( DATA_ADDRESS_BEGIN_AT + DATA_SECTION_SIZE ))
+	#the message addr, dynamic because every new code instruction changes it.
+	local MSG_ADDR="$(printLittleEndian $NEXT_DATA_ADDRESS 4)";
+	echo -n "$MSG_ADDR"
+}
+
+. system_call_linux_x86-64.sh
 
 function write_elf()
 {
 	local ELF_FILE="$1"
 	local ELF_SHELL_CODE="$2"
 	local ELF_HEADER="";
-	# local ELF_HEADER_SIZE="$( echo -ne "$(print_elf_header)" | wc -c )";
-	local ELF_HEADER_SIZE=64
+	local ELF_HEADER_SIZE="$( echo -ne "$(print_elf_header)" | wc -c )";
 	ELF_HEADER="$(print_elf_header "${ELF_HEADER_SIZE}")" # now we have size
 	local ELF_BODY="$(print_elf_body "${ELF_HEADER_SIZE}" "${ELF_SHELL_CODE}")"
 	echo -ne "${ELF_HEADER}${ELF_BODY}" > $ELF_FILE

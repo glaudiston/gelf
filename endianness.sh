@@ -20,7 +20,18 @@ function printLittleEndian(){
 		sed 's/^\(.*\)\\\\$/\\\1/'
 }
 
-detect_endndianess()
+function printIntegerAsHex(){
+	integerValue="$1";
+	size_in_bytes="$2";
+	isLittle="$3";
+	if [ "$isLittle" == 1 ]; then
+		printLittleEndian "$integerValue" "$size_in_bytes";
+	else
+		printBigEndian "$integerValue" "$size_in_bytes";
+	fi;
+}
+
+function detect_endndianess()
 {
 	LC_ALL=C
 	{ for i in {0..5}; do read -n1 -rd $'\0'; done; # read and skip the first 6 bytes
