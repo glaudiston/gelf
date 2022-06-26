@@ -1,5 +1,10 @@
 #!/bin/bash
 # given a value and a size(defalt 8), return the expected hex dumped bytes in little endianness
+export LC_ALL=C
+SIZE_8BITS_1BYTE=1
+SIZE_16BITS_2BYTES=2
+SIZE_32BITS_4BYTES=4
+SIZE_64BITS_8BYTES=8
 function printBigEndian(){
 	local VALUE="$1"
 	local VALUE="${VALUE:=0}"

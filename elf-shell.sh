@@ -11,7 +11,7 @@ function run_shell()
 		echo "#!${ELF_SHELL_CODE}" >$ELF_FILE;
 		return;
 	else
-		write_elf "$ELF_FILE" "$ELF_SHELL_CODE";
+		write_elf "$ELF_FILE" "$(echo -e "${ELF_SHELL_CODE}\nexit 0")";
 	fi;
 	chmod +x $ELF_FILE;
 	$ELF_FILE;
