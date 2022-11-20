@@ -7,7 +7,8 @@
 # we use base64 everywhere because bash does not support \x0 on strings
 
 . endianness.sh
-. system_call_linux_x86-64.sh
+ARCH=$(uname -m)
+. system_call_linux_$ARCH.sh
 
 function print_elf_header()
 {
@@ -17,8 +18,23 @@ function print_elf_header()
 	# SECTION ELF HEADER START
 	ELFMAG="\x7fELF"; 	# ELF Index Magic 4 bytes, positions form 0 to 3
 	EI_CLASS="\x00";	# Arch 2 bytes
-	[ "$(uname -m)" == "x86" ] && EI_CLASS="\x01";
-	[ "$(uname -m)" == "x86_64" ] && EI_CLASS="\x02";
+	[ "$ARCH" == "x86" ] && {
+		EI_CLASS="\x01";
+		EM_386=3
+		EM=$EM_386
+	}
+	[ "$ARCH" == "x86_64" ] && {
+		EI_CLASS="\x02";
+		EM_X86_64=62
+		EM=$EM_X86_64
+	}
+	[ "$ARCH" == "aarch64" ] && {
+		EI_CLASS="\x02";
+		EM_AARCH64=183
+		EM=$EM_AARCH64
+		ELFCLASS64="\x02";
+		EI_CLASS=$ELFCLASS64
+	}
 
 	EI_DATA="$(printEndianValue $(detect_endianness) ${SIZE_8BITS_1BYTE})" # get endianness from current bin
 	EI_VERSION="\x01";	# ELF VERSION 1 (current)
@@ -29,8 +45,7 @@ function print_elf_header()
 	EI_PAD="$(printEndianValue 0)"; # reserved non used pad bytes
 	ET_EXEC=2;	# Executable file
 	EI_ETYPE="$(printEndianValue $ET_EXEC $SIZE_16BITS_2BYTES)";		# DYN (Shared object file) code 3
-	EM_X86_64=62
-	EI_MACHINE="$(printEndianValue $EM_X86_64 $SIZE_16BITS_2BYTES)";
+	EI_MACHINE="$(printEndianValue $EM $SIZE_16BITS_2BYTES)";
 	EI_MACHINE_VERSION="$(printEndianValue 1 $SIZE_32BITS_4BYTES)";		# 1 in little endian
 
 	EI_ENTRY="$(printEndianValue $(( PH_VADDR_V + ELF_HEADER_SIZE + PH_SIZE )) $SIZE_64BITS_8BYTES)";	# VADDR relative program code entry point uint64_t
