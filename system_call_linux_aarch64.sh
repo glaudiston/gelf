@@ -1,18 +1,10 @@
 #!/bin/bash
+# https://docs.rs/syscall-numbers/latest/syscall_numbers/aarch64/index.html
 # https://github.com/xcellerator/libgolf/tree/main/examples/03_aarch64
-# https://tmpout.sh/2/14.html
 # System Interrupt call table for 64bit aarch64 linux:
+# Linux syscall:
 # https://syscalls.w3challs.com/?arch=arm_strong
 #
-# aarch64 Instruction set
-# https://en.wikipedia.org/wiki/X86_instruction_listings#Original_8086.2F8088_instructions
-#
-# Intel i64 and IA-32 Architectures
-# https://software.intel.com/sites/default/files/managed/39/c5/325462-sdm-vol-1-2abcd-3abcd.pdf
-# Linux syscall:
-# https://blog.rchapman.org/posts/Linux_System_Call_Table_for_x86_64/
-# See Table A-2. One-byte Opcode Map on Intel i64 documentation (page 2626)
-# See Table B-13.  General Purpose Instruction Formats and Encodings for Non-64-Bit Modes (Contd.) (page 2658)
 MOV="d280"
 MOV_BIN=$(printLittleEndian $(( 16#$MOV )) 2)
 MOV_RAX="\xb8"
@@ -56,26 +48,53 @@ function system_call_write()
 	echo -en "${CODE}" | base64 -w0;
 }
 
+function aarch64_register_set()
+{
+	# 000 00000001 00000
+	#  |  ---+---- -----> 5 bits defines the register x0
+	#  |     +-> 8 bits define the value 1
+	#  +-> No Idea
+	register="$1"
+	value="$2"
+	v=$(( ( value << 5 ) + ${register} ))
+	# join and apply little endian
+	printEndianValue "$v" "$SIZE_16BITS_2BYTES"
+}
+
 system_call_exit_len=12
+
+# register vars just for readability
+r0=0
+r1=1
+r2=2
+r3=3
+r4=4
+r5=5
+r6=6
+r7=7
+r8=8
+
+function aarch64_mov(){
+	local VALUE="$1"
+	echo -n "${VALUE}${MOV_BIN}"
+}
+
 function system_call_exit()
 {
 	# mov x0, #0      @ Return value is 0
 	# mov x8, #0x5d   @ 0x5d is sys_exit
 	# svc #0          @ Interrupt to svc mode (syscall)
-	local SYS_EXIT=$(( 16#0ba8 ))
+	#local SYS_EXIT=$(( ( 16#5d << 5) + r8 ))
+	#local EXIT_BIN="$(printEndianValue $SYS_EXIT $SIZE_16BITS_2BYTES)";
+	local SYS_EXIT=5d
+	local EXIT_BIN=$( aarch64_register_set r8 "$(( 16#${SYS_EXIT} ))" )
 	local exit_code="$1"
 	local BIN_CODE="";
-	local EXIT="$(printEndianValue $SYS_EXIT $SIZE_16BITS_2BYTES)";
 
-	# 000 00000001 00000
-	#  |  ---+---- -----> 5 bits defines the register x0
-	#  |     +-> 8 bits define the value
-	#  +-> No Idea
-	v=$(( ( exit_code << 5 ) + 0 ))
-	VALUE_AND_TARGET_REGISTER=$(printEndianValue $v $SIZE_16BITS_2BYTES)
+	VALUE_AND_TARGET_REGISTER="$(aarch64_register_set r0 $exit_code)"
 
-	# join and apply little endian
-	BIN_CODE="${VALUE_AND_TARGET_REGISTER}$MOV_BIN${EXIT}$MOV_BIN"
+	BIN_CODE="$(aarch64_mov "${VALUE_AND_TARGET_REGISTER}")"
+	BIN_CODE="${EXIT_BIN}${MOV_BIN}"
 	BIN_CODE="${BIN_CODE}${SYSCALL}"
 	echo -en "${BIN_CODE}" | base64 -w0;
 }
