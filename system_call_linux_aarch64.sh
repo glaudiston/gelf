@@ -4,13 +4,21 @@
 # System Interrupt call table for 64bit aarch64 linux:
 # Linux syscall:
 # https://syscalls.w3challs.com/?arch=arm_strong
+# https://github.com/torvalds/linux/blob/v4.17/include/uapi/asm-generic/unistd.h
 #
 MOV="d280"
-MOV_BIN=$(printLittleEndian $(( 16#$MOV )) 2)
-MOV_RAX="\xb8"
-MOV_RDX="\xba"
-MOV_RSI="\xbe"
-MOV_RDI="\xbf" #32 bit register (4 bytes)
+MOV_BIN=$(printLittleEndian $(( 16#${MOV} )) $SIZE_16BITS_2BYTES)
+# register vars just for readability
+r0=0
+r1=1
+r2=2
+r3=3
+r4=4
+r5=5
+r6=6
+r7=7
+r8=8
+
 
 # LEA - Load Effective Address
 SYSCALL="\x01\x00\x00\xd4"
@@ -20,7 +28,7 @@ function system_call_read()
 	local string="$1";
 	local len="${2}";
 	local CODE="";
-	SYS_READ=0;
+	SYS_READ=3f;
 	STDIN=0;
 	CODE="${CODE}${MOV_RAX}$(printEndianValue $SYS_READ $SIZE_32BITS_4BYTES)";
 	CODE="${CODE}${MOV_RDI}$(printEndianValue $STDIN $SIZE_32BITS_4BYTES)";
@@ -38,17 +46,25 @@ function system_call_write()
 	local DATA_LEN="$2";
 	local CODE="";
 	local DATA_ADDR="$(printEndianValue $DATA_ADDR_V $SIZE_32BITS_4BYTES)";
-	SYS_WRITE=1;
 	STDOUT=1;
-	CODE="${CODE}${MOV_RAX}$(printEndianValue $SYS_WRITE $SIZE_32BITS_4BYTES)";
-	CODE="${CODE}${MOV_RDI}$(printEndianValue $STDOUT $SIZE_32BITS_4BYTES)";
-	CODE="${CODE}${MOV_RSI}${DATA_ADDR}";
-	CODE="${CODE}${MOV_RDX}$(printEndianValue ${DATA_LEN} $SIZE_32BITS_4BYTES)";
-	CODE="${CODE}${SYSCALL}";
-	echo -en "${CODE}" | base64 -w0;
+
+	local sys_write='40';
+	local sys_write_bin="$(aarch64_instr_value r8 "$(( 16#${sys_write} ))")";
+
+	local output_fd_bin="$(aarch64_instr_value r0 "$(( 16#${STDOUT} ))")";
+	local data_addr_bin="$(aarch64_instr_value r1 "$(( 16#${DATA_ADDR_V} ))")"
+	local data_size_bin="$(aarch64_instr_value r2 "$(( 16#${DATA_LEN} ))")";
+
+	local BIN_CODE="";
+	BIN_CODE="${BIN_CODE}$(aarch64_mov "${output_fd_bin}")";
+	BIN_CODE="${BIN_CODE}$(aarch64_mov "${data_addr_bin}")";
+	BIN_CODE="${BIN_CODE}$(aarch64_mov "${data_size_bin}")";
+	BIN_CODE="${BIN_CODE}$(aarch64_mov "${sys_write_bin}")";
+	BIN_CODE="${BIN_CODE}${SYSCALL}";
+	echo -en "${BIN_CODE}" | base64 -w0;
 }
 
-function aarch64_register_set()
+function aarch64_instr_value()
 {
 	# 000 00000001 00000
 	#  |  ---+---- -----> 5 bits defines the register x0
@@ -63,17 +79,6 @@ function aarch64_register_set()
 
 system_call_exit_len=12
 
-# register vars just for readability
-r0=0
-r1=1
-r2=2
-r3=3
-r4=4
-r5=5
-r6=6
-r7=7
-r8=8
-
 function aarch64_mov(){
 	local VALUE="$1"
 	echo -n "${VALUE}${MOV_BIN}"
@@ -87,14 +92,13 @@ function system_call_exit()
 	#local SYS_EXIT=$(( ( 16#5d << 5) + r8 ))
 	#local EXIT_BIN="$(printEndianValue $SYS_EXIT $SIZE_16BITS_2BYTES)";
 	local SYS_EXIT=5d
-	local EXIT_BIN=$( aarch64_register_set r8 "$(( 16#${SYS_EXIT} ))" )
+	local exit_bin=$( aarch64_instr_value r8 "$(( 16#${SYS_EXIT} ))" )
 	local exit_code="$1"
+	local value_bin="$(aarch64_instr_value r0 $exit_code)"
+
 	local BIN_CODE="";
-
-	VALUE_AND_TARGET_REGISTER="$(aarch64_register_set r0 $exit_code)"
-
-	BIN_CODE="$(aarch64_mov "${VALUE_AND_TARGET_REGISTER}")"
-	BIN_CODE="${EXIT_BIN}${MOV_BIN}"
+	BIN_CODE="${BIN_CODE}$(aarch64_mov "${value_bin}")"
+	BIN_CODE="${BIN_CODE}$(aarch64_mov "${exit_bin}")"
 	BIN_CODE="${BIN_CODE}${SYSCALL}"
 	echo -en "${BIN_CODE}" | base64 -w0;
 }
