@@ -280,7 +280,7 @@ function write_elf()
 	# local ELF_HEADER_SIZE="$( echo -ne "$(print_elf_header)" | wc -c )";
 	# but for now 64 bytes is the value
 	local ELF_HEADER_SIZE=64
-	local PH_VADDR_V=$(( 2**10 * 64 )) # 65536
+	local PH_VADDR_V="$(( 1 << 16 ))" # 65536
 	local PH_SIZE=$(( 16#38 )) #56
 	ELF_HEADER="$(print_elf_header "${ELF_HEADER_SIZE}" "${PH_VADDR_V}" "${PH_SIZE}" )"; # now we have size
 	local ELF_BODY="$(print_elf_body "${ELF_HEADER_SIZE}" "${ELF_SHELL_CODE}" "${PH_VADDR_V}" )";

@@ -1,4 +1,8 @@
 #!/bin/bash
+#
+# Author: Glaudiston Gomes da Silva
+#
+# refs:
 # https://docs.rs/syscall-numbers/latest/syscall_numbers/aarch64/index.html
 # https://github.com/xcellerator/libgolf/tree/main/examples/03_aarch64
 # System Interrupt call table for 64bit aarch64 linux:
@@ -6,8 +10,14 @@
 # https://syscalls.w3challs.com/?arch=arm_strong
 # https://github.com/torvalds/linux/blob/v4.17/include/uapi/asm-generic/unistd.h
 #
+# Special thanks to: Nate Eldredge
+#   https://stackoverflow.com/questions/74532163/elf-aarch64-golfed-with-sys-write/74534626#74534626
+#
 MOV="d280"
+MOVK="f2a0"
+LDR="5800"
 MOV_BIN=$(printLittleEndian $(( 16#${MOV} )) $SIZE_16BITS_2BYTES)
+LDR_BIN=$(printLittleEndian $(( 16#${LDR} )) $SIZE_16BITS_2BYTES)
 # register vars just for readability
 r0=0
 r1=1
@@ -38,7 +48,7 @@ function system_call_read()
 	echo -en "${CODE}" | base64 -w0;
 }
 
-system_call_write_len=22
+system_call_write_len=24
 # given a data address as argument, write it to stdout
 function system_call_write()
 {
@@ -51,13 +61,14 @@ function system_call_write()
 	local sys_write='40';
 	local sys_write_bin="$(aarch64_instr_value r8 "$(( 16#${sys_write} ))")";
 
-	local output_fd_bin="$(aarch64_instr_value r0 "$(( 16#${STDOUT} ))")";
-	local data_addr_bin="$(aarch64_instr_value r1 "$(( 16#${DATA_ADDR_V} ))")"
-	local data_size_bin="$(aarch64_instr_value r2 "$(( 16#${DATA_LEN} ))")";
+	local output_fd_bin="$(aarch64_instr_value r0 "${STDOUT}")";
+	local data_addr_bin="$(aarch64_instr_value r1 "$(( ${DATA_ADDR_V} - ( 1 << 16)  )) ")"
+	local data_size_bin="$(aarch64_instr_value r2 "${DATA_LEN}")";
 
 	local BIN_CODE="";
 	BIN_CODE="${BIN_CODE}$(aarch64_mov "${output_fd_bin}")";
 	BIN_CODE="${BIN_CODE}$(aarch64_mov "${data_addr_bin}")";
+	BIN_CODE="${BIN_CODE}$(aarch64_movk "0021")";
 	BIN_CODE="${BIN_CODE}$(aarch64_mov "${data_size_bin}")";
 	BIN_CODE="${BIN_CODE}$(aarch64_mov "${sys_write_bin}")";
 	BIN_CODE="${BIN_CODE}${SYSCALL}";
@@ -79,9 +90,18 @@ function aarch64_instr_value()
 
 system_call_exit_len=12
 
+function aarch64_ldr(){
+	local VALUE="$1"
+	echo -n "${VALUE}${LDR_BIN}"
+}
+
 function aarch64_mov(){
 	local VALUE="$1"
 	echo -n "${VALUE}${MOV_BIN}"
+}
+
+function aarch64_movk() {
+	echo -n "$(printEndianValue $(( 16#${MOVK}${1} )) $SIZE_32BITS_4BYTES)"
 }
 
 function system_call_exit()
