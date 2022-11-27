@@ -15,9 +15,17 @@ MOV_RAX="\xb8"
 MOV_RDX="\xba"
 MOV_RSI="\xbe"
 MOV_RDI="\xbf" #32 bit register (4 bytes)
+JMP="\xe9"
+
 
 # LEA - Load Effective Address (page 1146)
 SYSCALL="\x0f\x05"
+
+function system_call_jump()
+{
+	ADDR="$1";
+	echo "${JMP}$(printEndianValue $ADDR $SIZE_32BITS_4BYTES)"
+}
 
 function system_call_read()
 {
