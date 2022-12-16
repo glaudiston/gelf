@@ -9,9 +9,10 @@
 
 write_elf elf <<EOF
 main: {
-	write $(arg "Hello $USER")
-	write $(arg " By Glaudiston")
+	write $(arg " This is from inside a code block")
 }
+write $(arg "Hi $USER")
+write $(arg " By Glaudiston")
 main
-exit 0
+exit 2
 EOF
