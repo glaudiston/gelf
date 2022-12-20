@@ -8,11 +8,19 @@
 . elf_fn.sh
 
 write_elf elf <<EOF
-main: {
-	write $(arg " This is from inside a code block")
+# function just for testing purposes
+func: {
+	write $(arg "sample code at func")
+	exit 3
 }
-write $(arg "Hi $USER")
+# func main is not really needed
+main: {
+	write $(arg "first line in main")
+	write $(arg "second line on main... x00.shstrtab\x00is from inside a code block")
+	exit 2
+}
+write $(arg "Hi $USER\n")
 write $(arg " By Glaudiston")
 main
-exit 2
+exit 1
 EOF
