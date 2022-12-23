@@ -10,10 +10,15 @@
 ARCH=$(uname -m)
 
 # include bloc
+. types.sh
 . logger.sh
 . endianness.sh
-. types.sh
 . system_call_linux_$ARCH.sh
+
+get_program_headers_count()
+{
+	echo 1;
+}
 
 # functions bloc
 print_elf_file_header()
@@ -99,11 +104,6 @@ print_elf_file_header()
 
 	# SECTION ELF HEADER END
 	echo -en "${SECTION_ELF_HEADER}" | base64 -w0;
-}
-
-get_program_headers_count()
-{
-	echo 1;
 }
 
 # given a list of section headers names, comma separeted, return the count
@@ -231,10 +231,13 @@ get_sht_strtab()
 
 get_section_headers()
 {
-	return;
-	get_shn_undef
-	get_sht_strtab
+	local tiny_mode=true
+	if [ "${tiny_mode}" != "true" ]; then
+		get_shn_undef
+		get_sht_strtab
+	fi;
 }
+
 # the elf body is the whole elf file after the elf file header(that ends at position 0x3f)
 # the elf body has the program headers, segments and sections
 print_elf_body()
@@ -308,6 +311,9 @@ instruction_bloc_size() {
 instruction_data()
 {
 	local INSTR="$1"
+	if [[ "${INSTR}" =~ ^[#] ]];then
+		return;
+	fi;
 	if [ "${INSTR}" == "$(echo)" ];then
 		return;
 	fi;
@@ -349,6 +355,9 @@ instruction_code()
 	local PH_SIZE="$5";
 	local SH_TOTAL_SIZE="$6";
 	local CODE_SIZE="$7"
+	if [[ "${INSTR}" =~ ^[#] ]];then
+		return;
+	fi;
 	if [ "${INSTR}" == "$(echo)" ];then
 		return;
 	fi;
@@ -405,23 +414,37 @@ read_until_bloc_closes()
 parse_code_bloc()
 {
 	local CODE_LINE="$1";
+	local BLOCS="$2"
+	local blocs_list="$3";
 	if [[ "${CODE_LINE}" =~ .*\:\ \{ ]]; then
+		new_bloc="$(
 		debug "parsing the bloc: $CODE_LINE ..."
+		BLOCK_NAME="${CODE_LINE/: {/}";
+		debug CODE_BLOCK_NAME=$BLOCK_NAME
 		bloc_code="$(read_until_bloc_closes | base64 -w0)";
 		debug "bloc code: $bloc_code"
 		recursive_parse="$(
 			echo "$bloc_code" |
 			base64 -d |
-			parse_code_blocs
+			parse_code_blocs "$BLOCS"
 			)";
 		debug recursive_parse=[$recursive_parse]
 		instructions_size_sum=$(echo "$recursive_parse" |
 			cut -d, -f4 | awk '{s+=$1}END{print s}' );
-					echo "BLOCK,$( echo -n "${bloc_code}" |
-					base64 -w0
-					),$(echo "$recursive_parse" |
-					cut -d, -f3 |
-					base64 -w0),$instructions_size_sum";
+		echo "BLOCK,$( echo -n "${bloc_code}" |
+			base64 -w0
+			),$(echo "$recursive_parse" |
+				cut -d, -f3 |
+				base64 -w0
+			),$instructions_size_sum,$BLOCK_NAME";
+		)";
+		local bloc_name=$(echo "$new_bloc" | cut -d, -f5)
+		debug bloc_name [$bloc_name] ... CODE_
+		if [ "$blocs_list" == "" ]; then
+			blocs_list="$new_bloc";
+		else
+			blocs_list="$( echo -e "$blocs_list\n$new_bloc")";
+		fi
 		return;
 	fi;
 	if [[ "${CODE_LINE}" =~ \# ]]; then
@@ -436,15 +459,27 @@ parse_code_bloc()
 		echo "INSTRUCTION,$( echo -n "${CODE_LINE}" | base64 -w0),sys_exit,$system_call_exit_len";
 		return;
 	fi;
-	echo "INVALID,$( echo -n "${CODE_LINE}" | base64 -w0),,0";
+	if [ "$CODE_LINE" == "" ]; then
+		debug EMPTY CODE_LINE
+		echo "EMPTY,,,0";
+		return;
+	fi;
+	debug CODE_LINE [$CODE_LINE] blocs[$blocs_list]
+	if echo "$blocs_list" | grep -q "${CODE_LINE}"; then
+		debug "bloc item found for $CODE_LINE"
+		echo "BLOC_CALL,${CODE_LINE_B64},jmp,2"
+	fi
+	local CODE_LINE_B64=$( echo -n "${CODE_LINE}" | base64 -w0)
+	echo "INVALID,CODE_LINE_B64,,0";
 	return;
 }
 
 parse_code_blocs()
 {
+	BLOCS="$1"
 	grep "" | while read CODE_LINE;
 	do
-		parse_code_bloc "$CODE_LINE";
+		parse_code_bloc "$CODE_LINE" "${BLOCS}" "$BLOC_LIST";
 	done;
 }
 
@@ -454,7 +489,7 @@ get_first_code_offset()
 	local CODE="$(cat)";
 	local FIRST_CODE_OFFSET=$(
 		local sum=0;
-		echo -en "$CODE" | parse_code_blocs |
+		echo -en "$CODE" | parse_code_blocs | # we don't care here about blocs argument to parse_code_blocs.
 		grep "" |while read bloc;
 		do
 			if [ "$(echo "$bloc" | cut -d, -f1 )" == INSTRUCTION ]; then
@@ -472,11 +507,13 @@ get_first_code_offset()
 detect_instruction_size_from_code()
 {
 	local CODE="$(cat)";
+	local BLOCS="";
 	local CODE_SIZE=$(
 		local sum=$(
-			echo -en "$CODE" | parse_code_blocs |
+			echo -en "$CODE" | parse_code_blocs "BLOCS" |
 			while read bloc;
 			do
+				BLOCS="$BLOCS\n$(echo "$bloc" | cut -d, -f2)"
 				echo "$bloc" | cut -d, -f4;
 				debug CODE ADD SIZE=$(echo "$bloc" | cut -d, -f4;), $bloc
 			done |
@@ -511,14 +548,14 @@ append_data()
 {
 	local DATA_SECTION="$1";
 	local TEXT="$2";
-	echo "$DATA_SECTION$TEXT";
+	echo "${DATA_SECTION}${TEXT}";
 }
 
 get_data()
 {
-	local CODE="$1"
+	local CODE="$1";
 	local data=$(echo -e "$CODE" | while read; do
-		echo -n "$(instruction_data "${REPLY}")"
+		echo -n "$(instruction_data "${REPLY}")";
 	done);
 	# we can validate that value by getting the hex dump position(from where data section should start) - ph_size(56) - header size (64)
 	echo -n "$data";
@@ -535,7 +572,8 @@ get_instructions()
 
 	#sum=$( echo -e "$CODE" | read_instruction_bloc | instruction_bloc_size | awk '{s+=$1}END{print s}' )
 
-	local RESP=$(echo -e "$CODE" | while read; do
+	local RESP=$(echo -e "$CODE" | while read;
+	do
 		debug "PARSING INSTRUCTION [$REPLY]";
 		RET=$(instruction_code \
 			"${DATA_SECTION}" \
@@ -546,7 +584,7 @@ get_instructions()
 		        "${SH_TOTAL_SIZE}" \
 		        "${CODE_SIZE}";
 	       )
-		DATA_SECTION="${DATA_SECTION}$(echo -n "$RET"| cut -d, -f2)"
+		DATA_SECTION="${DATA_SECTION}$(echo -n "$RET"| cut -d, -f2)";
 		echo "${RET}";
 	done);
 	echo "$(echo -n "$RESP" |
@@ -559,10 +597,10 @@ get_instructions()
 
 get_elf_code_and_data()
 {
-	local PH_VADDR_V="$1"
+	local PH_VADDR_V="$1";
 	local ELF_HEADER_SIZE="$2";
 	local PH_SIZE="$3";
-	local SH_TOTAL_SIZE="$4"
+	local SH_TOTAL_SIZE="$4";
 	local CODE_SIZE="$5";
 	local ELF_SHELL_CODE="$(cat)";
 
@@ -571,7 +609,7 @@ get_elf_code_and_data()
 		"${ELF_HEADER_SIZE}" \
 		"${PH_SIZE}" \
 		"${SH_TOTAL_SIZE}" \
-		"${CODE_SIZE}"
+		"${CODE_SIZE}";
 	)";
 	local CODE=$(echo "$INSTR" | cut -d, -f1);
 	local DATA_SECTION=$(echo "$INSTR" | cut -d, -f2);
@@ -583,16 +621,16 @@ get_elf_code_and_data()
 get_next_data_address()
 {
 	# is the start address of the DATA_SECTION... composed of 00010000 + ELF_HEADER_SIZE + ELF_BODY_SIZE (without DATA_SECTION)"
-	local PH_VADDR="$1"
-	local ELF_HEADER_SIZE="$2"
-	local PH_SIZE="$3"
-	local SH_TOTAL_SIZE="$4"
-	local CODE_SIZE="$5"
+	local PH_VADDR="$1";
+	local ELF_HEADER_SIZE="$2";
+	local PH_SIZE="$3";
+	local SH_TOTAL_SIZE="$4";
+	local CODE_SIZE="$5";
 	local DATA_SECTION_SIZE="$6";
 
-	local ELF_BODY_SIZE="$(( PH_SIZE + SH_TOTAL_SIZE + CODE_SIZE ))"
-	local DATA_ADDRESS_BEGIN_AT=$(( PH_VADDR + ELF_HEADER_SIZE + ELF_BODY_SIZE ))
-	local NEXT_DATA_ADDRESS=$(( DATA_ADDRESS_BEGIN_AT + DATA_SECTION_SIZE))
+	local ELF_BODY_SIZE="$(( PH_SIZE + SH_TOTAL_SIZE + CODE_SIZE ))";
+	local DATA_ADDRESS_BEGIN_AT=$(( PH_VADDR + ELF_HEADER_SIZE + ELF_BODY_SIZE ));
+	local NEXT_DATA_ADDRESS=$(( DATA_ADDRESS_BEGIN_AT + DATA_SECTION_SIZE));
 	echo -n "${NEXT_DATA_ADDRESS}";
 }
 
@@ -603,7 +641,7 @@ arg()
 
 write_elf()
 {
-	local ELF_FILE="$1"
+	local ELF_FILE="$1";
 	local ELF_HEADER="";
 	# If we want to keep header size dynamic we can use:
 	# local ELF_HEADER_SIZE="$( echo -ne "$(print_elf_file_header)" | wc -c )";
