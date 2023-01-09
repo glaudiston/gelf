@@ -11,6 +11,17 @@ Executable and Linkable Format(ELF) are the format used in all linux executables
 
 This repo is my try to write them from scratch. Just for fun and learning.
 
+
+GDB
+===
+You can use gdb to debug the execution. Here some tips
+* Use objdump -x to get the start address
+put a break point at the start address:
+* br *0x00000000000100d2
+* use si to step each instruction
+* you can move the program counter to read any virtual address by using:
+* set $pc=0x00010168
+
 References
 ==========
 There is some refs on the code. Read it.
