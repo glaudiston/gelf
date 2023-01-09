@@ -10,10 +10,12 @@
 ARCH=$(uname -m)
 
 # include bloc
+. elf_constants.sh
 . types.sh
 . logger.sh
 . endianness.sh
 . system_call_linux_$ARCH.sh
+. snippet_parser.sh
 
 get_program_headers_count()
 {
@@ -23,15 +25,13 @@ get_program_headers_count()
 # functions bloc
 print_elf_file_header()
 {
-	local ELF_HEADER_SIZE="${1:-0}";
-	local PH_VADDR_V="$2";
-	local EH_SIZE=64;
-	local PH_SIZE="$3";
-	local SH_SIZE="$4";
-	local SH_COUNT="$5";
-	local FIRST_CODE_OFFSET="$6";
+	local PH_VADDR_V="$1";
+	local SH_COUNT="$2";
+	local FIRST_CODE_OFFSET="$3";
+
+	local SH_SIZE="$SH_SIZE"; # use the constant in local scope to allow change it locally
+
 	# SECTION ELF HEADER START
-	ELFMAG="\x7fELF"; 	# ELF Index Magic 4 bytes, positions form 0 to 3
 	EI_CLASS="\x00";	# Arch 2 bytes
 	[ "$ARCH" == "x86" ] && {
 		EI_CLASS="\x01";
@@ -67,25 +67,23 @@ print_elf_file_header()
 	PH_COUNT=$(get_program_headers_count);
 	PH_TOTAL_SIZE=$(( PH_SIZE * PH_COUNT ));
 	SH_TOTAL_SIZE=$(( SH_SIZE * SH_COUNT ));
-	debug SH_TOTAL_SIZE=$SH_TOTAL_SIZE
-	debug FIRST_CODE_OFFSET=$FIRST_CODE_OFFSET
 	local SHOFF_V=$(( EH_SIZE + PH_SIZE ))
 	if [ $SH_COUNT -eq 0 ]; then
 		SHOFF_V=0;
-		SH_SIZE=0;
+		SH_SIZE=0; # some tools like readelf have issues when no sections but section size reported.
 	fi;
 	local ENTRY_V=$((
 	PH_VADDR_V +
-	ELF_HEADER_SIZE +
+	EH_SIZE +
 	PH_TOTAL_SIZE +
 	SH_TOTAL_SIZE +
 	FIRST_CODE_OFFSET
 	));
 	EI_ENTRY="$(printEndianValue ${ENTRY_V} $Elf64_Addr)";	# VADDR relative program code entry point uint64_t
-	EI_PHOFF="$(printEndianValue "${ELF_HEADER_SIZE}" $Elf64_Off)";# program header offset in bytes, starts immediatelly after header, so the offset is the header size
+	EI_PHOFF="$(printEndianValue "${EH_SIZE}" $Elf64_Off)";# program header offset in bytes, starts immediatelly after header, so the offset is the header size
 	EI_SHOFF="$(printEndianValue ${SHOFF_V} $Elf64_Off)";			# section header offset in bytes
 	EI_FLAGS="$(printEndianValue 0 $Elf64_Word)";			# uint32_t
-	EI_EHSIZE="$(printEndianValue ${ELF_HEADER_SIZE} $Elf64_Half)";	# elf header size in bytes
+	EI_EHSIZE="$(printEndianValue ${EH_SIZE} $Elf64_Half)";	# elf header size in bytes
 	EI_PHENTSIZE="$(printEndianValue $PH_SIZE $Elf64_Half)";	# program header entry size (constant = sizeof(Elf64_Phdr))
 	EI_PHNUM="$(printEndianValue $PH_COUNT $Elf64_Half)"; 			# number of program header entries
 	# section table def
@@ -106,27 +104,14 @@ print_elf_file_header()
 	echo -en "${SECTION_ELF_HEADER}" | base64 -w0;
 }
 
-# given a list of section headers names, comma separeted, return the count
-get_section_headers_count()
-{
-	local sh_names="$1"
-	echo -n "${sh_names}" | tr , '\n' | grep -c ""
-}
-
 # https://stackoverflow.com/questions/16812574/elf-files-what-is-a-section-and-why-do-we-need-it
 get_program_segment_headers()
 {
-	local ELF_HEADER_SIZE="$1";
-	local PH_VADDR_V="$2";
-	local PH_SIZE="$3";
+	local PH_VADDR_V="$1";
 
 	# https://www.airs.com/blog/archives/45
 	# this point the current segment offset is 0x40
-	PT_LOAD=1 # Loadable program segment
 	PH_TYPE="$(printEndianValue $PT_LOAD $Elf64_Word)"	# Elf64_Word p_type 4;
-	PF_X=$(( 1 << 0 )) # executable
-	PF_W=$(( 1 << 1 )) # writable
-	PF_R=$(( 1 << 2 )) # readable
 	PH_FLAGS="$(printEndianValue $(( PF_X + PF_R )) $Elf64_Word)"	# Elf64_Word p_flags 4;
 	# offset, vaddr and p_align are stringly related.
 	PH_OFFSET="$(printEndianValue 0 $Elf64_Off)"	# Elf64_Off p_offset 8;
@@ -135,9 +120,9 @@ get_program_segment_headers()
 	PH_PADDR="$(printEndianValue 0 $Elf64_Addr)"	# Elf64_Addr p_paddr 8;
 							# Physical address is deprecated and ignored for executables, libs and shared obj files.
 	# PH_FILESZ and PH_MEMSZ should point to the first code position in elf
-	# 16#78 == (ELF_HEADER_SIZE == x40 == 64) + (PH_SIZE == x38 == 56)
-	PH_FILESZ="$(printEndianValue $(( ELF_HEADER_SIZE + PH_SIZE )) $Elf64_Xword)"	# Elf64_Xword p_filesz 8;
-	PH_MEMSZ="$(printEndianValue $(( ELF_HEADER_SIZE + PH_SIZE )) $Elf64_Xword)"	# Elf64_Xword p_memsz 8;
+	# 16#78 == (EH_SIZE == x40 == 64) + (PH_SIZE == x38 == 56)
+	PH_FILESZ="$(printEndianValue $(( EH_SIZE + PH_SIZE )) $Elf64_Xword)"	# Elf64_Xword p_filesz 8;
+	PH_MEMSZ="$(printEndianValue $(( EH_SIZE + PH_SIZE )) $Elf64_Xword)"	# Elf64_Xword p_memsz 8;
 	# p_align: Loadable process segments must have congruent values for p_vaddr and p_offset,
 	#          modulo the page size.
 	#          This member gives the value to which the segments are aligned in memory and in the file.
@@ -160,10 +145,15 @@ get_program_segment_headers()
 	PROGRAM_HEADERS="${PROGRAM_HEADERS}${PH_MEMSZ}";
 	PROGRAM_HEADERS="${PROGRAM_HEADERS}${PH_ALIGN}"; # Elf64_Phdr[]
 
-	debug "PH_SIZE=${PH_SIZE}==$(echo -en "${PROGRAM_HEADERS}" | wc -c)"
-
 	echo -en "$PROGRAM_HEADERS" | base64 -w0
 	# SECTION PROGRAM HEADERS END
+}
+
+# given a list of section headers names, comma separeted, return the count
+get_section_headers_count()
+{
+	local sh_names="$1"
+	echo -n "${sh_names}" | tr , '\n' | grep -c ""
 }
 
 # TODO make use of string_table
@@ -242,36 +232,30 @@ get_section_headers()
 # the elf body has the program headers, segments and sections
 print_elf_body()
 {
-	local ELF_HEADER_SIZE="$1";
-	local PH_VADDR_V="$2";
-	local PH_SIZE="$3";
-	local SH_TOTAL_SIZE="$4";
-	local SH_COUNT="$5";
-	PROGRAM_HEADERS=$(get_program_segment_headers \
-		"$ELF_HEADER_SIZE" \
-		"$PH_VADDR_V" \
-		"$PH_SIZE");
-	debug "PROGRAM_HEADERS=[${PROGRAM_HEADERS}]";
+	local PH_VADDR_V="$1";
+	local SH_COUNT="$2";
+	local INPUT_SOURCE_CODE="$3";
+	local OLD_SNIPPETS="$4";
+
+	local SH_TOTAL_SIZE="$(( SH_COUNT * SH_SIZE ))";
+
+	PROGRAM_HEADERS=$(get_program_segment_headers "$PH_VADDR_V" );
 
 	SECTION_HEADERS="$(get_section_headers)"; # test empty
-	debug "SECTION_HEADERS=[${SECTION_HEADERS}]";
 
-	# code section start
-	# to define the final code we need the header address,
-	# but it depends on code size, because it is after the code.
-	# so, first do a first run to get the code size
-	local ELF_SHELL_CODE="$(cat)";
-	local CODE_SIZE=$(echo -en "$ELF_SHELL_CODE" | detect_instruction_size_from_code);
-	local CODE=$(echo -en "$ELF_SHELL_CODE" |
-		get_elf_code_and_data \
-			"$PH_VADDR_V" \
-			"${ELF_HEADER_SIZE}" \
-			"${PH_SIZE}" \
-			"${SH_TOTAL_SIZE}" \
-			"${CODE_SIZE}"
+	local INSTR_TOTAL_SIZE=$(echo -en "${OLD_SNIPPETS}" | detect_instruction_size_from_code);
+	local SNIPPETS="$(echo "${INPUT_SOURCE_CODE}" | parse_snippets "${PH_VADDR_V}" "${INSTR_TOTAL_SIZE}")";
+	local INSTR_ALL=$(echo -en "${SNIPPETS}" |
+		cut -d, -f${SNIPPET_COLUMN_INSTR_BYTES}
 	);
-	debug CODE=${CODE};
-	SECTION_ELF_DATA="${PROGRAM_HEADERS}${SECTION_HEADERS}${CODE}";
+
+	DATA_ALL="$(echo "${SNIPPETS}" | cut -d, -f$SNIPPET_COLUMN_DATA_BYTES)"
+
+	local SECTION_ELF_DATA="";
+	SECTION_ELF_DATA="${SECTION_ELF_DATA}${PROGRAM_HEADERS}";
+	SECTION_ELF_DATA="${SECTION_ELF_DATA}${SECTION_HEADERS}";
+	SECTION_ELF_DATA="${SECTION_ELF_DATA}${INSTR_ALL}";
+	SECTION_ELF_DATA="${SECTION_ELF_DATA}${DATA_ALL}";
 
 	echo -en "${SECTION_ELF_DATA}";
 }
@@ -319,7 +303,6 @@ instruction_data()
 	fi;
 	if [[ "${INSTR}" =~ ^[\	\ ]*write\  ]]; then
 		V="$(tr " " "\n" <<<"$INSTR"| tail -1 )"
-		debug "*** instruction_data[$V]";
 		echo -n "${V}";
 		return;
 	fi;
@@ -329,350 +312,275 @@ instruction_data()
 	error "INVALID INSTRUCTION (2) [$INSTR]"
 }
 
-start_code_bloc()
-{
-	debug WARN start_code_bloc not implemented
-	:
-}
-
-end_code_bloc()
-{
-	debug WARN end_code_bloc not implemented
-	:
-}
-
-# instruction_code translate the code instruction to machine code
-# on the current kernel and processor archtecture
-# this returns a CSV base64 line with one line, that can have two fields
-# the instruction in base64 and the data to append on the data_section
-instruction_code()
-{
-	debug "instruction_code..."
-	local DATA_SECTION="$1";
-	local INSTR="$2";
-	local PH_VADDR_V="$3";
-	local ELF_HEADER_SIZE="$4";
-	local PH_SIZE="$5";
-	local SH_TOTAL_SIZE="$6";
-	local CODE_SIZE="$7"
-	if [[ "${INSTR}" =~ ^[#] ]];then
-		return;
-	fi;
-	if [ "${INSTR}" == "$(echo)" ];then
-		return;
-	fi;
-	if [[ "${INSTR}" =~ ^[\	\ ]*write\  ]]; then
-		data_text="$(instruction_data "${INSTR}")";
-		data_section_size=$(echo "${DATA_SECTION}" | base64 -d | wc -c)
-		data_size="$( echo -n "${data_text}" | base64 -d | wc -c)";
-		debug data_size=$data_size;
-		data_addr_v="$(get_next_data_address \
-			"${PH_VADDR_V}" \
-			"${ELF_HEADER_SIZE}" \
-			"${PH_SIZE}" \
-			"${SH_TOTAL_SIZE}" \
-			"${CODE_SIZE}" \
-			"${data_section_size}";
-		)";
-		debug "data_addr_v=[$(printf %x $data_addr_v) == $data_addr_v]" ;
-		# let's return the code instruction and the data to update on the section
-		echo "$(system_call_write "$data_addr_v" "$data_size"),$(echo "$data_text")";
-		return;
-	fi;
-	if [[ "${INSTR}" =~ ^[\	\ ]*exit\  ]]; then
-		debug "translating exit"
-		echo "$(system_call_exit ${INSTR:5}),"
-		return;
-	fi;
-	if [[ "${INSTR}" =~ ^[\	\ ]*[a-zA-Z0-9]*:\ \{ ]]; then
-		start_code_bloc;
-		return;
-	fi;
-
-	if [[ "${INSTR}" =~ ^[\	\ ]*\} ]]; then
-		end_code_bloc;
-		return
-	fi;
-	error "INVALID INSTRUCTION (3) [$INSTR]";
-}
-
 read_until_bloc_closes()
 {
 	while read; do
+		echo "$REPLY";
 		# end of bloc
 		if [[ "$REPLY" =~ [}] ]]; then
 			if [ ! "$inbloc" == true ]; then
 				return
 			fi;
 		fi;
-		echo "$REPLY";
 	done;
 }
 
-# parse_code_bloc reads stdin and echoes bloc to stdout
-# allowing a pipeline to read a full instruction or bloc at time;
-parse_code_bloc()
+is_valid_number()
 {
-	local CODE_LINE="$1";
-	local BLOCS="$2"
-	local blocs_list="$3";
+	[ "$1" -eq "$1" ] 2>/dev/null;
+	return $?
+}
+
+# parse_snippet given a source code snippet echoes snippet struct to stdout
+# allowing a pipeline to read a full instruction or bloc at time;
+# it should return a code snippet
+parse_snippet()
+{
+	local PH_VADDR_V="$1"
+	local INSTR_TOTAL_SIZE="$2";
+	local CODE_LINE="$3";
+	local SNIPPETS="$4";
+	local deep="$5";
+	local CODE_LINE_B64=$( echo -n "${CODE_LINE}" | base64 -w0);
+	local previous_snippet=$( echo "${SNIPPETS}" | tail -1 );
+	local previous_instr_offset=$(echo "${previous_snippet}" | cut -d, -f$SNIPPET_COLUMN_INSTR_OFFSET);
+	previous_instr_offset="${previous_instr_offset:=PH_VADDR_V}"
+	local previous_instr_sum=$(echo "${previous_snippet}" | cut -d, -f$SNIPPET_COLUMN_INSTR_LEN);
+	local instr_offset="$(( ${previous_instr_offset} + previous_instr_sum ))";
+	local previous_data_offset=$(echo "${previous_snippet}" | cut -d, -f$SNIPPET_COLUMN_DATA_OFFSET);
+	local previous_data_len=$(echo "${previous_snippet}" | cut -d, -f$SNIPPET_COLUMN_DATA_LEN);
+	previous_data_offset="${previous_data_offset:=$(( PH_VADDR_V + EH_SIZE + PH_SIZE + INSTR_TOTAL_SIZE ))}"
+	local data_offset="$(( previous_data_offset + previous_data_len ))";
 	if [[ "${CODE_LINE}" =~ .*\:\ \{ ]]; then
 		new_bloc="$(
-		debug "parsing the bloc: $CODE_LINE ..."
-		BLOCK_NAME="${CODE_LINE/: {/}";
-		debug CODE_BLOCK_NAME=$BLOCK_NAME
-		bloc_code="$(read_until_bloc_closes | base64 -w0)";
-		debug "bloc code: $bloc_code"
-		recursive_parse="$(
-			echo "$bloc_code" |
-			base64 -d |
-			parse_code_blocs "$BLOCS"
-			)";
-		debug recursive_parse=[$recursive_parse]
-		instructions_size_sum=$(echo "$recursive_parse" |
-			cut -d, -f4 | awk '{s+=$1}END{print s}' );
-		echo "BLOCK,$( echo -n "${bloc_code}" |
-			base64 -w0
-			),$(echo "$recursive_parse" |
-				cut -d, -f3 |
+			SNIPPET_NAME="${CODE_LINE/: {/}";
+			bloc_outer_code="$(echo "${CODE_LINE}"; read_until_bloc_closes)";
+			bloc_outer_code_b64="$(echo -n "${bloc_outer_code}" | base64 -w0 )"
+			bloc_inner_code="$(
+				echo "${bloc_outer_code}" |
+				awk 'NR>2 {print prev}; {prev=$0};' |
 				base64 -w0
-			),$instructions_size_sum,$BLOCK_NAME";
+			)";
+			recursive_parse="$(
+				echo "$bloc_inner_code" |
+				base64 -d |
+				parse_snippets "${PH_VADDR_V}" "${INSTR_TOTAL_SIZE}" "$SNIPPETS" "$deep"
+			)";
+			innerlines="$(echo "$recursive_parse"  |
+				cut -d, -f$SNIPPET_COLUMN_SOURCE_LINES_COUNT |
+				awk '{s+=$1}END{print s}'
+			)"
+			local bloc_source_lines_count=$(( innerlines +2 ))
+			local instr_bytes=$(echo "$recursive_parse"  |
+				cut -d, -f$SNIPPET_COLUMN_INSTR_BYTES
+			)
+			local instr_size_sum="$( echo "${instr_bytes}" |
+				base64 -d | wc -c |
+				awk '{s+=$1}END{print s}'
+			)"
+			local data_bytes="$(echo "$recursive_parse"  |
+				cut -d, -f$SNIPPET_COLUMN_DATA_BYTES )"
+			local data_bytes_sum="$( echo "${data_bytes}" |
+				base64 -d | wc -c |
+				awk '{s+=$1}END{print s}'
+			)";
+			out="$(struct_parsed_snippet \
+				"SNIPPET" \
+				"${SNIPPET_NAME}" \
+				"${instr_offset}" \
+				"${instr_bytes}" \
+				"${instr_size_sum}" \
+				"${data_offset}" \
+				"${data_bytes}" \
+				"${data_bytes_sum}" \
+				"${bloc_outer_code_b64}" \
+				"${bloc_source_lines_count}";
+			)";
+			echo "$out";
 		)";
-		local bloc_name=$(echo "$new_bloc" | cut -d, -f5)
-		debug bloc_name [$bloc_name] ... CODE_
-		if [ "$blocs_list" == "" ]; then
-			blocs_list="$new_bloc";
+		local bloc_name=$(echo "$new_bloc" | cut -d, -f${SNIPPET_COLUMN_SUBNAME})
+		if [ "$SNIPPETS" == "" ]; then
+			SNIPPETS="$( echo "$new_bloc" | base64 -w0)";
 		else
-			blocs_list="$( echo -e "$blocs_list\n$new_bloc")";
-		fi
-		return;
+			SNIPPETS="$( echo -e "$SNIPPETS\n$new_bloc"| base64 -w0)";
+		fi;
+		echo "$new_bloc";
+		return $?;
 	fi;
 	if [[ "${CODE_LINE}" =~ \# ]]; then
-		echo "COMMENT,$(echo "$CODE_LINE" | base64 -w0),,0";
-		return;
+		struct_parsed_snippet \
+			"COMMENT" \
+			"" \
+			"${instr_offset}" \
+			"" \
+			"0" \
+			"${data_offset}" \
+			"" \
+			"0" \
+			"${CODE_LINE_B64}" \
+			"1";
+		return $?;
 	fi;
 	if [[ "${CODE_LINE}" =~ .*write ]]; then
-		echo "INSTRUCTION,$( echo -n "${CODE_LINE}" | base64 -w0),sys_write,$system_call_write_len";
-		return;
+		data_bytes="$( echo -n "${CODE_LINE/write/}" | tr -s " " | cut -d " " -f2 )"
+		data_bytes_len="$( echo -n "${data_bytes}"| base64 -d | wc -c)";
+		data_addr_v="${data_offset}"
+		instr_bytes="$(system_call_write "$data_addr_v" "$data_bytes_len")";
+		struct_parsed_snippet \
+			"INSTRUCTION" \
+			"sys_write" \
+			"${instr_offset}" \
+			"${instr_bytes}" \
+			"${system_call_write_len}" \
+			"${data_offset}" \
+			"${data_bytes}" \
+			"${data_bytes_len}" \
+			"${CODE_LINE_B64}" \
+			"1";
+		return $?;
 	fi;
 	if [[ "${CODE_LINE}" =~ .*exit ]]; then
-		echo "INSTRUCTION,$( echo -n "${CODE_LINE}" | base64 -w0),sys_exit,$system_call_exit_len";
-		return;
+		exit_value="$( echo -n "${CODE_LINE/exit/}" | tr -s " " | cut -d " " -f2 )"
+		instr_bytes="$(system_call_exit ${exit_value})"
+		struct_parsed_snippet \
+			"INSTRUCTION" \
+			"sys_exit" \
+			"${instr_offset}" \
+			"${instr_bytes}" \
+			"${system_call_exit_len}" \
+			"${data_offset}" \
+			"" \
+			"0" \
+			"${CODE_LINE_B64}" \
+			"1";
+		return $?;
 	fi;
 	if [ "$CODE_LINE" == "" ]; then
-		debug EMPTY CODE_LINE
-		echo "EMPTY,,,0";
-		return;
+		struct_parsed_snippet \
+			"EMPTY" \
+			"" \
+			"${instr_offset}" \
+			"" \
+			"0" \
+			"${data_offset}" \
+			"" \
+			"0" \
+			"${CODE_LINE_B64}" \
+			"1";
+		return $?;
 	fi;
-	debug CODE_LINE [$CODE_LINE] blocs[$blocs_list]
-	if echo "$blocs_list" | grep -q "${CODE_LINE}"; then
-		debug "bloc item found for $CODE_LINE"
-		echo "BLOC_CALL,${CODE_LINE_B64},jmp,2"
+	if echo "$SNIPPETS" | grep -q "${CODE_LINE}"; then
+		target_offset="$( echo "$SNIPPETS" | grep "SNIPPET,main" | cut -d, -f${SNIPPET_COLUMN_INSTR_OFFSET} )";
+		jmp_result="$(system_call_jump "${target_offset}" "${instr_offset}" )";
+		debug jmp_result=$jmp_result
+		jmp_bytes="$(echo "${jmp_result}" | cut -d, -f1)";
+		jmp_len="$(echo "${jmp_result}" | cut -d, -f2)";
+		debug off $( printf %x $instr_offset )
+		struct_parsed_snippet \
+			"SNIPPET_CALL" \
+			"jmp" \
+			"${instr_offset}" \
+			"${jmp_bytes}" \
+			"${jmp_len}" \
+			"${data_offset}" \
+			"" \
+			"0" \
+			"${CODE_LINE_B64}" \
+			"1";
+		return $?;
 	fi
-	local CODE_LINE_B64=$( echo -n "${CODE_LINE}" | base64 -w0)
-	echo "INVALID,CODE_LINE_B64,,0";
-	return;
+	struct_parsed_snippet \
+		"INVALID" \
+		"" \
+		"${instr_offset}" \
+		"" \
+		"0" \
+		"${data_offset}" \
+		"" \
+		"0" \
+		"${CODE_LINE_B64}" \
+		"1";
+	return $?;
 }
 
-parse_code_blocs()
+# should return multiple struct_parsed_snippet output (one per line)
+parse_snippets()
 {
-	BLOCS="$1"
-	grep "" | while read CODE_LINE;
+	local PH_VADDR_V="$1";
+	local INSTR_TOTAL_SIZE="$2";
+	local SNIPPETS="$3"; # cummulative to allow cross reference between snippets
+	local deep="${4-0}";
+	local CODE_INPUT=$(cat);
+	let deep++;
+	echo "${CODE_INPUT}" | while read CODE_LINE;
 	do
-		parse_code_bloc "$CODE_LINE" "${BLOCS}" "$BLOC_LIST";
+		RESULT=$(parse_snippet "${PH_VADDR_V}" "${INSTR_TOTAL_SIZE}" "${CODE_LINE}" "${SNIPPETS}" "${deep}");
+		if [ ${#SNIPPETS} -gt 0 ]; then
+			SNIPPETS="$(echo -e "${SNIPPETS}\n$RESULT")"
+		else
+			SNIPPETS="$RESULT";
+		fi
+		# the result have multiple lines read so we need to add them to the source lines var
+		inner_source_lines=$(echo "$RESULT" | cut -d, -f5)
+		# TODO we can deduce the source line number by the snippets
+		echo "$RESULT"
 	done;
 }
 
-# get_first_code_offset should retorn the size of all instructions before the first call that is outside a bloc
+# get_first_code_offset should return the size of all instructions before the first call that is outside a bloc
 get_first_code_offset()
 {
-	local CODE="$(cat)";
-	local FIRST_CODE_OFFSET=$(
-		local sum=0;
-		echo -en "$CODE" | parse_code_blocs | # we don't care here about blocs argument to parse_code_blocs.
-		grep "" |while read bloc;
-		do
-			if [ "$(echo "$bloc" | cut -d, -f1 )" == INSTRUCTION ]; then
-				echo -n "$sum";
-				return;
-			fi;
-			sum=$(( sum + $(echo "$bloc" | cut -d, -f4) ))
-		done;
-	);
-	echo -n "${FIRST_CODE_OFFSET:=0}";
+	local SNIPPETS="$(cat)";
+	local i=0;
+	echo "${SNIPPETS}" |
+	cut -d, -f${SNIPPET_COLUMN_TYPE},${SNIPPET_COLUMN_INSTR_LEN} |
+	while IFS=, read k s;
+	do
+		[ $k == INSTRUCTION ] && break;
+		i=$(( i + s ));
+		echo "$i";
+	done | tail -1;
 }
 
 # detect_instruction_size_from_code should return the bytes used by the instructions code bloc.
 # That includes NONE OF the data section (string table, the elf and program headers
 detect_instruction_size_from_code()
 {
-	local CODE="$(cat)";
-	local BLOCS="";
-	local CODE_SIZE=$(
-		local sum=$(
-			echo -en "$CODE" | parse_code_blocs "BLOCS" |
-			while read bloc;
-			do
-				BLOCS="$BLOCS\n$(echo "$bloc" | cut -d, -f2)"
-				echo "$bloc" | cut -d, -f4;
-				debug CODE ADD SIZE=$(echo "$bloc" | cut -d, -f4;), $bloc
-			done |
-		 awk '{s+=$1}END{print s}');
-		debug "TOTAL INSTRUCTION CODE SIZE SUM=$sum"
-		echo $sum
-	);
-	debug CODE_SIZE=$CODE_SIZE
-	echo -n "${CODE_SIZE:=0}";
-}
-
-# parse_next_code_bloc should returns a CSV with:
-#  code bloc type,
-#  base64 of parsed code bloc,
-#  code bloc instruction size,
-#  code bloc data size,
-#  unparsed code_bloc;
-#  types should be: COMMENT, INSTRUCTION, BLOCK_DEFINITION, BLOCK_CALL
-get_next_code_bloc()
-{
-	bloc=$( read_instruction_bloc )
-	bloc_type=$(echo "$bloc" | instruction_bloc_type )
-	bloc_instruction_b64=$(echo -n "$bloc" | instruction | base64 -w0)
-	code_bloc_data_size=$(echo "$bloc" | blocsize)
-	bloc_source_b64=$(echo -n "$bloc" | base64 -w0)
-	debug "code size=[$sum]";
-	# we can validate that value by getting the hex dump position(from where data section should start) - ph_size(56) - header size (64)
-	echo -n $sum;
-}
-
-append_data()
-{
-	local DATA_SECTION="$1";
-	local TEXT="$2";
-	echo "${DATA_SECTION}${TEXT}";
-}
-
-get_data()
-{
-	local CODE="$1";
-	local data=$(echo -e "$CODE" | while read; do
-		echo -n "$(instruction_data "${REPLY}")";
-	done);
-	# we can validate that value by getting the hex dump position(from where data section should start) - ph_size(56) - header size (64)
-	echo -n "$data";
-}
-
-get_instructions()
-{
-	local DATA_SECTION="";
-	local CODE="$1";
-	local ELF_HEADER_SIZE="$2";
-	local PH_SIZE="$3";
-	local SH_TOTAL_SIZE="$4";
-	local CODE_SIZE="$5";
-
-	#sum=$( echo -e "$CODE" | read_instruction_bloc | instruction_bloc_size | awk '{s+=$1}END{print s}' )
-
-	local RESP=$(echo -e "$CODE" | while read;
-	do
-		debug "PARSING INSTRUCTION [$REPLY]";
-		RET=$(instruction_code \
-			"${DATA_SECTION}" \
-		        "${REPLY}" \
-		        "${PH_VADDR_V}" \
-		        "${ELF_HEADER_SIZE}" \
-		        "${PH_SIZE}" \
-		        "${SH_TOTAL_SIZE}" \
-		        "${CODE_SIZE}";
-	       )
-		DATA_SECTION="${DATA_SECTION}$(echo -n "$RET"| cut -d, -f2)";
-		echo "${RET}";
-	done);
-	echo "$(echo -n "$RESP" |
-		cut -d, -f1 |
-		tr -d '\n'),$(
-			echo -n "$RESP" |
-				cut -d, -f2 |
-				tr -d '\n')" ;
-}
-
-get_elf_code_and_data()
-{
-	local PH_VADDR_V="$1";
-	local ELF_HEADER_SIZE="$2";
-	local PH_SIZE="$3";
-	local SH_TOTAL_SIZE="$4";
-	local CODE_SIZE="$5";
-	local ELF_SHELL_CODE="$(cat)";
-
-	local INSTR="$(get_instructions \
-		"${ELF_SHELL_CODE}" \
-		"${ELF_HEADER_SIZE}" \
-		"${PH_SIZE}" \
-		"${SH_TOTAL_SIZE}" \
-		"${CODE_SIZE}";
-	)";
-	local CODE=$(echo "$INSTR" | cut -d, -f1);
-	local DATA_SECTION=$(echo "$INSTR" | cut -d, -f2);
-	echo -n "${CODE}${DATA_SECTION}";
-	return;
-}
-
-# get_next_data_address return the message addr, dynamic because every new code instruction changes it.
-get_next_data_address()
-{
-	# is the start address of the DATA_SECTION... composed of 00010000 + ELF_HEADER_SIZE + ELF_BODY_SIZE (without DATA_SECTION)"
-	local PH_VADDR="$1";
-	local ELF_HEADER_SIZE="$2";
-	local PH_SIZE="$3";
-	local SH_TOTAL_SIZE="$4";
-	local CODE_SIZE="$5";
-	local DATA_SECTION_SIZE="$6";
-
-	local ELF_BODY_SIZE="$(( PH_SIZE + SH_TOTAL_SIZE + CODE_SIZE ))";
-	local DATA_ADDRESS_BEGIN_AT=$(( PH_VADDR + ELF_HEADER_SIZE + ELF_BODY_SIZE ));
-	local NEXT_DATA_ADDRESS=$(( DATA_ADDRESS_BEGIN_AT + DATA_SECTION_SIZE));
-	echo -n "${NEXT_DATA_ADDRESS}";
+	grep -E "^(SNIPPET|INSTRUCTION|SNIPPET_CALL)," |
+	cut -d, -f${SNIPPET_COLUMN_INSTR_LEN} |
+	awk '{s+=$1}END{print s}'
 }
 
 arg()
 {
-	echo -ne "$@" | base64;
+	echo -ne "$@" | base64 -w0;
 }
 
 write_elf()
 {
-	local ELF_FILE="$1";
-	local ELF_HEADER="";
-	# If we want to keep header size dynamic we can use:
-	# local ELF_HEADER_SIZE="$( echo -ne "$(print_elf_file_header)" | wc -c )";
-	# but for it is a constant of 64 bytes (at least on 64bit arch)
-	local ELF_FILE_HEADER_SIZE=64 # 0x40, 1<<6
+	local ELF_FILE_OUTPUT="$1";
+	# Virtual Memory Offset
 	local PH_VADDR_V="$(( 1 << 16 ))" # 65536, 0x10000
-	local PH_SIZE=$(( 16#38 )) #56
-	local SH_SIZE=64;
 	local SH_COUNT=$(get_section_headers_count "");
-	local SH_TOTAL_SIZE=$(( SH_SIZE * SH_COUNT ));
-	local ELF_SHELL_CODE="$(cat)";
-	local FIRST_CODE_OFFSET="$( echo "$ELF_SHELL_CODE" |
-		get_first_code_offset)";
+	local INPUT_SOURCE_CODE="$(cat)";
+	local parsed_snippets="$(echo "${INPUT_SOURCE_CODE}" | parse_snippets "${PH_VADDR_V}" "${INSTR_TOTAL_SIZE-0}")";
+	local FIRST_CODE_OFFSET="$( echo "$parsed_snippets" | get_first_code_offset)";
 	local ELF_FILE_HEADER="$(
 		print_elf_file_header \
-			"${ELF_FILE_HEADER_SIZE}" \
 			"${PH_VADDR_V}" \
-			"${PH_SIZE}" \
-			"${SH_SIZE}" \
 			"${SH_COUNT}" \
 			"${FIRST_CODE_OFFSET}";
-	)"; # now we have size
-	local ELF_BODY="$(echo "$ELF_SHELL_CODE" |
+	)";
+	# now we have the all information parsed
+	# but the addresses are just offsets
+	# we need to redo the addresses references
+	local ELF_BODY="$(echo "$parsed_snippets" |
 		print_elf_body \
-			"${ELF_FILE_HEADER_SIZE}" \
 			"${PH_VADDR_V}" \
-			"${PH_SIZE}" \
-			"${SH_TOTAL_SIZE}" \
-			"${SH_COUNT}";
-		)";
-	debug ELF_BODY=$ELF_BODY;
+			"${SH_COUNT}" \
+			"${INPUT_SOURCE_CODE}" \
+			"${parsed_snippets}";
+	)";
 	echo -ne "${ELF_FILE_HEADER}${ELF_BODY}" |
-		base64 -d > $ELF_FILE;
+		base64 -d > $ELF_FILE_OUTPUT;
 }
