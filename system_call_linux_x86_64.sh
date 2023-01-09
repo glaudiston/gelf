@@ -15,28 +15,67 @@ MOV_RAX="\xb8"
 MOV_RDX="\xba"
 MOV_RSI="\xbe"
 MOV_RDI="\xbf" #32 bit register (4 bytes)
-JMP="\xe9"
+
+# JMP
+# We have some types of jump
+# Relative jumps (short and near):
+JMP_SHORT="\xeb"; # followed by a 8-bit signed char (-128 to 127) to move relative to BIP.
+JMP_NEAR="\xe9"; # followed by a 32-bit signed integer(-2147483648 to 2147483647).
+# Jump to the full virtual address
+JMP_RAX="\xff";
+JMP_RDI="\xe0";
 
 
 # LEA - Load Effective Address (page 1146)
-SYSCALL="\x0f\x05"
+SYSCALL="$( printEndianValue $(( 16#050f )) $SIZE_16BITS_2BYTES)"
 
+
+# system_call_jump should receive the target address and the current BIP.
+#   It will select the correct approach for each context based on the JMP alternatives
 function system_call_jump()
 {
-	ADDR="$1";
-	echo "${JMP}$(printEndianValue $ADDR $SIZE_32BITS_4BYTES)"
+	local TARGET="$1";
+	local CURRENT="$2";
+	local RELATIVE=$(( TARGET - CURRENT - 4))
+	local CODE="";
+	if [ "$(( (RELATIVE >= -128) && (RELATIVE <= 127) ))" -eq 1 ]; then
+		# jump short
+		debug jump short relative $RELATIVE
+		local RADDR_V="$( echo -en "\x$(printf %x "${RELATIVE}" | sed 's/.*\(..\)$/\1/g')" )";
+		debug RADDR_V=$RADDR_V
+		CODE="${CODE}${JMP_SHORT}${RADDR_V}";
+		echo -ne "$(echo -en "${CODE}" | base64 -w0),2";
+		return;
+	fi;
+	if [ "$(( (RELATIVE >= - ( 1 << 31 )) && (RELATIVE <= ( 1 << 31 ) -1) ))" -eq 1 ]; then
+		# jump near
+		local RADDR_V;
+		if [ $RELATIVE -lt 0 ]; then
+			RADDR_V="$(printEndianValue "$(( RELATIVE + ( 1 << 32 ) ))" $SIZE_32BITS_4BYTES)";
+		else
+			RADDR_V="$(printEndianValue "${RELATIVE}" $SIZE_32BITS_4BYTE)";
+		fi;
+		debug "jump near relative ( $RELATIVE, $RADDR_V )";
+		CODE="${CODE}${JMP_NEAR}${RADDR_V}";
+		echo -ne "$(echo -en "${CODE}" | base64 -w0),5";
+		return;
+	fi;
+
+	error "JMP not implemented for that relative or absolute value: $RELATIVE"
+	echo -ne ",0"
+	return;
 }
 
 function system_call_read()
 {
-	local string="$1";
+	local DATA_ADDR="$(printEndianValue "${1}" "$SIZE_32BITS_4BYTES" )";
 	local len="${2}";
 	local CODE="";
 	SYS_READ=0;
 	STDIN=0;
 	CODE="${CODE}${MOV_RAX}$(printEndianValue $SYS_READ $SIZE_32BITS_4BYTES)";
 	CODE="${CODE}${MOV_RDI}$(printEndianValue $STDIN $SIZE_32BITS_4BYTES)";
-	CODE="${CODE}${MOV_RSI}${string}";
+	CODE="${CODE}${MOV_RSI}${DATA_ADDR}";
 	CODE="${CODE}${MOV_RDX}$(printEndianValue ${len} $SIZE_32BITS_4BYTES)";
 	CODE="${CODE}${SYSCALL}";
 	echo -en "${CODE}" | base64 -w0;
@@ -48,14 +87,14 @@ function system_call_write()
 {
 	local DATA_ADDR_V="$1";
 	local DATA_LEN="$2";
-	local CODE="";
-	local DATA_ADDR="$(printEndianValue $DATA_ADDR_V $SIZE_32BITS_4BYTES)";
+	local DATA_ADDR="$(printEndianValue "$DATA_ADDR_V" "$SIZE_32BITS_4BYTES")";
 	SYS_WRITE=1;
 	STDOUT=1;
+	local CODE="";
 	CODE="${CODE}${MOV_RAX}$(printEndianValue $SYS_WRITE $SIZE_32BITS_4BYTES)";
 	CODE="${CODE}${MOV_RDI}$(printEndianValue $STDOUT $SIZE_32BITS_4BYTES)";
 	CODE="${CODE}${MOV_RSI}${DATA_ADDR}";
-	CODE="${CODE}${MOV_RDX}$(printEndianValue ${DATA_LEN} $SIZE_32BITS_4BYTES)";
+	CODE="${CODE}${MOV_RDX}$(printEndianValue "${DATA_LEN}" $SIZE_32BITS_4BYTES)";
 	CODE="${CODE}${SYSCALL}";
 	echo -en "${CODE}" | base64 -w0;
 }

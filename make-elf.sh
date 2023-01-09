@@ -13,6 +13,7 @@ func: {
 	write $(arg "sample code at func")
 	exit 3
 }
+
 # func main is not really needed
 main: {
 	write $(arg "first line in main")
