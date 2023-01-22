@@ -6,11 +6,37 @@
 # https://en.wikipedia.org/wiki/X86_instruction_listings#Original_8086.2F8088_instructions
 #
 # Intel i64 and IA-32 Architectures
+# Instruction Set Reference: https://www.intel.com/content/www/us/en/content-details/671143/intel-64-and-ia-32-architectures-software-developer-s-manual-volume-2d-instruction-set-reference.html
 # https://software.intel.com/sites/default/files/managed/39/c5/325462-sdm-vol-1-2abcd-3abcd.pdf
 # Linux syscall:
 # https://blog.rchapman.org/posts/Linux_System_Call_Table_for_x86_64/
 # See Table A-2. One-byte Opcode Map on Intel i64 documentation (page 2626)
 # See Table B-13.  General Purpose Instruction Formats and Encodings for Non-64-Bit Modes (Contd.) (page 2658)
+# x64 has:
+# 16 general purpose registers
+#  EAX(32): Accumulator: Used In Arithmetic operations
+#  RAX(64): Accumulator: Used In Arithmetic operations
+#  ECX(32): Counter: Used in loops and shift/rotate instructions
+#  RCX(64): Counter: Used in loops and shift/rotate instructions
+#  EDX(32): Data: Used in arithmetic operations and I/O operations
+#  RDX(64): Data: Used in arithmetic operations and I/O operations
+#  EBX(32): Base: Used as a pointer to data
+#  RBX(64): Base: Used as a pointer to data
+#  ESP(32): Stack Pointer: Points to top of stack
+#  RSP(64): Stack Pointer: Points to top of stack
+#  EBP(32): Stack Base Pointer: Points to base of stack
+#  RBP(64): Stack Base Pointer: Points to base of stack
+#  ESI(32): Points to source in stream operations
+#  RSI(64): Points to source in stream operations
+#  EDI(32): Points to destination in streams operations
+#  RDI(64): Points to destination in streams operations
+# 6 segment registers: points to memory segment addresses ( but uses pagin instead segmentation)
+# 1 flag register: used to support arithmetic functions and debugging.
+#  EFLAG(32)
+#  RFLAG(64)
+# Instruction Pointer: Address of the next instruction to execute.
+#  EIP(32)
+#  RIP(64)
 MOV_RAX="\xb8"
 MOV_RDX="\xba"
 MOV_RSI="\xbe"
@@ -29,42 +55,150 @@ JMP_RDI="\xe0";
 # LEA - Load Effective Address (page 1146)
 SYSCALL="$( printEndianValue $(( 16#050f )) $SIZE_16BITS_2BYTES)"
 
+# Jump short is the fastest and cheaper way to run some code,
+# but it has two limitations:
+#  * Address distance should fit one byte;
+#  * it has no stack control, so be careful
+# returns:
+#  base 64 encoded bytecode and exit code comma separated;
+#  the exit code can be:
+#    -1 error: the target address is outside the range scope ( 1 << 8  == -128 to 127 )
+#    0 nothing to do (the current address is the same as the target address)
+#    2 the jump short instruction byte count 
+function bytecode_jump_short()
+{
+	local TARGET_ADDR="$1";
+	local CURRENT_ADDR="$2";
+	local JUMP_SHORT_SIZE=2;
+	local RELATIVE=$(( TARGET_ADDR - CURRENT_ADDR - JUMP_SHORT_SIZE ))
+	local CODE="";
+	if [ ! "$(( (RELATIVE >= -128) && (RELATIVE <= 127) ))" -eq 1 ]; then
+		error tried to jump to an invalid range: $RELATIVE
+		echo -en ",-1";
+		return;
+	fi;
+	debug jump short relative $RELATIVE
+	local RADDR_V="$(printEndianValue "$RELATIVE" $SIZE_8BITS_1BYTE )";
+	debug jump short to RADDR_V=[$( echo -n "$RADDR_V" | xxd)]
+	CODE="${CODE}${JMP_SHORT}${RADDR_V}";
+	echo -ne "$(echo -en "${CODE}" | base64 -w0),${JUMP_SHORT_SIZE}";
+	return
+}
 
 # system_call_jump should receive the target address and the current BIP.
 #   It will select the correct approach for each context based on the JMP alternatives
 function system_call_jump()
 {
-	local TARGET="$1";
-	local CURRENT="$2";
-	local RELATIVE=$(( TARGET - CURRENT - 4))
-	local CODE="";
-	if [ "$(( (RELATIVE >= -128) && (RELATIVE <= 127) ))" -eq 1 ]; then
-		# jump short
-		debug jump short relative $RELATIVE
-		local RADDR_V="$( echo -en "\x$(printf %x "${RELATIVE}" | sed 's/.*\(..\)$/\1/g')" )";
-		debug RADDR_V=$RADDR_V
-		CODE="${CODE}${JMP_SHORT}${RADDR_V}";
-		echo -ne "$(echo -en "${CODE}" | base64 -w0),2";
-		return;
-	fi;
+	local TARGET_ADDR="$1";
+	local CURRENT_ADDR="$2";
+	debug jumping from $(printf %x $CURRENT_ADDR) to $( printf %x ${TARGET_ADDR})
+	local short_jump_response=$(bytecode_jump_short "$TARGET_ADDR" "${CURRENT_ADDR}")
+	if [ "$(echo "${short_jump_response}" | cut -d, -f2)" -gt -1 ];then
+		debug short jump succeed;
+		#echo -n "${short_jump_response}";
+		#return;
+	fi
+	debug jump, unable to short, trying near: $short_jump_response
+
+	#bytecode_jump_near
+	local JUMP_NEAR_SIZE=5;
+	local RELATIVE=$(( TARGET_ADDR - CURRENT_ADDR - JUMP_NEAR_SIZE ))
 	if [ "$(( (RELATIVE >= - ( 1 << 31 )) && (RELATIVE <= ( 1 << 31 ) -1) ))" -eq 1 ]; then
 		# jump near
 		local RADDR_V;
-		if [ $RELATIVE -lt 0 ]; then
-			RADDR_V="$(printEndianValue "$(( RELATIVE + ( 1 << 32 ) ))" $SIZE_32BITS_4BYTES)";
-		else
-			RADDR_V="$(printEndianValue "${RELATIVE}" $SIZE_32BITS_4BYTE)";
-		fi;
+		RADDR_V="$(printEndianValue "${RELATIVE}" $SIZE_32BITS_4BYTES)";
 		debug "jump near relative ( $RELATIVE, $RADDR_V )";
 		CODE="${CODE}${JMP_NEAR}${RADDR_V}";
-		echo -ne "$(echo -en "${CODE}" | base64 -w0),5";
+		echo -ne "$(echo -en "${CODE}" | base64 -w0),${JUMP_NEAR_SIZE}";
 		return;
 	fi;
 
 	error "JMP not implemented for that relative or absolute value: $RELATIVE"
+	# TODO, another way to move to a location is set the RIP directly
+	# something like
+	# mov eax, $address
+	# mov [rsp], eax
+	# mov eip, [rsp]
 	echo -ne ",0"
 	return;
 }
+
+
+# call procedure
+# Intel Ref: Table B-15.
+#
+# CALL – Call Procedure (in same segment)
+#  direct 1110 1000 : displacement32
+#  register indirect 0100 WR00w 1111 1111 : 11 010 reg
+#  memory indirect 0100 W0XB w 1111 1111 : mod 010 r/m
+# CALL – Call Procedure (in other segment)
+#  indirect 1111 1111 : mod 011 r/m
+#  indirect 0100 10XB 0100 1000 1111 1111 : mod 011 r/m
+function system_call_procedure()
+{
+	local TARGET="$1";
+	local CURRENT="$2";
+	# call procedure (in same segment)
+	# we don't have a short call in x64.
+	# direct has a 32bit displacement to receive the near relative address
+
+	OPCODE_SIZE=1;
+	DISPLACEMENT_BITS=32; # 4 bytes
+	local CALL_NEAR_SIZE=$(( OPCODE_SIZE + DISPLACEMENT_BITS / 8 )); # 5 bytes
+	local RELATIVE=$(( TARGET - CURRENT - CALL_NEAR_SIZE ))
+	if [ "$(( (RELATIVE >= - ( 1 << ( DISPLACEMENT_BITS -1 ) )) && (RELATIVE <= ( 1 << ( DISPLACEMENT_BITS -1) ) -1) ))" -eq 1 ]; then
+		local OPCODE_CALL_NEAR="\xe8"; #direct call with 32bit displacement
+		local NEAR_ADDR_V="$(printEndianValue $RELATIVE $SIZE_32BITS_4BYTES)" # call addr
+		local BYTES="${OPCODE_CALL_NEAR}${NEAR_ADDR_V}"
+		echo $(echo -en "$BYTES" | base64 -w0),5;
+		return
+	fi;
+	error call not implemented for this address size: CURRENT: $CURRENT, TARGET: $TARGET, RELATIVE: $RELATIVE;
+
+
+	FAR_CALL="\x9a";
+	SUB_RSP="\x48\x83\xEC\x28" # sub rsp, 28
+	addr="$(( 16#000100b8 ))"
+	BYTES="\xe8${CALL_ADDR}";
+	echo -en "$BYTES" | base64 -w0;
+}
+
+function system_call_push_stack()
+{
+	# PUSHA/PUSHAD – Push All General Registers 0110 0000
+	
+	local PUSH="\x68";
+	local ADDR_V="$(printEndianValue )"
+	echo "${PUSH}${ADDR_V}"
+}
+
+function bytecode_ret()
+{
+
+	# Types for return
+	# Near return (same segment)
+	local NEAR_RET="\xc3";
+	local NEAR_RET_WITH_VALUE="\xc2"; #pop imm16 bytes from stack
+	# Far return (inter segment)
+	local FAR_RET="\xcb";
+	local FAR_RET_WITH_VALUE="\xca"; #pop imm16 bytes from stack
+	# Inter-privilege-level far return
+
+	# currently just need the near return
+	# 
+
+	#local LEAVE="\xc9"; #seems leave breaks in a segfault
+	# run RET
+	local bytecode_ret_len=1;
+	echo -en $(echo -en "${NEAR_RET}" | base64 -w0 ),${bytecode_ret_len}
+}
+
+function system_call_pop_stack()
+{
+	# POPA/POPAD – Pop All General Registers 0110 0001
+	:
+}
+
 
 function system_call_read()
 {

@@ -344,7 +344,7 @@ parse_snippet()
 	local CODE_LINE_B64=$( echo -n "${CODE_LINE}" | base64 -w0);
 	local previous_snippet=$( echo "${SNIPPETS}" | tail -1 );
 	local previous_instr_offset=$(echo "${previous_snippet}" | cut -d, -f$SNIPPET_COLUMN_INSTR_OFFSET);
-	previous_instr_offset="${previous_instr_offset:=PH_VADDR_V}"
+	previous_instr_offset="${previous_instr_offset:=$((PH_VADDR_V + EH_SIZE + PH_SIZE))}"
 	local previous_instr_sum=$(echo "${previous_snippet}" | cut -d, -f$SNIPPET_COLUMN_INSTR_LEN);
 	local instr_offset="$(( ${previous_instr_offset} + previous_instr_sum ))";
 	local previous_data_offset=$(echo "${previous_snippet}" | cut -d, -f$SNIPPET_COLUMN_DATA_OFFSET);
@@ -439,6 +439,24 @@ parse_snippet()
 			"1";
 		return $?;
 	fi;
+	if [[ "${CODE_LINE}" =~ .*ret ]]; then
+		ret_value="$( echo -n "${CODE_LINE/ret/}" | tr -s " " | cut -d " " -f2 )"
+		bytecode_return="$(bytecode_ret "${ret_value}")"
+		instr_bytes="$(echo $bytecode_return | cut -d, -f1)"
+		instr_size="$(echo $bytecode_return | cut -d, -f2)"
+		struct_parsed_snippet \
+			"INSTRUCTION" \
+			"sys_ret" \
+			"${instr_offset}" \
+			"${instr_bytes}" \
+			"${instr_size}" \
+			"${data_offset}" \
+			"" \
+			"0" \
+			"${CODE_LINE_B64}" \
+			"1";
+		return $?;
+	fi;
 	if [[ "${CODE_LINE}" =~ .*exit ]]; then
 		exit_value="$( echo -n "${CODE_LINE/exit/}" | tr -s " " | cut -d " " -f2 )"
 		instr_bytes="$(system_call_exit ${exit_value})"
@@ -469,13 +487,15 @@ parse_snippet()
 			"1";
 		return $?;
 	fi;
-	if echo "$SNIPPETS" | grep -q "${CODE_LINE}"; then
-		target_offset="$( echo "$SNIPPETS" | grep "SNIPPET,main" | cut -d, -f${SNIPPET_COLUMN_INSTR_OFFSET} )";
+	if [[ "${CODE_LINE}" =~ .*goto ]]; then
+		target="${CODE_LINE/goto }"
+		debug "GOTO [$target]"
+		target_offset="$( echo "$SNIPPETS" | grep "SNIPPET,${target}" | cut -d, -f${SNIPPET_COLUMN_INSTR_OFFSET} )";
 		jmp_result="$(system_call_jump "${target_offset}" "${instr_offset}" )";
 		debug jmp_result=$jmp_result
 		jmp_bytes="$(echo "${jmp_result}" | cut -d, -f1)";
 		jmp_len="$(echo "${jmp_result}" | cut -d, -f2)";
-		debug off $( printf %x $instr_offset )
+		debug goto instruction offset $( printf %x $instr_offset )
 		struct_parsed_snippet \
 			"SNIPPET_CALL" \
 			"jmp" \
@@ -488,7 +508,26 @@ parse_snippet()
 			"${CODE_LINE_B64}" \
 			"1";
 		return $?;
-	fi
+	fi;
+	if echo "$SNIPPETS" | grep -q "${CODE_LINE}"; then
+		target="${CODE_LINE/}"
+		target_offset="$( echo "$SNIPPETS" | grep "SNIPPET,${target}" | cut -d, -f${SNIPPET_COLUMN_INSTR_OFFSET} )";
+		local call_bytecode="$(system_call_procedure "${target_offset}" "${instr_offset}" )";
+		local call_bytes="$(echo "${call_bytecode}" | cut -d, -f1)";
+		local call_len="$(echo "${call_bytecode}" | cut -d, -f2)";
+		struct_parsed_snippet \
+			"SNIPPET_CALL" \
+			"call" \
+			"${instr_offset}" \
+			"${call_bytes}" \
+			"${call_len}" \
+			"${data_offset}" \
+			"" \
+			"0" \
+			"${CODE_LINE_B64}" \
+			"1";
+		return $?;
+	fi;
 	struct_parsed_snippet \
 		"INVALID" \
 		"" \

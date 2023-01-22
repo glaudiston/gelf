@@ -23,8 +23,13 @@ function printLittleEndian(){
 
 function printEndianValue(){
 	integerValue="$1";
-	size_in_bytes="$2";
+	size_in_bytes="${2}";
 	isLittle="1";
+	if [ ${integerValue} -lt 0 ]; then
+		negativeBitValue=$(( 1 << size_in_bytes * 8 - 1 )) 
+		integerValue=$(( negativeBitValue * 2 + integerValue ))
+	fi;
+
 	if [ "$isLittle" == 1 ]; then
 		printLittleEndian "$integerValue" "$size_in_bytes";
 	else

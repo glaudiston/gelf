@@ -41,7 +41,7 @@ struct_parsed_snippet(){
 	fi;
 
 	local snippet_subname="$(eval echo -n \${$SNIPPET_COLUMN_SUBNAME})";
-	if [ "${snippet_type}" == INSTRUCTION ] && ! [[ "${snippet_subname}" =~ (sys_exit|sys_write) ]];then
+	if [ "${snippet_type}" == INSTRUCTION ] && ! [[ "${snippet_subname}" =~ (sys_exit|sys_write|sys_ret) ]];then
 		error "unsupported instruction $snippet_subname";
 		exit 2;
 	fi;
@@ -98,7 +98,7 @@ struct_parsed_snippet(){
 	local snippet_source_lines_count="$(eval echo -n \${$SNIPPET_COLUMN_SOURCE_LINES_COUNT})";
 	if ! is_valid_number "$snippet_source_lines_count" ||
 	   [ "$snippet_source_lines_count" -ne "${expected_source_lines_count}" ] ; then
-	   error "at ${snippet_subname} the source lines count(${snippet_source_lines_count}) does not match the actual source lines: ${snippet_source_code}"
+	   error "at ${snippet_subname} the source lines count(${snippet_source_lines_count}) does not match the actual source lines(${expected_source_lines_count}): ${snippet_source_code}"
 	fi;
 
 	local snippet_result="";

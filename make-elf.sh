@@ -10,18 +10,22 @@
 write_elf elf <<EOF
 # function just for testing purposes
 func: {
-	write $(arg "sample code at func")
-	exit 3
+	write $(arg "first code at func\n")
+	ret
 }
 
 # func main is not really needed
 main: {
-	write $(arg "first line in main")
-	write $(arg "second line on main... x00.shstrtab\x00is from inside a code block")
-	exit 2
+	write $(arg "first line in main\n")
+	func
+	write $(arg "second line on main\n")
+	ret
 }
+write $(arg "Program start.\n")
 write $(arg "Hi $USER\n")
-write $(arg " By Glaudiston")
+write $(arg "before calling main\n")
 main
+write $(arg "after calling main\n")
+	write $(arg " By Glaudiston\n")
 exit 1
 EOF
