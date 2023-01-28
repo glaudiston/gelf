@@ -375,7 +375,7 @@ parse_snippet()
 		data_bytes="$( echo -n "${CODE_LINE/*write/}" | cut -f3 )"
 		data_bytes_len="$( echo -n "${data_bytes}"| base64 -d | wc -c)";
 		data_addr_v="${data_offset}"
-		instr_bytes="$(system_call_write "$data_addr_v" "$data_bytes_len")";
+		instr_bytes="$(system_call_write "${data_output}" "$data_addr_v" "$data_bytes_len")";
 		struct_parsed_snippet \
 			"INSTRUCTION" \
 			"sys_write" \

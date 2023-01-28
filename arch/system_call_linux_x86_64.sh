@@ -219,11 +219,11 @@ system_call_write_len=22
 # given a data address as argument, write it to stdout
 function system_call_write()
 {
-	local DATA_ADDR_V="$1";
-	local DATA_LEN="$2";
+	local STDOUT="$1";
+	local DATA_ADDR_V="$2";
+	local DATA_LEN="$3";
 	local DATA_ADDR="$(printEndianValue "$DATA_ADDR_V" "$SIZE_32BITS_4BYTES")";
 	SYS_WRITE=1;
-	STDOUT=1;
 	local CODE="";
 	CODE="${CODE}${MOV_RAX}$(printEndianValue $SYS_WRITE $SIZE_32BITS_4BYTES)";
 	CODE="${CODE}${MOV_RDI}$(printEndianValue $STDOUT $SIZE_32BITS_4BYTES)";
