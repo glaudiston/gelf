@@ -1,0 +1,20 @@
+#!/bin/gg
+#
+# This file has a sample code to show language features and use
+#
+func:	{
+	write	Zmlyc3QgY29kZSBhdCBmdW5jCg==
+	ret
+}
+
+# func main is not really needed
+main:	{
+	write	Zmlyc3QgbGluZSBpbiBtYWluCg==
+	func
+	write	c2Vjb25kIGxpbmUgYXQgbWFpbgo=
+	ret
+}
+write	UHJvZ3JhbSBzdGFydC5cbgo=
+main
+write	QnkgR2xhdWRpc3Rvbi4K
+exit	1

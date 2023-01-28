@@ -1,0 +1,16 @@
+# this is the first attempt to create a useful code with my language
+# I expect to write a very readable code
+# at future i pretend to rewrite the endianness.sh and use this code as a builtin
+# x64 has the MOVBE to convert from little-endian to big-endian
+#
+# The current elf header has the current endianness, so we just need to read the correct byte at runtime
+printCurrentEndianness:	{
+	if littleEndian
+		write "this system is little endian"
+	else
+		write "this system is big endian"
+
+	write "system is {endianess}"
+}
+printCurrentEndianness
+exit	1

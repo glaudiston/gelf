@@ -1,0 +1,30 @@
+#!/bin/gg
+#
+# The first line shebang #!/bin/gg is optional, but when exists allows the file to work like a script
+# to execute the host should have the /bin/gg binary installed, and set the proper execution permittion 
+# to the file scripit; in practice, it will build in memory and execute the compiled file.
+# That first line is shebang, a linux kernel feature.
+#
+# comments starts with pound key(#) symbol it should be at the first line char (except for tab)
+#
+# each argument is tab separated.
+# functions are defined with the function name suffixed with colon(:) synbol.
+# function names can have spaces.
+# data should be in base64 encoding
+# function just for testing purposes
+# return 0x0a is mandatory to separated statements
+# indentation is optional but auto enforced on save or build pre-step
+# indentation should use tab only.
+# if an argument base64 is invalid, it will be checked as text input
+# any text can have enclosed with {} can have a argument to replace the text with variables 
+# sample:
+# sampleVariable:	sample text
+# write	the sample variable has sampleVariable
+# output: the sample variable has sampleVariable
+# but:
+# write	{the sample variable has sampleVariable	sampleVariable}
+# output: the sample variable has sample text
+# same applies to base64 data inputs
+#
+# The source file can have any extension. we recommend to be '.gg' suffix. not mandatody
+#

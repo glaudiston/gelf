@@ -84,21 +84,17 @@ struct_parsed_snippet(){
 	# SNIPPET_COLUMN_SOURCE_LINES_COUNT
 	expected_source_lines_count=$((
 		$(
-			echo "$snippet_source_code" |
-			base64 -d |
-			grep -c ""
-		) + $(
-			if [ "$snippet_type" == "EMPTY" ]; then
-				echo 1;
-			else
-				echo 0;
-			fi;
+			{
+				[ "$snippet_source_code" == "" ] && echo ||
+				echo "$snippet_source_code" | base64 -d ;
+			} |
+			grep -c "" || error "fail at SNIPPET_COLUMN_SOURCE_LINES_COUNT for [$snippet_source_code]"
 		)
 	));
 	local snippet_source_lines_count="$(eval echo -n \${$SNIPPET_COLUMN_SOURCE_LINES_COUNT})";
 	if ! is_valid_number "$snippet_source_lines_count" ||
 	   [ "$snippet_source_lines_count" -ne "${expected_source_lines_count}" ] ; then
-	   error "at ${snippet_subname} the source lines count(${snippet_source_lines_count}) does not match the actual source lines(${expected_source_lines_count}): ${snippet_source_code}"
+	   error "at ${snippet_subname} the source lines count(${snippet_source_lines_count}) does not match the actual source lines(${expected_source_lines_count}): [$snippet_type][${snippet_source_code}]"
 	fi;
 
 	local snippet_result="";
@@ -120,3 +116,10 @@ struct_parsed_snippet(){
 
 	echo "${snippet_result}";
 }
+
+is_valid_number()
+{
+	[ "$1" -eq "$1" ] 2>/dev/null;
+	return $?
+}
+

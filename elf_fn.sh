@@ -14,7 +14,7 @@ ARCH=$(uname -m)
 . types.sh
 . logger.sh
 . endianness.sh
-. system_call_linux_$ARCH.sh
+. ./arch/system_call_linux_$ARCH.sh
 . snippet_parser.sh
 
 get_program_headers_count()
@@ -260,75 +260,17 @@ print_elf_body()
 	echo -en "${SECTION_ELF_DATA}";
 }
 
-# return the instruction size in bytes, do not consider the data size.
-instruction_bloc_size() {
-	local INSTR="";
-	grep "" | while read INSTR; do {
-		if [ "${INSTR}" == "" ];then
-			echo 0;
-			continue;
-		fi;
-		if [[ "${INSTR}" =~ ^[#] ]];then
-			echo 0;
-			continue;
-		fi;
-		if [[ "${INSTR}" =~ ^[\	\ ]*write\  ]]; then
-			echo $system_call_write_len;
-			continue;
-		fi;
-		if [ "${INSTR:0:5}" == "exit " ]; then
-			echo $system_call_exit_len;
-			continue;
-		fi;
-		# TODO if a valid function call
-		# return function call size
-		if [ "${INSTR:0:4}" == "main" ]; then
-			echo 0;
-			continue;
-		fi
-		echo 0;
-		error "[instruction_size]INVALID INSTRUCTION [$INSTR]";
-	};
-	done;
-}
-
-instruction_data()
-{
-	local INSTR="$1"
-	if [[ "${INSTR}" =~ ^[#] ]];then
-		return;
-	fi;
-	if [ "${INSTR}" == "$(echo)" ];then
-		return;
-	fi;
-	if [[ "${INSTR}" =~ ^[\	\ ]*write\  ]]; then
-		V="$(tr " " "\n" <<<"$INSTR"| tail -1 )"
-		echo -n "${V}";
-		return;
-	fi;
-	if [[ "${INSTR:0:5}" =~ ^[\	\ ]*exit ]]; then
-		return;
-	fi;
-	error "INVALID INSTRUCTION (2) [$INSTR]"
-}
-
 read_until_bloc_closes()
 {
 	while read; do
 		echo "$REPLY";
 		# end of bloc
-		if [[ "$REPLY" =~ [}] ]]; then
+		if [[ "$(echo -n "$REPLY" | xxd --ps )" =~ ^(09)*7d$ ]]; then # ignore tabs and has closed brackets("}") at end of line
 			if [ ! "$inbloc" == true ]; then
 				return
 			fi;
 		fi;
 	done;
-}
-
-is_valid_number()
-{
-	[ "$1" -eq "$1" ] 2>/dev/null;
-	return $?
 }
 
 # parse_snippet given a source code snippet echoes snippet struct to stdout
@@ -341,6 +283,8 @@ parse_snippet()
 	local CODE_LINE="$3";
 	local SNIPPETS="$4";
 	local deep="$5";
+
+	local CODE_LINE_XXD="$( echo -n "${CODE_LINE}" | xxd --ps)";
 	local CODE_LINE_B64=$( echo -n "${CODE_LINE}" | base64 -w0);
 	local previous_snippet=$( echo "${SNIPPETS}" | tail -1 );
 	local previous_instr_offset=$(echo "${previous_snippet}" | cut -d, -f$SNIPPET_COLUMN_INSTR_OFFSET);
@@ -351,9 +295,10 @@ parse_snippet()
 	local previous_data_len=$(echo "${previous_snippet}" | cut -d, -f$SNIPPET_COLUMN_DATA_LEN);
 	previous_data_offset="${previous_data_offset:=$(( PH_VADDR_V + EH_SIZE + PH_SIZE + INSTR_TOTAL_SIZE ))}"
 	local data_offset="$(( previous_data_offset + previous_data_len ))";
-	if [[ "${CODE_LINE}" =~ .*\:\ \{ ]]; then
+	if [[ "${CODE_LINE_XXD}" =~ .*3a097b$ ]]; then # check if ends with ":\t{"
+	{
 		new_bloc="$(
-			SNIPPET_NAME="${CODE_LINE/: {/}";
+			SNIPPET_NAME="$(echo "$CODE_LINE" |cut -d: -f1 | tr -d '\t')";
 			bloc_outer_code="$(echo "${CODE_LINE}"; read_until_bloc_closes)";
 			bloc_outer_code_b64="$(echo -n "${bloc_outer_code}" | base64 -w0 )"
 			bloc_inner_code="$(
@@ -406,8 +351,10 @@ parse_snippet()
 		fi;
 		echo "$new_bloc";
 		return $?;
+	}
 	fi;
-	if [[ "${CODE_LINE}" =~ \# ]]; then
+	if [[ "${CODE_LINE_XXD}" =~ ^(09)*23 ]]; then # ignoring tabs, starts with pound symbol(#)
+	{
 		struct_parsed_snippet \
 			"COMMENT" \
 			"" \
@@ -420,9 +367,11 @@ parse_snippet()
 			"${CODE_LINE_B64}" \
 			"1";
 		return $?;
+	}
 	fi;
-	if [[ "${CODE_LINE}" =~ .*write ]]; then
-		data_bytes="$( echo -n "${CODE_LINE/write/}" | tr -s " " | cut -d " " -f2 )"
+	if [[ "${CODE_LINE_XXD}" =~ ^(09)*777269746509 ]]; then # write
+	{
+		data_bytes="$( echo -n "${CODE_LINE/*write/}" | cut -f2 )"
 		data_bytes_len="$( echo -n "${data_bytes}"| base64 -d | wc -c)";
 		data_addr_v="${data_offset}"
 		instr_bytes="$(system_call_write "$data_addr_v" "$data_bytes_len")";
@@ -438,8 +387,9 @@ parse_snippet()
 			"${CODE_LINE_B64}" \
 			"1";
 		return $?;
+	}
 	fi;
-	if [[ "${CODE_LINE}" =~ .*ret ]]; then
+	if [[ "${CODE_LINE_XXD}" =~ ^(09)*726574 ]]; then # ret
 		ret_value="$( echo -n "${CODE_LINE/ret/}" | tr -s " " | cut -d " " -f2 )"
 		bytecode_return="$(bytecode_ret "${ret_value}")"
 		instr_bytes="$(echo $bytecode_return | cut -d, -f1)"
@@ -457,7 +407,7 @@ parse_snippet()
 			"1";
 		return $?;
 	fi;
-	if [[ "${CODE_LINE}" =~ .*exit ]]; then
+	if [[ "${CODE_LINE_XXD}" =~ ^(09)*65786974 ]]; then # exit
 		exit_value="$( echo -n "${CODE_LINE/exit/}" | tr -s " " | cut -d " " -f2 )"
 		instr_bytes="$(system_call_exit ${exit_value})"
 		struct_parsed_snippet \
@@ -487,7 +437,7 @@ parse_snippet()
 			"1";
 		return $?;
 	fi;
-	if [[ "${CODE_LINE}" =~ .*goto ]]; then
+	if [[ "${CODE_LINE_XXD}" =~ ^(09)*676f746f09 ]]; then # goto
 		target="${CODE_LINE/goto }"
 		debug "GOTO [$target]"
 		target_offset="$( echo "$SNIPPETS" | grep "SNIPPET,${target}" | cut -d, -f${SNIPPET_COLUMN_INSTR_OFFSET} )";
@@ -528,6 +478,7 @@ parse_snippet()
 			"1";
 		return $?;
 	fi;
+	error "invalid instr: [$CODE_LINE_B64]"
 	struct_parsed_snippet \
 		"INVALID" \
 		"" \
@@ -575,7 +526,7 @@ get_first_code_offset()
 	cut -d, -f${SNIPPET_COLUMN_TYPE},${SNIPPET_COLUMN_INSTR_LEN} |
 	while IFS=, read k s;
 	do
-		[ $k == INSTRUCTION ] && break;
+		[ $k == INSTRUCTION -o $k == SNIPPET_CALL ] && break;
 		i=$(( i + s ));
 		echo "$i";
 	done | tail -1;
@@ -592,7 +543,7 @@ detect_instruction_size_from_code()
 
 arg()
 {
-	echo -ne "$@" | base64 -w0;
+	echo -ne "$@" | base64 -w0 || error arg fail [$0];
 }
 
 write_elf()
