@@ -371,7 +371,8 @@ parse_snippet()
 	fi;
 	if [[ "${CODE_LINE_XXD}" =~ ^(09)*777269746509 ]]; then # write
 	{
-		data_bytes="$( echo -n "${CODE_LINE/*write/}" | cut -f2 )"
+		data_output="$( echo -n "${CODE_LINE/*write/}" | cut -f2 )"
+		data_bytes="$( echo -n "${CODE_LINE/*write/}" | cut -f3 )"
 		data_bytes_len="$( echo -n "${data_bytes}"| base64 -d | wc -c)";
 		data_addr_v="${data_offset}"
 		instr_bytes="$(system_call_write "$data_addr_v" "$data_bytes_len")";
