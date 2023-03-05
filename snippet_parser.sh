@@ -21,6 +21,8 @@
 #    The base 64 of the source lines to generate this snippet
 # 8 snippet_source_lines_count
 #    The number of lines envolved from the source bloc code.
+# 9 usage counts
+#    Useful to tip remove unused code for function and symbol table items(variables, constants).
 #
 # useful constants:
 SNIPPET_COLUMN_TYPE=1;
@@ -33,23 +35,29 @@ SNIPPET_COLUMN_DATA_BYTES=7;
 SNIPPET_COLUMN_DATA_LEN=8;
 SNIPPET_COLUMN_SOURCE_CODE=9;
 SNIPPET_COLUMN_SOURCE_LINES_COUNT=10;
+SNIPPET_COLUMN_USAGE_COUNT=11;
+
+SNIPPET_PARSER_ERROR_INVALID_SNIPPET_TYPE=1
+SNIPPET_PARSER_ERROR_INVALID_SNIPPET_UNSUPPORTED_UNSTRUCTION=2
+SNIPPET_PARSER_ERROR_INVALID_SNIPPET_UNSTRUCTION_OFFSET_INVALID=3
+
 struct_parsed_snippet(){
 	local snippet_type="$(eval echo -n \${$SNIPPET_COLUMN_TYPE})";
-	if ! [[ ${snippet_type} =~ (EMPTY|INVALID|COMMENT|INSTRUCTION|SNIPPET|SNIPPET_CALL) ]]; then
+	if ! [[ ${snippet_type} =~ (EMPTY|INVALID|COMMENT|INSTRUCTION|SNIPPET|SNIPPET_CALL|SYMBOL_TABLE) ]]; then
 		error "Invalid snippet type: $@";
-		exit 1;
+		exit $SNIPPET_PARSER_ERROR_INVALID_SNIPPET_TYPE;
 	fi;
 
 	local snippet_subname="$(eval echo -n \${$SNIPPET_COLUMN_SUBNAME})";
 	if [ "${snippet_type}" == INSTRUCTION ] && ! [[ "${snippet_subname}" =~ (sys_exit|sys_write|sys_ret) ]];then
 		error "unsupported instruction $snippet_subname";
-		exit 2;
+		exit $SNIPPET_PARSER_ERROR_INVALID_SNIPPET_UNSUPPORTED_UNSTRUCTION;
 	fi;
 
 	local snippet_instruction_offset="$(eval echo -n \${$SNIPPET_COLUMN_INSTR_OFFSET})";
 	if ! is_valid_number "$snippet_instruction_offset"; then
 		error "snippet_instruction_offset is not a valid number";
-		exit 3;
+		exit $SNIPPET_PARSER_ERROR_INVALID_SNIPPET_UNSTRUCTION_OFFSET_INVALID;
 	fi;
 
 	local snippet_instruction_bytes="$(eval echo -n \"\${$SNIPPET_COLUMN_INSTR_BYTES}\" | tr -d '\n')";
@@ -97,6 +105,8 @@ struct_parsed_snippet(){
 	   error "at ${snippet_subname} the source lines count(${snippet_source_lines_count}) does not match the actual source lines(${expected_source_lines_count}): [$snippet_type][${snippet_source_code}]"
 	fi;
 
+	local snippet_usages=0
+
 	local snippet_result="";
 	snippet_result="${snippet_result}${snippet_type}";
 	snippet_result="${snippet_result},${snippet_subname}";
@@ -108,18 +118,14 @@ struct_parsed_snippet(){
 	snippet_result="${snippet_result},${snippet_data_len}";
 	snippet_result="${snippet_result},${snippet_source_code}"
 	snippet_result="${snippet_result},${snippet_source_lines_count}"
+	snippet_result="${snippet_result},${snippet_usages}";
+
 	local snippet_output_lines=$(echo "${snippet_result}" | wc -l)
 	if ! [ "${snippet_output_lines}" -eq 1 ]; then
 		error "snippet result was not 1 output line: [$snippet_result], output lines ${snippet_output_lines}";
 		exit 7;
-	fi
+	fi;
 
 	echo "${snippet_result}";
-}
-
-is_valid_number()
-{
-	[ "$1" -eq "$1" ] 2>/dev/null;
-	return $?
 }
 

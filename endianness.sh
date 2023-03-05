@@ -22,6 +22,11 @@ function printLittleEndian(){
 }
 
 function printEndianValue(){
+	if ! is_valid_number "$1"; then 
+		error "INVALID NUMBER $1"
+		backtrace
+		return
+	fi
 	integerValue="$1";
 	size_in_bytes="${2}";
 	isLittle="1";

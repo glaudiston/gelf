@@ -12,6 +12,7 @@ ARCH=$(uname -m)
 # include bloc
 . elf_constants.sh
 . types.sh
+. utils.sh
 . logger.sh
 . endianness.sh
 . ./arch/system_call_linux_$ARCH.sh
@@ -295,62 +296,101 @@ parse_snippet()
 	local previous_data_len=$(echo "${previous_snippet}" | cut -d, -f$SNIPPET_COLUMN_DATA_LEN);
 	previous_data_offset="${previous_data_offset:=$(( PH_VADDR_V + EH_SIZE + PH_SIZE + INSTR_TOTAL_SIZE ))}"
 	local data_offset="$(( previous_data_offset + previous_data_len ))";
-	if [[ "${CODE_LINE_XXD}" =~ .*3a097b$ ]]; then # check if ends with ":\t{"
+	if [[ "${CODE_LINE_XXD}" =~ .*3a09.*$ ]]; then # check if has ":\t..."
 	{
-		new_bloc="$(
-			SNIPPET_NAME="$(echo "$CODE_LINE" |cut -d: -f1 | tr -d '\t')";
-			bloc_outer_code="$(echo "${CODE_LINE}"; read_until_bloc_closes)";
-			bloc_outer_code_b64="$(echo -n "${bloc_outer_code}" | base64 -w0 )"
-			bloc_inner_code="$(
-				echo "${bloc_outer_code}" |
-				awk 'NR>2 {print prev}; {prev=$0};' |
-				base64 -w0
+		if [[ "${CODE_LINE_XXD}" =~ .*3a097b$ ]]; then # check if ends with ":\t{" ... so it's a code block function
+		{
+			new_bloc="$(
+				SNIPPET_NAME="$(echo "$CODE_LINE" |cut -d: -f1 | tr -d '\t')";
+				bloc_outer_code="$(echo "${CODE_LINE}"; read_until_bloc_closes)";
+				bloc_outer_code_b64="$(echo -n "${bloc_outer_code}" | base64 -w0 )"
+				bloc_inner_code="$(
+					echo "${bloc_outer_code}" |
+					awk 'NR>2 {print prev}; {prev=$0};' |
+					base64 -w0
+				)";
+				recursive_parse="$(
+					echo "$bloc_inner_code" |
+					base64 -d |
+					parse_snippets "${PH_VADDR_V}" "${INSTR_TOTAL_SIZE}" "$SNIPPETS" "$deep"
+				)";
+				innerlines="$(echo "$recursive_parse"  |
+					cut -d, -f$SNIPPET_COLUMN_SOURCE_LINES_COUNT |
+					awk '{s+=$1}END{print s}'
+				)"
+				local bloc_source_lines_count=$(( innerlines +2 ))
+				local instr_bytes=$(echo "$recursive_parse"  |
+					cut -d, -f$SNIPPET_COLUMN_INSTR_BYTES
+				)
+				local instr_size_sum="$( echo "${instr_bytes}" |
+					base64 -d | wc -c |
+					awk '{s+=$1}END{print s}'
+				)"
+				local data_bytes="$(echo "$recursive_parse"  |
+					cut -d, -f$SNIPPET_COLUMN_DATA_BYTES )"
+				local data_bytes_sum="$( echo "${data_bytes}" |
+					base64 -d | wc -c |
+					awk '{s+=$1}END{print s}'
+				)";
+				out="$(struct_parsed_snippet \
+					"SNIPPET" \
+					"${SNIPPET_NAME}" \
+					"${instr_offset}" \
+					"${instr_bytes}" \
+					"${instr_size_sum}" \
+					"${data_offset}" \
+					"${data_bytes}" \
+					"${data_bytes_sum}" \
+					"${bloc_outer_code_b64}" \
+					"${bloc_source_lines_count}";
+				)";
+				echo "$out";
 			)";
-			recursive_parse="$(
-				echo "$bloc_inner_code" |
-				base64 -d |
-				parse_snippets "${PH_VADDR_V}" "${INSTR_TOTAL_SIZE}" "$SNIPPETS" "$deep"
-			)";
-			innerlines="$(echo "$recursive_parse"  |
-				cut -d, -f$SNIPPET_COLUMN_SOURCE_LINES_COUNT |
-				awk '{s+=$1}END{print s}'
-			)"
-			local bloc_source_lines_count=$(( innerlines +2 ))
-			local instr_bytes=$(echo "$recursive_parse"  |
-				cut -d, -f$SNIPPET_COLUMN_INSTR_BYTES
-			)
-			local instr_size_sum="$( echo "${instr_bytes}" |
-				base64 -d | wc -c |
-				awk '{s+=$1}END{print s}'
-			)"
-			local data_bytes="$(echo "$recursive_parse"  |
-				cut -d, -f$SNIPPET_COLUMN_DATA_BYTES )"
-			local data_bytes_sum="$( echo "${data_bytes}" |
-				base64 -d | wc -c |
-				awk '{s+=$1}END{print s}'
-			)";
-			out="$(struct_parsed_snippet \
-				"SNIPPET" \
-				"${SNIPPET_NAME}" \
+			local bloc_name=$(echo "$new_bloc" | cut -d, -f${SNIPPET_COLUMN_SUBNAME})
+			if [ "$SNIPPETS" == "" ]; then
+				SNIPPETS="$( echo "$new_bloc" | base64 -w0)";
+			else
+				SNIPPETS="$( echo -e "$SNIPPETS\n$new_bloc"| base64 -w0)";
+			fi;
+			echo "$new_bloc";
+			return $?;
+		};
+		else # maybe it is just a variable or constant
+		{
+			# All variables, constants, macros are symbols and should be managed by a symbol table
+			# It should have name type, scope and memory address
+			# The compile should updated that items in the first code read
+			#
+			# TODO implement scoped variables and constants
+			# TODO implement global macro values, replacing code with values
+			#
+			# Constants should replace the code value before process the code.
+			# Constants should not keep in memory, instead should replace the vlaue hardcoded in bytecode.
+			# Variables should recover the target address and size at runtime.
+			# A variable and constant are defined at the same way. The compiler should consider everything as constant.
+			# Once the code changes the variable value, it will be converted to variable.
+			# So if a variable is never changed, it will be always a constant hardcoded at the bytecode;
+			symbol_name="$( echo -n "${CODE_LINE/:*/}" )"
+			symbol_value="$( echo -n "${CODE_LINE/*:	/}" )"
+			data_addr_v="${data_offset}"
+			instr_bytes="";
+			instr_len=0;
+			data_bytes="$(echo -n "${symbol_value}" | base64 -w0)";
+			data_len="${#symbol_value}";
+			struct_parsed_snippet \
+				"SYMBOL_TABLE" \
+				"${symbol_name}" \
 				"${instr_offset}" \
 				"${instr_bytes}" \
-				"${instr_size_sum}" \
+				"${instr_len}" \
 				"${data_offset}" \
 				"${data_bytes}" \
-				"${data_bytes_sum}" \
-				"${bloc_outer_code_b64}" \
-				"${bloc_source_lines_count}";
-			)";
-			echo "$out";
-		)";
-		local bloc_name=$(echo "$new_bloc" | cut -d, -f${SNIPPET_COLUMN_SUBNAME})
-		if [ "$SNIPPETS" == "" ]; then
-			SNIPPETS="$( echo "$new_bloc" | base64 -w0)";
-		else
-			SNIPPETS="$( echo -e "$SNIPPETS\n$new_bloc"| base64 -w0)";
+				"${data_len}" \
+				"${CODE_LINE_B64}" \
+				"1";
+			return $?;
+		}
 		fi;
-		echo "$new_bloc";
-		return $?;
 	}
 	fi;
 	if [[ "${CODE_LINE_XXD}" =~ ^(09)*23 ]]; then # ignoring tabs, starts with pound symbol(#)
@@ -372,6 +412,19 @@ parse_snippet()
 	if [[ "${CODE_LINE_XXD}" =~ ^(09)*777269746509 ]]; then # write
 	{
 		data_output="$( echo -n "${CODE_LINE/*write/}" | cut -f2 )"
+		if ! is_valid_number "$data_output"; then {
+			# resolve variable
+			fd_value="$( echo "$SNIPPETS" | grep "SYMBOL_TABLE,${data_output}" | cut -d, -f${SNIPPET_COLUMN_DATA_BYTES} | base64 -d )";
+			if [ "${fd_value}" == "" ];then {
+				error "Invalid code [${CODE_LINE}]. To output file descriptor number, Expected a integer or a valid variable/constant. But got [$data_output]"
+				backtrace
+				return 1
+			};
+			fi
+			data_output=$fd_value
+			# TODO, increment usage count in SNIPPETS SYMBOL_TABLE
+		};
+		fi
 		data_bytes="$( echo -n "${CODE_LINE/*write/}" | cut -f3 )"
 		data_bytes_len="$( echo -n "${data_bytes}"| base64 -d | wc -c)";
 		data_addr_v="${data_offset}"
