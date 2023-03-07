@@ -274,6 +274,35 @@ read_until_bloc_closes()
 	done;
 }
 
+# parse_code_line_elements returns a base array with all given elements
+parse_code_line_elements()
+{
+	local code_line="$1";
+	IFS=$'\t' read -ra elements <<< "${code_line}"
+	echo "${elements[@]}"
+}
+
+get_symbol_value()
+{
+	local data_output="$1"
+	local SNIPPETS=$2;
+	if ! is_valid_number "$data_output"; then {
+		# resolve variable
+		local symbol_value="$( echo "$SNIPPETS" | grep "SYMBOL_TABLE,${data_output}" | cut -d, -f${SNIPPET_COLUMN_DATA_BYTES} | base64 -d )";
+		if [ "${symbol_value}" == "" ];then {
+			error "Expected a integer or a valid variable/constant. But got [$data_output]"
+			backtrace
+			return 1
+		};
+		fi
+		echo "${symbol_value}"
+		return
+		# TODO, increment usage count in SNIPPETS SYMBOL_TABLE
+	};
+	fi
+	echo "$data_output"
+}
+
 # parse_snippet given a source code snippet echoes snippet struct to stdout
 # allowing a pipeline to read a full instruction or bloc at time;
 # it should return a code snippet
@@ -285,6 +314,7 @@ parse_snippet()
 	local SNIPPETS="$4";
 	local deep="$5";
 
+	local code_line_elements=($(parse_code_line_elements "${CODE_LINE}"))
 	local CODE_LINE_XXD="$( echo -n "${CODE_LINE}" | xxd --ps)";
 	local CODE_LINE_B64=$( echo -n "${CODE_LINE}" | base64 -w0);
 	local previous_snippet=$( echo "${SNIPPETS}" | tail -1 );
@@ -409,23 +439,13 @@ parse_snippet()
 		return $?;
 	}
 	fi;
-	if [[ "${CODE_LINE_XXD}" =~ ^(09)*777269746509 ]]; then # write
+	if [[ "${code_line_elements[0]}" == write ]]; then
 	{
-		data_output="$( echo -n "${CODE_LINE/*write/}" | cut -f2 )"
-		if ! is_valid_number "$data_output"; then {
-			# resolve variable
-			fd_value="$( echo "$SNIPPETS" | grep "SYMBOL_TABLE,${data_output}" | cut -d, -f${SNIPPET_COLUMN_DATA_BYTES} | base64 -d )";
-			if [ "${fd_value}" == "" ];then {
-				error "Invalid code [${CODE_LINE}]. To output file descriptor number, Expected a integer or a valid variable/constant. But got [$data_output]"
-				backtrace
-				return 1
-			};
-			fi
-			data_output=$fd_value
-			# TODO, increment usage count in SNIPPETS SYMBOL_TABLE
-		};
-		fi
-		data_bytes="$( echo -n "${CODE_LINE/*write/}" | cut -f3 )"
+		local WRITE_OUTPUT_ELEM=1;
+		local WRITE_LEN_ELEM=2;
+		local out=${code_line_elements[$WRITE_OUTPUT_ELEM]};
+		data_output=$(get_symbol_value "$out" "${SNIPPETS}");
+		data_bytes="${code_line_elements[$WRITE_LEN_ELEM]}";
 		data_bytes_len="$( echo -n "${data_bytes}"| base64 -d | wc -c)";
 		data_addr_v="${data_offset}"
 		instr_bytes="$(system_call_write "${data_output}" "$data_addr_v" "$data_bytes_len")";
@@ -461,8 +481,8 @@ parse_snippet()
 			"1";
 		return $?;
 	fi;
-	if [[ "${CODE_LINE_XXD}" =~ ^(09)*65786974 ]]; then # exit
-		exit_value="$( echo -n "${CODE_LINE/exit/}" | tr -s " " | cut -d " " -f2 )"
+	if [[ "${code_line_elements[0]}" == exit ]]; then
+		local exit_value=$(get_symbol_value "${code_line_elements[1]}" "${SNIPPETS}");
 		instr_bytes="$(system_call_exit ${exit_value})"
 		struct_parsed_snippet \
 			"INSTRUCTION" \

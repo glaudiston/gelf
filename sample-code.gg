@@ -5,8 +5,12 @@
 # Comments starts with the # symbol, like bash
 # Shebang can be used to run source code as script
 #
+
+# To define constants:
 stdout:	1
 stderr:	2
+
+# define functions
 func:	{
 	write	stdout	Zmlyc3QgY29kZSBhdCBmdW5jCg==
 	ret
@@ -19,7 +23,9 @@ main:	{
 	write	stdout	c2Vjb25kIGxpbmUgYXQgbWFpbgo=
 	ret
 }
+
 write	stderr	UHJvZ3JhbSBzdGFydC5cbgo=
 main
 write	stdout	QnkgR2xhdWRpc3Rvbi4K
-exit	0
+ok:	0
+exit	ok
