@@ -7,4 +7,6 @@
 
 . elf_fn.sh
 
-write_elf sample-elf <sample-code.gg
+source_file="$1"
+target_file="$2"
+write_elf ${target_file:=sample-elf} <${source_file:=sample-code.gg}
