@@ -9,6 +9,7 @@ backtrace(){
 
 function debug()
 {
+	local IFS='	'
 	echo "[DEBUG] $@" >&2
 }
 
