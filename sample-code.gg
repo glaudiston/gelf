@@ -6,26 +6,62 @@
 # Shebang can be used to run source code as script
 #
 
-# To define constants:
+# source code is expected to use a UTF-8
+#
+# The input.
+# We have a special symbol called "input". It defaults to UTF-8 symbol table.(https://datatracker.ietf.org/doc/html/rfc3629)
+#
+#
+# sym2: 12
+# 3: 123
+# sym-64: ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/=
+# asc-256:
+#
+# we have some special id.
+#
+# input is a special id that tells the language how to represent a input when reading from the source code.
+# each input argument needs to be represented by a symbol.
+#
+# initially all bytes other than 0x09 and 0x0a can be used. But that is not good because editors can not see most bytes.
+#
+#input:	binary
+#binary:	01
+#integer:	0123456789
+#hex:	0123456789abcdef
+#input:	hex
+#ascii:	000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f202122232425262728292a2b2c2d2e2f303132333435363738393a3b3c3d3e3f404142434445464748494a4b4c4d4e4f505152535455565758595a5b5c5d5e5f606162636465666768696a6b6c6d6e6f707172737475767778797a7b7c7d7e7f808182838485868788898a8b8c8d8e8f909192939495969798999a9b9c9d9e9fa0a1a2a3a4a5a6a7a8a9aaabacadaeafb0b1b2b3b4b5b6b7b8b9babbbcbdbebfc0c1c2c3c4c5c6c7c8c9cacbcccdcecfd0d1d2d3d4d5d6d7d8d9dadbdcdddedfe0e1e2e3e4e5e6e7e8e9eaebecedeeeff0f1f2f3f4f5f6f7f8f9fafbfcfdfeff
+#base64: ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/=
+
+input:	integer
 stdout:	1
 stderr:	2
+#base:	16
 
 # define functions
 func:	{
-	write	stdout	Zmlyc3QgY29kZSBhdCBmdW5jCg==
+	input:	base64
+	func text:	Zmlyc3QgY29kZSBhdCBmdW5jCg==
+	write	stdout	func text
 	ret
 }
 
 # func main is not really needed
 main:	{
-	write	stdout	Zmlyc3QgbGluZSBpbiBtYWluCg==
+	input:	base64
+	a:	Zmlyc3QgbGluZSBpbiBtYWluCg==
+	write	stdout	a
 	func
-	write	stdout	c2Vjb25kIGxpbmUgYXQgbWFpbgo=
+#	b:	c2Vjb25kIGxpbmUgYXQgbWFpbgo=
+#	write	stdout	b
 	ret
 }
 
-write	stderr	UHJvZ3JhbSBzdGFydC5cbgo=
+input:	ascii
+text:	sample text 
+write	stderr	text
+
 main
-write	stdout	QnkgR2xhdWRpc3Rvbi4K
-ok:	0
-exit	ok
+text:	By Glaudiston
+write	stdout	text
+with no errors:	0
+exit	with no errors

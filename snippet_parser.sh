@@ -64,7 +64,7 @@ struct_parsed_snippet(){
 
 	local snippet_instruction_len="$(eval echo -n \${$SNIPPET_COLUMN_INSTR_LEN})"
 	local expected_instr_len="$(
-		echo -n "$snippet_instruction_bytes" | base64 -d | wc -c
+		echo -n "$snippet_instruction_bytes" | base64 -d | wc -c || error 
 	)";
 	if [ "${snippet_instruction_len}" -ne "$expected_instr_len" ]; then
 		error "at ${snippet_subname} the instruction len and the instruction bytes does not match, expected ${expected_instr_len} but got ${snippet_instruction_len}"
@@ -80,7 +80,7 @@ struct_parsed_snippet(){
 	local snippet_data_bytes="$(eval echo -n \"\${$SNIPPET_COLUMN_DATA_BYTES}\" | tr -d '\n' )";
 
 	local snippet_data_len="$(eval echo -n \${$SNIPPET_COLUMN_DATA_LEN})";
-	local expected_data_len=$( echo -n "$snippet_data_bytes" | base64 -d | wc -c );
+	local expected_data_len=$( echo -n "$snippet_data_bytes" | base64 -d | wc -c || error);
 	if ! [ "${snippet_data_len}" -eq "${expected_data_len}" ]; then
 		error "at ${snippet_type}:${snippet_subname} the data len(${snippet_data_len}) and the data bytes(${expected_data_len}) does not match";
 		exit 6;

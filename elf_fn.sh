@@ -20,6 +20,8 @@ ARCH=$(uname -m)
 
 get_program_headers_count()
 {
+	# for now we only have it hard coded 
+	# TODO improve it
 	echo 1;
 }
 
@@ -81,15 +83,15 @@ print_elf_file_header()
 	FIRST_CODE_OFFSET
 	));
 	EI_ENTRY="$(printEndianValue ${ENTRY_V} $Elf64_Addr)";	# VADDR relative program code entry point uint64_t
-	EI_PHOFF="$(printEndianValue "${EH_SIZE}" $Elf64_Off)";# program header offset in bytes, starts immediatelly after header, so the offset is the header size
-	EI_SHOFF="$(printEndianValue ${SHOFF_V} $Elf64_Off)";			# section header offset in bytes
-	EI_FLAGS="$(printEndianValue 0 $Elf64_Word)";			# uint32_t
+	EI_PHOFF="$(printEndianValue "${EH_SIZE}" $Elf64_Off)";	# program header offset in bytes, starts immediatelly after header, so the offset is the header size
+	EI_SHOFF="$(printEndianValue ${SHOFF_V} $Elf64_Off)";	# section header offset in bytes
+	EI_FLAGS="$(printEndianValue 0 $Elf64_Word)";		# uint32_t
 	EI_EHSIZE="$(printEndianValue ${EH_SIZE} $Elf64_Half)";	# elf header size in bytes
-	EI_PHENTSIZE="$(printEndianValue $PH_SIZE $Elf64_Half)";	# program header entry size (constant = sizeof(Elf64_Phdr))
-	EI_PHNUM="$(printEndianValue $PH_COUNT $Elf64_Half)"; 			# number of program header entries
+	EI_PHENTSIZE="$(printEndianValue $PH_SIZE $Elf64_Half)";# program header entry size (constant = sizeof(Elf64_Phdr))
+	EI_PHNUM="$(printEndianValue $PH_COUNT $Elf64_Half)"; 	# number of program header entries
 	# section table def
-	EI_SHENTSIZE="$(printEndianValue $SH_SIZE $Elf64_Half)";	# section header size in bytes(contant sizeof(Elf64_Shdr))
-	EI_SHNUM="$(printEndianValue $SH_COUNT $Elf64_Half)"; 		# section header count
+	EI_SHENTSIZE="$(printEndianValue $SH_SIZE $Elf64_Half)";# section header size in bytes(contant sizeof(Elf64_Shdr))
+	EI_SHNUM="$(printEndianValue $SH_COUNT $Elf64_Half)"; 	# section header count
 	EI_SHSTRNDX="$(printEndianValue 0 $Elf64_Half)"; 	# section header table index of entry of section name string table
 
 	# 00-0f
@@ -112,14 +114,14 @@ get_program_segment_headers()
 
 	# https://www.airs.com/blog/archives/45
 	# this point the current segment offset is 0x40
-	PH_TYPE="$(printEndianValue $PT_LOAD $Elf64_Word)"	# Elf64_Word p_type 4;
+	PH_TYPE="$(printEndianValue $PT_LOAD $Elf64_Word)"		# Elf64_Word p_type 4;
 	PH_FLAGS="$(printEndianValue $(( PF_X + PF_R )) $Elf64_Word)"	# Elf64_Word p_flags 4;
 	# offset, vaddr and p_align are stringly related.
-	PH_OFFSET="$(printEndianValue 0 $Elf64_Off)"	# Elf64_Off p_offset 8;
+	PH_OFFSET="$(printEndianValue 0 $Elf64_Off)"		# Elf64_Off p_offset 8;
 	PH_VADDR="$(printEndianValue $PH_VADDR_V $Elf64_Addr)"	# VADDR where to load program
-       							# must be after the current program size. Elf64_Addr p_vaddr 8;
-	PH_PADDR="$(printEndianValue 0 $Elf64_Addr)"	# Elf64_Addr p_paddr 8;
-							# Physical address is deprecated and ignored for executables, libs and shared obj files.
+       								# must be after the current program size. Elf64_Addr p_vaddr 8;
+	PH_PADDR="$(printEndianValue 0 $Elf64_Addr)"		# Elf64_Addr p_paddr 8;
+								# Physical address is deprecated and ignored for executables, libs and shared obj files.
 	# PH_FILESZ and PH_MEMSZ should point to the first code position in elf
 	# 16#78 == (EH_SIZE == x40 == 64) + (PH_SIZE == x38 == 56)
 	PH_FILESZ="$(printEndianValue $(( EH_SIZE + PH_SIZE )) $Elf64_Xword)"	# Elf64_Xword p_filesz 8;
@@ -175,17 +177,17 @@ get_tbl_index() {
 
 get_shn_undef()
 {
-	local SHT_NULL=0;	# String table
-	local sh_name=$(printEndianValue 0 $Elf64_Word);	# Section name (string tbl index)
+	local SHT_NULL=0;						# String table
+	local sh_name=$(printEndianValue 0 $Elf64_Word);		# Section name (string tbl index)
 	local sh_type=$(printEndianValue $SHT_NULL $Elf64_Word);	# Section type
-	local sh_flags=$(printEndianValue 0 $Elf64_Xword);	# Section flags
-	local sh_addr=$(printEndianValue 0 $Elf64_Addr); 	# Section virtual addr at execution
-	local sh_offset=$(printEndianValue 0 $Elf64_Off); 	# Section file offset
-	local sh_size=$(printEndianValue 0 $Elf64_Xword); 	# Section size in bytes
-	local sh_link=$(printEndianValue 0 $Elf64_Word);	# Link to another section
-	local sh_info=$(printEndianValue 0 $Elf64_Word);	# Additional section information
-	local sh_addralign=$(printEndianValue 0 $Elf64_Xword);	# Section alignment
-	local sh_entsize=$(printEndianValue 0 $Elf64_Xword);	# Entry size if section holds table
+	local sh_flags=$(printEndianValue 0 $Elf64_Xword);		# Section flags
+	local sh_addr=$(printEndianValue 0 $Elf64_Addr); 		# Section virtual addr at execution
+	local sh_offset=$(printEndianValue 0 $Elf64_Off); 		# Section file offset
+	local sh_size=$(printEndianValue 0 $Elf64_Xword); 		# Section size in bytes
+	local sh_link=$(printEndianValue 0 $Elf64_Word);		# Link to another section
+	local sh_info=$(printEndianValue 0 $Elf64_Word);		# Additional section information
+	local sh_addralign=$(printEndianValue 0 $Elf64_Xword);		# Section alignment
+	local sh_entsize=$(printEndianValue 0 $Elf64_Xword);		# Entry size if section holds table
 
 	local SECTION_HEADERS=""
 	# 16 bytes per line
@@ -261,8 +263,10 @@ print_elf_body()
 	echo -en "${SECTION_ELF_DATA}";
 }
 
-read_until_bloc_closes()
+# about the functions, I don't really want the {} brackets ... but it is easier to prase this way. since I need to read until detect it is closed, and without it I will be reading the next line outside the function.
+read_code_bloc()
 {
+	local deep="$1"
 	while read; do
 		echo "$REPLY";
 		# end of bloc
@@ -278,43 +282,101 @@ read_until_bloc_closes()
 parse_code_line_elements()
 {
 	local code_line="$1";
-	IFS=$'\t' read -ra elements <<< "${code_line}"
-	echo "${elements[@]}"
+	IFS=$'\t'
+	read -ra elements <<< "${code_line}"
+	#debug "parsing...[${elements[0]}]: [$(echo -n "${elements[0]}" | xxd)]"
+	encoded_array="$( encode_array_to_b64_csv "${elements[@]}" )"
+	echo -n "${encoded_array}"
 }
 
 get_symbol_value()
 {
 	local data_output="$1"
 	local SNIPPETS=$2;
-	if ! is_valid_number "$data_output"; then {
-		# resolve variable
-		local symbol_value="$( echo "$SNIPPETS" | grep "SYMBOL_TABLE,${data_output}" | cut -d, -f${SNIPPET_COLUMN_DATA_BYTES} | base64 -d )";
-		if [ "${symbol_value}" == "" ];then {
-			error "Expected a integer or a valid variable/constant. But got [$data_output]"
-			backtrace
-			return 1
-		};
-		fi
-		echo "${symbol_value}"
+	local input="ascii";
+	if is_valid_number "$data_output"; then {
+		echo "$data_output"
 		return
-		# TODO, increment usage count in SNIPPETS SYMBOL_TABLE
+	}
+	fi;
+
+	# resolve variable
+	local symbol_value="$( echo "$SNIPPETS" | grep "SYMBOL_TABLE,${data_output}" | tail -1 | cut -d, -f${SNIPPET_COLUMN_DATA_BYTES} | base64 -d )";
+	if [ "${symbol_value}" == "" ];then {
+		# return default values for known internal words
+		if [ "${data_output}" == "input" ]; then
+			echo -n "ascii"
+			return;
+		fi;
+		error "Expected a integer or a valid variable/constant. But got [$data_output]"
+		backtrace
+		debug "SYMBOLS:
+$(echo "$SNIPPETS" | grep SYMBOL_TABLE)"
+		return 1
 	};
 	fi
-	echo "$data_output"
+	echo "${symbol_value}"
+	return
+	# TODO, increment usage count in SNIPPETS SYMBOL_TABLE
 }
 
+is_a_valid_number_on_base(){
+	SNIPPETS=$2
+	base=$(get_symbol_value "base" "${SNIPPETS}");
+	debug "validate (( ${base:=10}#${raw_data_bytes} ))"
+	echo -n "$(( ${base:10}#${raw_data_bytes} ))" 2>&1 >/dev/null || 
+		return 1;
+	echo "${base:10}"
+	return;
+}
+
+parse_data_bytes()
+{
+	local raw_data_bytes="$1";
+	local SNIPPETS="$2";
+	if [ "${raw_data_bytes:0:1}" == "'" ]; then
+		echo -n "${raw_data_bytes}" | base64 -w0;
+		return;
+	fi;
+	if [ "${raw_data_bytes:0:1}" == '"' ]; then
+		#TODO: replace variables
+		echo -n "${raw_data_bytes}" | base64 -w0;
+		return;
+	fi;
+	local based_value=$(is_a_valid_number_on_base "${raw_data_bytes}" "${SNIPPETS}")
+	if [ "$?" == 0 ] ; then
+		#convert to base 10;
+		#TODO detect the current base
+		base=16
+		echo -n "${based_value}" | base64 -d;
+		return
+	fi;
+	# TODO detect the current base set and validate if the given data is a valid number on that base
+	if [ "${raw_data_bytes:0:2}" ]; then
+	#	debug "hex ... [$raw_data_bytes]"
+		echo -n "${raw_data_bytes}" | base64 -w0;
+		return;
+	fi;
+	if ! { echo "${raw_data_bytes}" | base64 -d 2>&1 >/dev/null; }; then
+		debug "not base 64"
+		echo "${raw_data_bytes}" | base64 -w0
+		return;
+	fi
+	echo -n "${raw_data_bytes}"
+}
 # parse_snippet given a source code snippet echoes snippet struct to stdout
 # allowing a pipeline to read a full instruction or bloc at time;
 # it should return a code snippet
 parse_snippet()
 {
+	local IFS=$'\t'
 	local PH_VADDR_V="$1"
 	local INSTR_TOTAL_SIZE="$2";
 	local CODE_LINE="$3";
 	local SNIPPETS="$4";
 	local deep="$5";
 
-	local code_line_elements=($(parse_code_line_elements "${CODE_LINE}"))
+	local code_line_elements=( ${CODE_LINE} )
 	local CODE_LINE_XXD="$( echo -n "${CODE_LINE}" | xxd --ps)";
 	local CODE_LINE_B64=$( echo -n "${CODE_LINE}" | base64 -w0);
 	local previous_snippet=$( echo "${SNIPPETS}" | tail -1 );
@@ -326,16 +388,34 @@ parse_snippet()
 	local previous_data_len=$(echo "${previous_snippet}" | cut -d, -f$SNIPPET_COLUMN_DATA_LEN);
 	previous_data_offset="${previous_data_offset:=$(( PH_VADDR_V + EH_SIZE + PH_SIZE + INSTR_TOTAL_SIZE ))}"
 	local data_offset="$(( previous_data_offset + previous_data_len ))";
-	if [[ "${CODE_LINE_XXD}" =~ .*3a09.*$ ]]; then # check if has ":\t..."
+	if [[ "${code_line_elements[0]}" =~ ^[#] ]]; then # ignoring tabs, starts with pound symbol(#)
+	{
+		struct_parsed_snippet \
+			"COMMENT" \
+			"" \
+			"${instr_offset}" \
+			"" \
+			"0" \
+			"${data_offset}" \
+			"" \
+			"0" \
+			"${CODE_LINE_B64}" \
+			"1";
+		return $?;
+	}
+	fi;
+	if [[ "${code_line_elements[0]}" =~ :$ ]]; then
+	#if [[ "${CODE_LINE_XXD}" =~ .*3a09.*$ ]]; then # check if has ":\t..."
 	{
 		if [[ "${CODE_LINE_XXD}" =~ .*3a097b$ ]]; then # check if ends with ":\t{" ... so it's a code block function
 		{
+			# TODO add identation validation
 			new_bloc="$(
 				SNIPPET_NAME="$(echo "$CODE_LINE" |cut -d: -f1 | tr -d '\t')";
-				bloc_outer_code="$(echo "${CODE_LINE}"; read_until_bloc_closes)";
-				bloc_outer_code_b64="$(echo -n "${bloc_outer_code}" | base64 -w0 )"
+				code_bloc="$(echo "${CODE_LINE}"; read_code_bloc "${deep}")";
+				bloc_outer_code_b64="$(echo -n "${code_bloc}" | base64 -w0 )"
 				bloc_inner_code="$(
-					echo "${bloc_outer_code}" |
+					echo "${code_bloc}" |
 					awk 'NR>2 {print prev}; {prev=$0};' |
 					base64 -w0
 				)";
@@ -405,8 +485,18 @@ parse_snippet()
 			data_addr_v="${data_offset}"
 			instr_bytes="";
 			instr_len=0;
-			data_bytes="$(echo -n "${symbol_value}" | base64 -w0)";
-			data_len="${#symbol_value}";
+			local data_bytes="${symbol_value}"
+			local input="${symbol_value}";
+			if [ "${symbol_name}" != "input" ]; then
+				input=$(get_symbol_value "input" "$SNIPPETS")
+			fi;
+			#debug "input[$input]: [${symbol_value}] "
+			if [ "${symbol_name}" != "input" -a "${input}" == "base64" ]; then
+				data_bytes="$(echo -n "${symbol_value}")";
+			else
+				data_bytes="$(echo -n "${symbol_value}" | base64 -w0)";
+			fi;
+			data_len="$( echo -n "${data_bytes}" | base64 -d | wc -c)";
 			struct_parsed_snippet \
 				"SYMBOL_TABLE" \
 				"${symbol_name}" \
@@ -423,29 +513,16 @@ parse_snippet()
 		fi;
 	}
 	fi;
-	if [[ "${CODE_LINE_XXD}" =~ ^(09)*23 ]]; then # ignoring tabs, starts with pound symbol(#)
-	{
-		struct_parsed_snippet \
-			"COMMENT" \
-			"" \
-			"${instr_offset}" \
-			"" \
-			"0" \
-			"${data_offset}" \
-			"" \
-			"0" \
-			"${CODE_LINE_B64}" \
-			"1";
-		return $?;
-	}
-	fi;
 	if [[ "${code_line_elements[0]}" == write ]]; then
 	{
 		local WRITE_OUTPUT_ELEM=1;
-		local WRITE_LEN_ELEM=2;
+		local WRITE_DATA_ELEM=2;
 		local out=${code_line_elements[$WRITE_OUTPUT_ELEM]};
-		data_output=$(get_symbol_value "$out" "${SNIPPETS}");
-		data_bytes="${code_line_elements[$WRITE_LEN_ELEM]}";
+		data_output=$(get_symbol_value "${out}" "${SNIPPETS}");
+		# I think we can remove the parse_data_bytes and force the symbol have the data always
+		#data_bytes="$(parse_data_bytes "${code_line_elements[$WRITE_DATA_ELEM]}" "${SNIPPETS}" )";
+		data_bytes=$(get_symbol_value "${code_line_elements[$WRITE_DATA_ELEM]}" "${SNIPPETS}" | base64 -w0);
+		#debug data-bytes=[$data_bytes]
 		data_bytes_len="$( echo -n "${data_bytes}"| base64 -d | wc -c)";
 		data_addr_v="${data_offset}"
 		instr_bytes="$(system_call_write "${data_output}" "$data_addr_v" "$data_bytes_len")";
@@ -552,7 +629,7 @@ parse_snippet()
 			"1";
 		return $?;
 	fi;
-	error "invalid instr: [$CODE_LINE_B64]"
+	error "invalid code line instruction: [$CODE_LINE_B64][${code_line_elements[0]}]"
 	struct_parsed_snippet \
 		"INVALID" \
 		"" \
