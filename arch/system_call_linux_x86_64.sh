@@ -37,10 +37,12 @@
 # Instruction Pointer: Address of the next instruction to execute.
 #  EIP(32)
 #  RIP(64)
-MOV_RAX="\xb8"
-MOV_RDX="\xba"
-MOV_RSI="\xbe"
-MOV_RDI="\xbf" #32 bit register (4 bytes)
+MOV_RAX="\xb8";
+MOV_RDX="\xba";
+MOV_RSI="\xbe";
+M64="\x48"; # use addresses with 64 bits (8 bytes)
+MOV_RDI="\xbf"; #if not prepended with M64(x48) expect 32 bit register (4 bytes)
+MOV_M64_RDI="${M64}${MOV_RDI}";
 
 # JMP
 # We have some types of jump
@@ -77,9 +79,9 @@ function bytecode_jump_short()
 		echo -en ",-1";
 		return;
 	fi;
-	debug jump short relative $RELATIVE
+	# debug jump short relative $RELATIVE
 	local RADDR_V="$(printEndianValue "$RELATIVE" $SIZE_8BITS_1BYTE )";
-	debug jump short to RADDR_V=[$( echo -n "$RADDR_V" | xxd)]
+	# debug jump short to RADDR_V=[$( echo -n "$RADDR_V" | xxd)]
 	CODE="${CODE}${JMP_SHORT}${RADDR_V}";
 	echo -ne "$(echo -en "${CODE}" | base64 -w0),${JUMP_SHORT_SIZE}";
 	return
@@ -91,14 +93,18 @@ function system_call_jump()
 {
 	local TARGET_ADDR="$1";
 	local CURRENT_ADDR="$2";
-	debug jumping from $(printf %x $CURRENT_ADDR) to $( printf %x ${TARGET_ADDR})
+	# debug "jump: TARGET_ADDR:[$(printf %x $TARGET_ADDR)], CURRENT_ADDR:[$( printf %x ${TARGET_ADDR})]"
+	OPCODE_SIZE=1;
+	DISPLACEMENT_BITS=32; # 4 bytes
+	local JUMP_NEAR_SIZE=$(( OPCODE_SIZE + DISPLACEMENT_BITS / 8 )); # 5 bytes
+
 	local short_jump_response=$(bytecode_jump_short "$TARGET_ADDR" "${CURRENT_ADDR}")
 	if [ "$(echo "${short_jump_response}" | cut -d, -f2)" -gt -1 ];then
-		debug short jump succeed;
-		#echo -n "${short_jump_response}";
-		#return;
-	fi
-	debug jump, unable to short, trying near: $short_jump_response
+		# debug short jump succeed;
+		echo -n "${short_jump_response}";
+		return;
+	fi;
+	# debug jump, unable to short, trying near: $short_jump_response
 
 	#bytecode_jump_near
 	local JUMP_NEAR_SIZE=5;
@@ -107,7 +113,7 @@ function system_call_jump()
 		# jump near
 		local RADDR_V;
 		RADDR_V="$(printEndianValue "${RELATIVE}" $SIZE_32BITS_4BYTES)";
-		debug "jump near relative ( $RELATIVE, $RADDR_V )";
+		# debug "jump near relative ( $RELATIVE, $RADDR_V )";
 		CODE="${CODE}${JMP_NEAR}${RADDR_V}";
 		echo -ne "$(echo -en "${CODE}" | base64 -w0),${JUMP_NEAR_SIZE}";
 		return;
@@ -142,6 +148,7 @@ function system_call_procedure()
 	# we don't have a short call in x64.
 	# direct has a 32bit displacement to receive the near relative address
 
+	# debug "calling: TARGET:[$TARGET], CURRENT:[${CURRENT}]"
 	OPCODE_SIZE=1;
 	DISPLACEMENT_BITS=32; # 4 bytes
 	local CALL_NEAR_SIZE=$(( OPCODE_SIZE + DISPLACEMENT_BITS / 8 )); # 5 bytes
@@ -246,29 +253,46 @@ function system_call_exit()
 	echo -en "${BIN_CODE}" | base64 -w0;
 }
 
+function system_call_fork()
+{
+	local SYS_FORK=57
+	local FORK=$(printEndianValue ${SYS_FORK} ${SIZE_32BITS_4BYTES})
+	local CODE="";
+	CODE="${CODE}${MOV_RAX}${FORK}"
+	CODE="${CODE}${SYSCALL}"
+	echo -en "${CODE}" | base64 -w0;
+	echo -en ",$(echo -en "${CODE}" | wc -c )";
+}
+
 function system_call_exec()
 {
 	local PTR_FILE="$1"
-	local CODE=""
-	local SYS_EXECVE=$(( 16#3b ))
+	debug "PTR_FILE=$( printf %x "${PTR_FILE}")"
+	#local PTR_ARGS="$1"
+	#local PTR_ENV="$1"
+	local CODE="";
+	#CODE="${CODE}$(system_call_fork | cut -d, -f1 | base64 -d)";
+	local SYS_EXECVE=$(( 16#3b ));
 	#								mem       elf     str
 	# 401000:       48 bf 00 20 40 00 00    movabs $0x402000,%rdi #        == 2000 == /bin/sh
 	# 401007:       00 00 00
-	#CODE="${CODE}${MOV_RDI}$(printEndianValue ${PTR_FILE:=0} $SIZE_32BITS_4BYTES)"
-	CODE="${CODE}\x48\xbf\xc0\x00\x01\x00\x00\x00\x00\x00"
+	#CODE="${CODE}${MOV_RDI}$(printEndianValue ${PTR_FILE:=0} ${SIZE_32BITS_4BYTES})"
+	#CODE="${CODE}\x48\xbf\xc0\x00\x01\x00\x00\x00\x00\x00"
+	CODE="${CODE}${MOV_M64_RDI}$(printEndianValue ${PTR_FILE:=0} ${SIZE_64BITS_8BYTES})"
 
 	# LEA_RSP_RSI="\x48\x8d\x74\x24\x08";
 	# 40100a:       48 8d 74 24 08          lea    0x8(%rsp),%rsi
 	# CODE="${CODE}${LEA_RSP_RSI}"
-	CODE="${CODE}${MOV_RSI}$(printEndianValue ${PTR_ARGS:=0} $SIZE_32BITS_4BYTES)"
+	CODE="${CODE}${MOV_RSI}$(printEndianValue ${PTR_ARGS:=0} ${SIZE_32BITS_4BYTES})"
 
 	# 40100f:       ba 00 00 00 00          mov    $0x0,%edx
-	CODE="${CODE}${MOV_RDX}$(printEndianValue ${PTR_ENV:=0} $SIZE_32BITS_4BYTES)" # const char *const envp[]
+	CODE="${CODE}${MOV_RDX}$(printEndianValue ${PTR_ENV:=0} ${SIZE_32BITS_4BYTES})" # const char *const envp[]
 
 	# 401014:       b8 3b 00 00 00          mov    $0x3b,%eax
-	CODE="${CODE}${MOV_RAX}$(printEndianValue ${SYS_EXECVE} $SIZE_32BITS_4BYTES)" # sys_execve (3b)
+	CODE="${CODE}${MOV_RAX}$(printEndianValue ${SYS_EXECVE} ${SIZE_32BITS_4BYTES})" # sys_execve (3b)
 
 	# 401019:       0f 05                   syscall
 	CODE="${CODE}${SYSCALL}"
 	echo -en "${CODE}" | base64 -w0;
+	echo -en ",$(echo -en "${CODE}" | wc -c )";
 }
