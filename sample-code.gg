@@ -12,27 +12,26 @@
 # We have a special symbol called "input". It defaults to UTF-8 symbol table.(https://datatracker.ietf.org/doc/html/rfc3629)
 #
 #
-# sym2: 12
-# 3: 123
-# sym-64: ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/=
-# asc-256:
+# "input" is a special id that tells the language how to represent a input when reading it from the source code.
+# each input argument needs to be represented by a symbol table. In this context we have binary, ascii, base64 and integer.
+# The default input is ascii
 #
-# we have some special id.
+# While using ascii as input, all bytes other than 0x09 and 0x0a can be used as value.
+# This can be problematic because of chars that editors can not see, then one can set the input to base64 and use any byte encoded as base64.
 #
-# input is a special id that tells the language how to represent a input when reading from the source code.
-# each input argument needs to be represented by a symbol.
+# In future i pretend to implement some way to define or replace the symbol tables with something like:	{
+#	input:	binary
+#	binary:	01
+#	integer:	0123456789
+#	hex:	0123456789abcdef
+#	input:	hex
+#	ascii:	000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f202122232425262728292a2b2c2d2e2f303132333435363738393a3b3c3d3e3f404142434445464748494a4b4c4d4e4f505152535455565758595a5b5c5d5e5f606162636465666768696a6b6c6d6e6f707172737475767778797a7b7c7d7e7f808182838485868788898a8b8c8d8e8f909192939495969798999a9b9c9d9e9fa0a1a2a3a4a5a6a7a8a9aaabacadaeafb0b1b2b3b4b5b6b7b8b9babbbcbdbebfc0c1c2c3c4c5c6c7c8c9cacbcccdcecfd0d1d2d3d4d5d6d7d8d9dadbdcdddedfe0e1e2e3e4e5e6e7e8e9eaebecedeeeff0f1f2f3f4f5f6f7f8f9fafbfcfdfeff
+#	base64: ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/=
+# }
 #
-# initially all bytes other than 0x09 and 0x0a can be used. But that is not good because editors can not see most bytes.
-#
-#input:	binary
-#binary:	01
-#integer:	0123456789
-#hex:	0123456789abcdef
-#input:	hex
-#ascii:	000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f202122232425262728292a2b2c2d2e2f303132333435363738393a3b3c3d3e3f404142434445464748494a4b4c4d4e4f505152535455565758595a5b5c5d5e5f606162636465666768696a6b6c6d6e6f707172737475767778797a7b7c7d7e7f808182838485868788898a8b8c8d8e8f909192939495969798999a9b9c9d9e9fa0a1a2a3a4a5a6a7a8a9aaabacadaeafb0b1b2b3b4b5b6b7b8b9babbbcbdbebfc0c1c2c3c4c5c6c7c8c9cacbcccdcecfd0d1d2d3d4d5d6d7d8d9dadbdcdddedfe0e1e2e3e4e5e6e7e8e9eaebecedeeeff0f1f2f3f4f5f6f7f8f9fafbfcfdfeff
-#base64: ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/=
+# but for now we have only real hardcoded support to base64 and ascii.
 
-input:	integer
+#input:	integer
 stdout:	1
 stderr:	2
 #base:	16
@@ -56,12 +55,39 @@ main:	{
 	ret
 }
 
-input:	ascii
-text:	sample text 
-write	stderr	text
+loop:	{
+	input:	ascii
+	texto:	repetir
+	write	stdout	texto
+	#input:	ascii	evaluate
+	#i:	i + 1
+	#write	stdout	i
+}
 
-main
-text:	By Glaudiston
-write	stdout	text
-with no errors:	0
+#input:	ascii
+#text:	sample stderr text 
+#write	stderr	text
+
+#main
+#text:	By Glaudiston
+#write	stdout	text
+
+#i:	0+1	# this is a static variable with the text 0+1, to evaluate the input needs requires it
+#input:	ascii	evaluate
+#i:	i+1	# this will evaluate only if the input has the evaluate value
+#write	stdout	i
+
+#goto	loop
+
+# Where how to run a system command
+cmd:	/usr/bin/whoami
+write	stdout	cmd
+!	cmd
+
+write	stdout	cmd
+cmdls:	/usr/bin/ls
+write	stdout	cmdls
+!	cmdls
+
+with no errors:	2
 exit	with no errors
