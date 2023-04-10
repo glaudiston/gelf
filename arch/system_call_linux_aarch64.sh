@@ -148,4 +148,5 @@ function system_call_exec()
 	# 401019:       0f 05                   syscall
 	CODE="${CODE}${SYSCALL}"
 	echo -en "${CODE}" | base64 -w0;
+	echo -n ",27";
 }

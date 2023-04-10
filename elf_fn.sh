@@ -320,6 +320,41 @@ $(echo "$SNIPPETS" | grep SYMBOL_TABLE)"
 	# TODO, increment usage count in SNIPPETS SYMBOL_TABLE
 }
 
+set_symbol_value() {
+	local symbol_value="$1";
+	local SNIPPETS="$2";
+	local data_bytes="${symbol_value}";
+	local input="${symbol_value}";
+	if [ "${symbol_name}" != "input" ]; then
+		input=$(get_symbol_value "input" "$SNIPPETS");
+	fi;
+	#debug "input[$input]: [${symbol_value}] "
+	if [ "${symbol_name}" != "input" -a "${input}" == "base64" ]; then
+		data_bytes="$(echo -ne "${symbol_value}")"; # with NULL Suffix
+	else
+		data_bytes="$(echo -ne "${symbol_value}" | base64 -w0)";
+	fi;
+	# append NULL char at symbol
+	data_bytes=$( { echo "${data_bytes}" | base64 -d | xxd --ps; echo -n "00"; } | xxd --ps -r | base64 -w0 )
+	if [ "$symbol_name" != input ] && echo "${input[@]}" | grep -q "evaluate"; then
+		debug "eval [${data_bytes}]"
+		#TODO detect eval type. if all operations are static, and not call or jump is used(between the definition and evaluation).
+		eval_type="static";
+		if [ "${eval_type}" == "static" ]; then
+			# then we can just evaluate the expression.
+			echo -n "$(( $( echo $( echo "${data_bytes}" | base64 -d ) ) ))"
+			return
+		fi
+	# else, we need to set it as a runtime expression
+	# any jump or call after this can change this behavior.
+	# then all code that uses jump or call should validate and update this.
+		echo -n "$(( data_bytes ))"
+		return
+	fi;
+
+	echo -n "${data_bytes}"
+}
+
 is_a_valid_number_on_base(){
 	SNIPPETS=$2
 	base=$(get_symbol_value "base" "${SNIPPETS}");
@@ -485,17 +520,7 @@ parse_snippet()
 			data_addr_v="${data_offset}"
 			instr_bytes="";
 			instr_len=0;
-			local data_bytes="${symbol_value}"
-			local input="${symbol_value}";
-			if [ "${symbol_name}" != "input" ]; then
-				input=$(get_symbol_value "input" "$SNIPPETS")
-			fi;
-			#debug "input[$input]: [${symbol_value}] "
-			if [ "${symbol_name}" != "input" -a "${input}" == "base64" ]; then
-				data_bytes="$(echo -n "${symbol_value}")";
-			else
-				data_bytes="$(echo -n "${symbol_value}" | base64 -w0)";
-			fi;
+			data_bytes="$(set_symbol_value "${symbol_value}" "${SNIPPETS}")";
 			data_len="$( echo -n "${data_bytes}" | base64 -d | wc -c)";
 			struct_parsed_snippet \
 				"SYMBOL_TABLE" \
@@ -588,15 +613,16 @@ parse_snippet()
 			"1";
 		return $?;
 	fi;
-	if [[ "${CODE_LINE_XXD}" =~ ^(09)*676f746f09 ]]; then # goto
-		target="${CODE_LINE/goto }"
-		debug "GOTO [$target]"
+	if [[ "${code_line_elements[0]}" == goto ]]; then
+		target="${code_line_elements[1]}"
+		# debug "GOTO [$target]"
 		target_offset="$( echo "$SNIPPETS" | grep "SNIPPET,${target}" | cut -d, -f${SNIPPET_COLUMN_INSTR_OFFSET} )";
+		# debug "goto $target: [$target_offset]. [$instr_offset]"
 		jmp_result="$(system_call_jump "${target_offset}" "${instr_offset}" )";
-		debug jmp_result=$jmp_result
+		# debug jmp_result=$jmp_result
 		jmp_bytes="$(echo "${jmp_result}" | cut -d, -f1)";
 		jmp_len="$(echo "${jmp_result}" | cut -d, -f2)";
-		debug goto instruction offset $( printf %x $instr_offset )
+		# debug goto instruction offset $( printf %x $instr_offset )
 		struct_parsed_snippet \
 			"SNIPPET_CALL" \
 			"jmp" \
@@ -613,6 +639,7 @@ parse_snippet()
 	if echo "$SNIPPETS" | grep -q "${CODE_LINE}"; then
 		target="${CODE_LINE/}"
 		target_offset="$( echo "$SNIPPETS" | grep "SNIPPET,${target}" | cut -d, -f${SNIPPET_COLUMN_INSTR_OFFSET} )";
+		# debug "call $target: [$target_offset]. [$instr_offset]"
 		local call_bytecode="$(system_call_procedure "${target_offset}" "${instr_offset}" )";
 		local call_bytes="$(echo "${call_bytecode}" | cut -d, -f1)";
 		local call_len="$(echo "${call_bytecode}" | cut -d, -f2)";
@@ -625,6 +652,28 @@ parse_snippet()
 			"${data_offset}" \
 			"" \
 			"0" \
+			"${CODE_LINE_B64}" \
+			"1";
+		return $?;
+	fi;
+	if [[ "${code_line_elements[0]}" == ! ]]; then
+		local target="${code_line_elements[1]}"
+		debug "EXEC [$target]"
+		local target_offset="$( echo "$SNIPPETS" | grep "SYMBOL_TABLE,${target}" | cut -d, -f${SNIPPET_COLUMN_DATA_OFFSET} )";
+		local data_bytes="";
+		local data_len=0;
+		exec_result="$(system_call_exec "${target_offset}" "${instr_offset}" )";
+		instr_bytes="$(echo "${exec_result}" | cut -d, -f1)";
+		instr_len="$(echo "${exec_result}" | cut -d, -f2)";
+		struct_parsed_snippet \
+			"INSTRUCTION" \
+			"sys_execve" \
+			"${instr_offset}" \
+			"${instr_bytes}" \
+			"${instr_len}" \
+			"${data_offset}" \
+			"${data_bytes}" \
+			"${data_len}" \
 			"${CODE_LINE_B64}" \
 			"1";
 		return $?;
