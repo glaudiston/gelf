@@ -267,7 +267,7 @@ function system_call_fork()
 function system_call_exec()
 {
 	local PTR_FILE="$1"
-	debug "PTR_FILE=$( printf %x "${PTR_FILE}")"
+	#debug "PTR_FILE=$( printf %x "${PTR_FILE}")"
 	#local PTR_ARGS="$1"
 	#local PTR_ENV="$1"
 	local CODE="";

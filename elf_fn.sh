@@ -289,23 +289,23 @@ parse_code_line_elements()
 	echo -n "${encoded_array}"
 }
 
-get_symbol_value()
+get_b64_symbol_value()
 {
 	local data_output="$1"
 	local SNIPPETS=$2;
 	local input="ascii";
 	if is_valid_number "$data_output"; then {
-		echo "$data_output"
+		echo -n "$data_output" | base64 -w0
 		return
 	}
 	fi;
 
 	# resolve variable
-	local symbol_value="$( echo "$SNIPPETS" | grep "SYMBOL_TABLE,${data_output}" | tail -1 | cut -d, -f${SNIPPET_COLUMN_DATA_BYTES} | base64 -d )";
+	local symbol_value="$( echo "$SNIPPETS" | grep "SYMBOL_TABLE,${data_output}" | tail -1 | cut -d, -f${SNIPPET_COLUMN_DATA_BYTES})";
 	if [ "${symbol_value}" == "" ];then {
 		# return default values for known internal words
 		if [ "${data_output}" == "input" ]; then
-			echo -n "ascii"
+			echo -n "ascii" | base64 -w0
 			return;
 		fi;
 		error "Expected a integer or a valid variable/constant. But got [$data_output]"
@@ -315,7 +315,7 @@ $(echo "$SNIPPETS" | grep SYMBOL_TABLE)"
 		return 1
 	};
 	fi
-	echo "${symbol_value}"
+	echo -n "${symbol_value}"
 	return
 	# TODO, increment usage count in SNIPPETS SYMBOL_TABLE
 }
@@ -326,7 +326,7 @@ set_symbol_value() {
 	local data_bytes="${symbol_value}";
 	local input="${symbol_value}";
 	if [ "${symbol_name}" != "input" ]; then
-		input=$(get_symbol_value "input" "$SNIPPETS");
+		get_b64_symbol_value "input" "$SNIPPETS" | base64 -d | read input; # read will ignore NULL
 	fi;
 	#debug "input[$input]: [${symbol_value}] "
 	if [ "${symbol_name}" != "input" -a "${input}" == "base64" ]; then
@@ -357,7 +357,7 @@ set_symbol_value() {
 
 is_a_valid_number_on_base(){
 	SNIPPETS=$2
-	base=$(get_symbol_value "base" "${SNIPPETS}");
+	base=$(get_b64_symbol_value "base" "${SNIPPETS}" | base64 -d);
 	debug "validate (( ${base:=10}#${raw_data_bytes} ))"
 	echo -n "$(( ${base:10}#${raw_data_bytes} ))" 2>&1 >/dev/null || 
 		return 1;
@@ -543,10 +543,11 @@ parse_snippet()
 		local WRITE_OUTPUT_ELEM=1;
 		local WRITE_DATA_ELEM=2;
 		local out=${code_line_elements[$WRITE_OUTPUT_ELEM]};
-		data_output=$(get_symbol_value "${out}" "${SNIPPETS}");
+		local data_output=1; #stdout by default
+		get_b64_symbol_value "${out}" "${SNIPPETS}" | base64 -d | read data_output; # read will ignore NULL(\x00)
 		# I think we can remove the parse_data_bytes and force the symbol have the data always
 		#data_bytes="$(parse_data_bytes "${code_line_elements[$WRITE_DATA_ELEM]}" "${SNIPPETS}" )";
-		data_bytes=$(get_symbol_value "${code_line_elements[$WRITE_DATA_ELEM]}" "${SNIPPETS}" | base64 -w0);
+		data_bytes=$(get_b64_symbol_value "${code_line_elements[$WRITE_DATA_ELEM]}" "${SNIPPETS}");
 		#debug data-bytes=[$data_bytes]
 		data_bytes_len="$( echo -n "${data_bytes}"| base64 -d | wc -c)";
 		data_addr_v="${data_offset}"
@@ -584,7 +585,8 @@ parse_snippet()
 		return $?;
 	fi;
 	if [[ "${code_line_elements[0]}" == exit ]]; then
-		local exit_value=$(get_symbol_value "${code_line_elements[1]}" "${SNIPPETS}");
+		local exit_value=0;
+		get_b64_symbol_value "${code_line_elements[1]}" "${SNIPPETS}" | base64 -d | read exit_value; # read will ignore NULL(\x00)
 		instr_bytes="$(system_call_exit ${exit_value})"
 		struct_parsed_snippet \
 			"INSTRUCTION" \
@@ -658,7 +660,7 @@ parse_snippet()
 	fi;
 	if [[ "${code_line_elements[0]}" == ! ]]; then
 		local target="${code_line_elements[1]}"
-		debug "EXEC [$target]"
+		#debug "EXEC [$target]"
 		local target_offset="$( echo "$SNIPPETS" | grep "SYMBOL_TABLE,${target}" | cut -d, -f${SNIPPET_COLUMN_DATA_OFFSET} )";
 		local data_bytes="";
 		local data_len=0;

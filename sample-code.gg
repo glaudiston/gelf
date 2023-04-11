@@ -80,11 +80,11 @@ loop:	{
 #goto	loop
 
 # Where how to run a system command
-cmd:	/usr/bin/whoami
-write	stdout	cmd
-!	cmd
+#cmd:	/usr/bin/whoami
+#write	stdout	cmd
+#!	cmd
 
-write	stdout	cmd
+#write	stdout	cmd
 cmdls:	/usr/bin/ls
 write	stdout	cmdls
 !	cmdls
