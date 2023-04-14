@@ -326,7 +326,7 @@ set_symbol_value() {
 	local data_bytes="${symbol_value}";
 	local input="${symbol_value}";
 	if [ "${symbol_name}" != "input" ]; then
-		get_b64_symbol_value "input" "$SNIPPETS" | base64 -d | read input; # read will ignore NULL
+		input=$(get_b64_symbol_value "input" "$SNIPPETS" | base64 -d | tr -d '\0')
 	fi;
 	#debug "input[$input]: [${symbol_value}] "
 	if [ "${symbol_name}" != "input" -a "${input}" == "base64" ]; then
@@ -399,6 +399,7 @@ parse_data_bytes()
 	fi
 	echo -n "${raw_data_bytes}"
 }
+
 # parse_snippet given a source code snippet echoes snippet struct to stdout
 # allowing a pipeline to read a full instruction or bloc at time;
 # it should return a code snippet
@@ -544,7 +545,7 @@ parse_snippet()
 		local WRITE_DATA_ELEM=2;
 		local out=${code_line_elements[$WRITE_OUTPUT_ELEM]};
 		local data_output=1; #stdout by default
-		get_b64_symbol_value "${out}" "${SNIPPETS}" | base64 -d | read data_output; # read will ignore NULL(\x00)
+		data_output=$(get_b64_symbol_value "${out}" "${SNIPPETS}" | base64 -d | tr -d '\0' );
 		# I think we can remove the parse_data_bytes and force the symbol have the data always
 		#data_bytes="$(parse_data_bytes "${code_line_elements[$WRITE_DATA_ELEM]}" "${SNIPPETS}" )";
 		data_bytes=$(get_b64_symbol_value "${code_line_elements[$WRITE_DATA_ELEM]}" "${SNIPPETS}");
@@ -585,8 +586,9 @@ parse_snippet()
 		return $?;
 	fi;
 	if [[ "${code_line_elements[0]}" == exit ]]; then
-		local exit_value=0;
-		get_b64_symbol_value "${code_line_elements[1]}" "${SNIPPETS}" | base64 -d | read exit_value; # read will ignore NULL(\x00)
+		local exit_value=$(get_b64_symbol_value "${code_line_elements[1]}" "${SNIPPETS}" | base64 -d | tr -d '\00' )
+		get_b64_symbol_value "${code_line_elements[1]}" "${SNIPPETS}" | base64 -d | { read exit_value_test; }
+
 		instr_bytes="$(system_call_exit ${exit_value})"
 		struct_parsed_snippet \
 			"INSTRUCTION" \
