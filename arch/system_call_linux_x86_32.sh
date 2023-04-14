@@ -1,6 +1,7 @@
 #!/bin/bash
 #
-# Here should be all x86_64 specific code.
+# This should have all 32bit specific code
+# The ones shared to x64_64 should be at system_call_x64.sh
 #
 # System Interrupt call table for 64bit linux:
 # http://www.cpu2.net/linuxabi.html
@@ -15,39 +16,28 @@
 # https://blog.rchapman.org/posts/Linux_System_Call_Table_for_x86_64/
 # See Table A-2. One-byte Opcode Map on Intel i64 documentation (page 2626)
 # See Table B-13.  General Purpose Instruction Formats and Encodings for Non-64-Bit Modes (Contd.) (page 2658)
-# x64 has:
-# 16 general purpose registers
+# x86 has:
+# 8 general purpose registers
 #  EAX(32): Accumulator: Used In Arithmetic operations
-#  RAX(64): Accumulator: Used In Arithmetic operations
 #  ECX(32): Counter: Used in loops and shift/rotate instructions
-#  RCX(64): Counter: Used in loops and shift/rotate instructions
 #  EDX(32): Data: Used in arithmetic operations and I/O operations
-#  RDX(64): Data: Used in arithmetic operations and I/O operations
 #  EBX(32): Base: Used as a pointer to data
-#  RBX(64): Base: Used as a pointer to data
 #  ESP(32): Stack Pointer: Points to top of stack
-#  RSP(64): Stack Pointer: Points to top of stack
 #  EBP(32): Stack Base Pointer: Points to base of stack
-#  RBP(64): Stack Base Pointer: Points to base of stack
 #  ESI(32): Points to source in stream operations
-#  RSI(64): Points to source in stream operations
 #  EDI(32): Points to destination in streams operations
-#  RDI(64): Points to destination in streams operations
 # 6 segment registers: points to memory segment addresses ( but uses pagin instead segmentation)
 # 1 flag register: used to support arithmetic functions and debugging.
 #  EFLAG(32)
-#  RFLAG(64)
 # Instruction Pointer: Address of the next instruction to execute.
 #  EIP(32)
-#  RIP(64)
 #
 . arch/system_call_linux_x86.sh
 
-M64="\x48"; # set REX use addresses and registers with 64 bits (8 bytes)
-MOV_RAX="${M64}\xb8";
-MOV_RDX="${M64}\xba";
-MOV_RSI="${M64}\xbe";
-MOV_RDI="${M64}\xbf"; #if not prepended with M64(x48) expect 32 bit register (edi: 4 bytes)
+MOV_EAX="\xb8";
+MOV_EDX="\xba";
+MOV_ESI="\xbe";
+MOV_EDI="\xbf";
 
 # JMP
 # We have some types of jump
@@ -55,17 +45,14 @@ MOV_RDI="${M64}\xbf"; #if not prepended with M64(x48) expect 32 bit register (ed
 JMP_SHORT="\xeb"; # followed by a 8-bit signed char (-128 to 127) to move relative to BIP.
 JMP_NEAR="\xe9"; # followed by a 32-bit signed integer(-2147483648 to 2147483647).
 # Jump to the full virtual address
-JMP_RAX="\xff";
-JMP_RDI="\xe0";
+JMP_EAX="\xff";
+JMP_EDI="\xe0";
 
-#48 81 C7 01 02 03 04     add    rdi, 0x04030201
-ADD="\x81";
-ADD_M64="${M64}${ADD}";
-ADD_M64_RDI="${ADD_M64}";
-
+#81 C7 01 02 03 04     add    rdi, 0x04030201
+ADD_EDI="\x81";
 
 # LEA - Load Effective Address (page 1146)
-SYSCALL="$( printEndianValue $(( 16#050f )) $SIZE_16BITS_2BYTES)"
+SYSCALL="$( printEndianValue $(( 16#80 )) $SIZE_16BITS_2BYTES)"
 
 # Jump short is the fastest and cheaper way to run some code,
 # but it has two limitations:
@@ -133,8 +120,8 @@ function system_call_jump()
 	# TODO, another way to move to a location is set the RIP directly
 	# something like
 	# mov eax, $address
-	# mov [rsp], eax
-	# mov eip, [rsp]
+	# mov [esp], eax
+	# mov eip, [esp]
 	echo -ne ",0"
 	return;
 }
@@ -174,7 +161,7 @@ function system_call_procedure()
 
 
 	FAR_CALL="\x9a";
-	SUB_RSP="${M64}\x83\xEC\x28" # sub rsp, 28
+	SUB_ESP="${M64}\x83\xEC\x28" # sub esp, 28
 	addr="$(( 16#000100b8 ))"
 	BYTES="\xe8${CALL_ADDR}";
 	echo -en "$BYTES" | base64 -w0;
@@ -216,48 +203,49 @@ function system_call_pop_stack()
 	:
 }
 
+
 function system_call_read()
 {
-	local DATA_ADDR="$(printEndianValue "${1}" "$SIZE_64BITS_8BYTES" )";
+	local DATA_ADDR="$(printEndianValue "${1}" "$SIZE_32BITS_4BYTES" )";
 	local len="${2}";
 	local CODE="";
 	SYS_READ=0;
 	STDIN=0;
-	CODE="${CODE}${MOV_RAX}$(printEndianValue $SYS_READ $SIZE_64BITS_8BYTES)";
-	CODE="${CODE}${MOV_RDI}$(printEndianValue $STDIN $SIZE_64BITS_8BYTES)";
-	CODE="${CODE}${MOV_RSI}${DATA_ADDR}";
-	CODE="${CODE}${MOV_RDX}$(printEndianValue ${len} $SIZE_64BITS_8BYTES)";
+	CODE="${CODE}${MOV_EAX}$(printEndianValue $SYS_READ $SIZE_32BITS_4BYTES)";
+	CODE="${CODE}${MOV_EDI}$(printEndianValue $STDIN $SIZE_32BITS_4BYTES)";
+	CODE="${CODE}${MOV_ESI}${DATA_ADDR}";
+	CODE="${CODE}${MOV_EDX}$(printEndianValue ${len} $SIZE_32BITS_4BYTES)";
 	CODE="${CODE}${SYSCALL}";
 	echo -en "${CODE}" | base64 -w0;
 }
 
-system_call_write_len=42
+system_call_write_len=22
 # given a data address as argument, write it to stdout
 function system_call_write()
 {
 	local STDOUT="$1";
 	local DATA_ADDR_V="$2";
 	local DATA_LEN="$3";
-	local DATA_ADDR="$(printEndianValue "$DATA_ADDR_V" "$SIZE_64BITS_8BYTES")";
+	local DATA_ADDR="$(printEndianValue "$DATA_ADDR_V" "$SIZE_32BITS_4BYTES")";
 	SYS_WRITE=1;
 	local CODE="";
-	CODE="${CODE}${MOV_RAX}$(printEndianValue $SYS_WRITE $SIZE_64BITS_8BYTES)";
-	CODE="${CODE}${MOV_RDI}$(printEndianValue $STDOUT $SIZE_64BITS_8BYTES)";
-	CODE="${CODE}${MOV_RSI}${DATA_ADDR}";
-	CODE="${CODE}${MOV_RDX}$(printEndianValue "${DATA_LEN}" $SIZE_64BITS_8BYTES)";
+	CODE="${CODE}${MOV_EAX}$(printEndianValue $SYS_WRITE $SIZE_32BITS_4BYTES)";
+	CODE="${CODE}${MOV_EDI}$(printEndianValue $STDOUT $SIZE_32BITS_4BYTES)";
+	CODE="${CODE}${MOV_ESI}${DATA_ADDR}";
+	CODE="${CODE}${MOV_EDX}$(printEndianValue "${DATA_LEN}" $SIZE_32BITS_4BYTES)";
 	CODE="${CODE}${SYSCALL}";
 	echo -en "${CODE}" | base64 -w0;
 }
 
-system_call_exit_len=22
+system_call_exit_len=12
 function system_call_exit()
 {
 	local SYS_EXIT=$(( 16#3c ))
 	local exit_code="$1"
 	local BIN_CODE="";
-	local EXIT="$(printEndianValue $SYS_EXIT $SIZE_64BITS_8BYTES)";
+	local EXIT="$(printEndianValue $SYS_EXIT $SIZE_32BITS_4BYTES)";
 	BIN_CODE="${BIN_CODE}${MOV_RAX}${EXIT}"
-	BIN_CODE="${BIN_CODE}${MOV_RDI}$(printEndianValue ${exit_code:=0} $SIZE_64BITS_8BYTES)"
+	BIN_CODE="${BIN_CODE}${MOV_RDI}$(printEndianValue ${exit_code:=0} $SIZE_32BITS_4BYTES)"
 	BIN_CODE="${BIN_CODE}${SYSCALL}"
 	echo -en "${BIN_CODE}" | base64 -w0;
 }
@@ -265,9 +253,9 @@ function system_call_exit()
 function system_call_fork()
 {
 	local SYS_FORK=57
-	local FORK=$(printEndianValue ${SYS_FORK} ${SIZE_64BITS_8BYTES})
+	local FORK=$(printEndianValue ${SYS_FORK} ${SIZE_32BITS_4BYTES})
 	local CODE="";
-	CODE="${CODE}${MOV_RAX}${FORK}"
+	CODE="${CODE}${MOV_EAX}${FORK}"
 	CODE="${CODE}${SYSCALL}"
 	echo -en "${CODE}" | base64 -w0;
 	echo -en ",$(echo -en "${CODE}" | wc -c )";
@@ -292,22 +280,22 @@ function system_call_exec()
 	# child_process_only:
 	local SYS_EXECVE=$(( 16#3b ));
 	#								mem       elf     str
-	# 401000:       48 bf 00 20 40 00 00    movabs $0x402000,%rdi #        == 2000 == /bin/sh
+	# 401000:       bf 00 20 40 00 00    movabs $0x402000,%rdi #        == 2000 == /bin/sh
 	# 401007:       00 00 00
-	#CODE="${CODE}${MOV_RDI}$(printEndianValue ${PTR_FILE:=0} ${SIZE_64BITS_8BYTES})"
-	#CODE="${CODE}\x48\xbf\xc0\x00\x01\x00\x00\x00\x00\x00"
-	CODE="${CODE}${MOV_RDI}$(printEndianValue ${PTR_FILE:=0} ${SIZE_64BITS_8BYTES})"
+	#CODE="${CODE}${MOV_EDI}$(printEndianValue ${PTR_FILE:=0} ${SIZE_32BITS_4BYTES})"
+	#CODE="${CODE}\xbf\xc0\x00\x01\x00\x00\x00\x00\x00"
+	CODE="${CODE}${MOV_M64_RDI}$(printEndianValue ${PTR_FILE:=0} ${SIZE_64BITS_8BYTES})"
 
-	# LEA_RSP_RSI="\x48\x8d\x74\x24\x08";
-	# 40100a:       48 8d 74 24 08          lea    0x8(%rsp),%rsi
-	# CODE="${CODE}${LEA_RSP_RSI}"
-	CODE="${CODE}${MOV_RSI}$(printEndianValue ${PTR_ARGS:=0} ${SIZE_64BITS_8BYTES})"
+	# LEA_ESP_ESI="\x8d\x74\x24\x08";
+	# 40100a:       8d 74 24 08          lea    0x8(%esp),%esi
+	# CODE="${CODE}${LEA_ESP_ESI}"
+	CODE="${CODE}${MOV_ESI}$(printEndianValue ${PTR_ARGS:=0} ${SIZE_32BITS_4BYTES})"
 
 	# 40100f:       ba 00 00 00 00          mov    $0x0,%edx
-	CODE="${CODE}${MOV_RDX}$(printEndianValue ${PTR_ENV:=0} ${SIZE_64BITS_8BYTES})" # const char *const envp[]
+	CODE="${CODE}${MOV_EDX}$(printEndianValue ${PTR_ENV:=0} ${SIZE_32BITS_4BYTES})" # const char *const envp[]
 
 	# 401014:       b8 3b 00 00 00          mov    $0x3b,%eax
-	CODE="${CODE}${MOV_RAX}$(printEndianValue ${SYS_EXECVE} ${SIZE_64BITS_8BYTES})" # sys_execve (3b)
+	CODE="${CODE}${MOV_EAX}$(printEndianValue ${SYS_EXECVE} ${SIZE_32BITS_4BYTES})" # sys_execve (3b)
 
 	# 401019:       0f 05                   syscall
 	CODE="${CODE}${SYSCALL}"

@@ -1,4 +1,7 @@
 #!/bin/bash
+#
+# This shell should have all code shared between x86 arch (32 and 64).
+#
 # System Interrupt call table for 64bit linux:
 # http://www.cpu2.net/linuxabi.html
 #
