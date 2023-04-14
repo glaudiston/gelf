@@ -104,8 +104,8 @@ function system_call_jump()
 	local TARGET_ADDR="$1";
 	local CURRENT_ADDR="$2";
 	# debug "jump: TARGET_ADDR:[$(printf %x $TARGET_ADDR)], CURRENT_ADDR:[$( printf %x ${TARGET_ADDR})]"
-	OPCODE_SIZE=1;
-	DISPLACEMENT_BITS=32; # 4 bytes
+	local OPCODE_SIZE=1;
+	local DISPLACEMENT_BITS=32; # 4 bytes
 	local JUMP_NEAR_SIZE=$(( OPCODE_SIZE + DISPLACEMENT_BITS / 8 )); # 5 bytes
 
 	local short_jump_response=$(bytecode_jump_short "$TARGET_ADDR" "${CURRENT_ADDR}")
@@ -159,8 +159,8 @@ function system_call_procedure()
 	# direct has a 32bit displacement to receive the near relative address
 
 	# debug "calling: TARGET:[$TARGET], CURRENT:[${CURRENT}]"
-	OPCODE_SIZE=1;
-	DISPLACEMENT_BITS=32; # 4 bytes
+	local OPCODE_SIZE=1;
+	local DISPLACEMENT_BITS=32; # 4 bytes
 	local CALL_NEAR_SIZE=$(( OPCODE_SIZE + DISPLACEMENT_BITS / 8 )); # 5 bytes
 	local RELATIVE=$(( TARGET - CURRENT - CALL_NEAR_SIZE ))
 	if [ "$(( (RELATIVE >= - ( 1 << ( DISPLACEMENT_BITS -1 ) )) && (RELATIVE <= ( 1 << ( DISPLACEMENT_BITS -1) ) -1) ))" -eq 1 ]; then
@@ -273,6 +273,16 @@ function system_call_fork()
 	echo -en ",$(echo -en "${CODE}" | wc -c )";
 }
 
+function toHexDump()
+{
+	xxd --ps | sed "s/\(..\)/\\\\x\1/g"
+}
+
+function system_call_sys_execve()
+{
+	:
+}
+
 function system_call_exec()
 {
 	local PTR_FILE="$1"
@@ -280,11 +290,15 @@ function system_call_exec()
 	#local PTR_ARGS="$1"
 	#local PTR_ENV="$1"
 	local CODE="";
-	CODE="${CODE}$(system_call_fork | cut -d, -f1 | base64 -d | xxd --ps | sed "s/\(..\)/\\\\x\1/g")";
+	CODE="${CODE}$(system_call_fork | cut -d, -f1 | base64 -d | toHexDump)";
 	# TODO: CMP ? then (0x3d) rAx, lz
 	local TWOBYTE_INSTRUCTION_PREFIX="\0f"; # The first byte "0F" is the opcode for the two-byte instruction prefix that indicates the following instruction is a conditional jump.
-	CODE="${CODE}\x83\xf8\x00"; # 32bit cmp eax, 00
-	#CODE="${CODE}\x85\x06\x00\x00\x00"; # The second byte "85" is the opcode for the JNE instruction. The following four bytes "06 00 00 00" represent the signed 32-bit offset from the current instruction to the target label.
+	CODE="${CODE}${M64}\x83\xf8\x00"; # 64bit cmp rax, 00
+	# rax will be zero on child, on parent will be the pid of the forked child
+	# so if non zero (on parent) we will jump over the sys_execve code to not run it twice,
+	# and because it will exit after run
+	CODE_TO_JUMP="\x$(printf %x 42)" # 42 is the number of byte instructions of the syscall sys_execve.
+	CODE="${CODE}\x0f\x85${CODE_TO_JUMP}\x00\x00\x00"; # The second byte "85" is the opcode for the JNE instruction. The following four bytes "06 00 00 00" represent the signed 32-bit offset from the current instruction to the target label.
 	# TODO: JNE ?
 	#CODE=${CODE}${cmp}$(printEndianValue 0 ${SIZE_32BITS_4BYTES})$(printEndianValue $rax ${})) ; rax receives 0 for the child and the child pid on the parent
 	# je child_process_only # only on the child, jump over next line to execute the execve code
@@ -295,7 +309,7 @@ function system_call_exec()
 	# 401000:       48 bf 00 20 40 00 00    movabs $0x402000,%rdi #        == 2000 == /bin/sh
 	# 401007:       00 00 00
 	#CODE="${CODE}${MOV_RDI}$(printEndianValue ${PTR_FILE:=0} ${SIZE_64BITS_8BYTES})"
-	#CODE="${CODE}\x48\xbf\xc0\x00\x01\x00\x00\x00\x00\x00"
+	#       :       48 bf c0 00 01 00 00 00 00 00"
 	CODE="${CODE}${MOV_RDI}$(printEndianValue ${PTR_FILE:=0} ${SIZE_64BITS_8BYTES})"
 
 	# LEA_RSP_RSI="\x48\x8d\x74\x24\x08";
