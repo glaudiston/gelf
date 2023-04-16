@@ -16,8 +16,10 @@
 # See Table A-2. One-byte Opcode Map on Intel i64 documentation (page 2626)
 # See Table B-13.  General Purpose Instruction Formats and Encodings for Non-64-Bit Modes (Contd.) (page 2658)
 # x64 has:
+# The x86-64 architecture has a total of 16 general-purpose registers, which are named from R0 to R15. The first 8 registers, R0 to R7, can be accessed using their traditional names (AX, BX, CX, DX, BP, SI, DI, and SP), which have been used since the early days of x86 processors. However, the additional registers introduced in the x86-64 architecture (R8 to R15) have new names that reflect their expanded capabilities and wider use in modern software development. These new names are intended to make it easier for programmers to distinguish between the older and newer registers and to avoid naming conflicts.
 # 16 general purpose registers
-#  EAX(32): Accumulator: Used In Arithmetic operations
+#  The prefix E stands for 32bit and R for 64bit
+#  RAX(32): Accumulator: Used In Arithmetic operations
 #  RAX(64): Accumulator: Used In Arithmetic operations
 #  ECX(32): Counter: Used in loops and shift/rotate instructions
 #  RCX(64): Counter: Used in loops and shift/rotate instructions
@@ -41,13 +43,140 @@
 #  EIP(32)
 #  RIP(64)
 #
+#Here is a table of all the registers in x86_64 with their sizes:
+#Register	Size (bits)
+#RAX	64
+#RBX	64
+#RCX	64
+#RDX	64
+#RSI	64
+#RDI	64
+#RBP	64
+#RSP	64
+#R8	64
+#R9	64
+#R10	64
+#R11	64
+#R12	64
+#R13	64
+#R14	64
+#R15	64
+#EAX	32
+#EBX	32
+#ECX	32
+#EDX	32
+#ESI	32
+#EDI	32
+#EBP	32
+#ESP	32
+#R8D	32
+#R9D	32
+#R10D	32
+#R11D	32
+#R12D	32
+#R13D	32
+#R14D	32
+#R15D	32
+#AX	16
+#BX	16
+#CX	16
+#DX	16
+#SI	16
+#DI	16
+#BP	16
+#SP	16
+#R8W	16
+#R9W	16
+#R10W	16
+#R11W	16
+#R12W	16
+#R13W	16
+#R14W	16
+#R15W	16
+#AL	8
+#BL	8
+#CL	8
+#DL	8
+#SIL	8
+#DIL	8
+#BPL	8
+#SPL	8
+#R8B	8
+#R9B	8
+#R10B	8
+#R11B	8
+#R12B	8
+#R13B	8
+#R14B	8
+#R15B	8
+#
+#Note that some of the registers have smaller sub-registers that can be accessed, such as the lower 32 bits of a 64-bit register, or the lower 16 or 8 bits of a 32-bit or 64-bit register. These sub-registers are commonly used in instruction encoding and can be useful for optimizing code.
+#Register Name	Size (bits)	Description
+#XMM0 - XMM15	128	Extended Multimedia Register (Streaming SIMD Extensions)
+#YMM0 - YMM15	256	Extended Multimedia Register (AVX Advanced Vector Extensions)
+#ZMM0 - ZMM31	512	Extended Multimedia Register (AVX-512 Advanced Vector Extensions 2)
+#
+#Note that YMM0-YMM15 are essentially the same as XMM0-XMM15, but with support for AVX (Advanced Vector Extensions) instructions which operate on 256-bit operands. ZMM0-ZMM31 are registers introduced in AVX-512 which support 512-bit operands.
 . arch/system_call_linux_x86.sh
 
 M64="\x48"; # set REX use addresses and registers with 64 bits (8 bytes)
-MOV_RAX="${M64}\xb8";
-MOV_RDX="${M64}\xba";
-MOV_RSI="${M64}\xbe";
-MOV_RDI="${M64}\xbf"; #if not prepended with M64(x48) expect 32 bit register (edi: 4 bytes)
+#Register	Low 3 bits
+RAX=$(( 2#00000000 ));
+RCX=$(( 2#00000001 ));
+RDX=$(( 2#00000010 ));
+RBX=$(( 2#00000011 ));
+RSP=$(( 2#00000100 ));
+RBP=$(( 2#00000101 ));
+RSI=$(( 2#00000110 ));
+RDI=$(( 2#00000111 ));
+
+MOV="$(( 2#10000000 ))"
+# Here's a table with the 3-bit ModR/M values and their corresponding descriptions, including the value 101 for MOV RAX, imm:
+# 3-bit	Description
+# 000	Register (Direct)
+# 001	Register (Indirect w/Disp8)
+# 010	Register (Indirect w/Disp32)
+# 011	Memory (SIB w/Disp32)
+# 100	Register (Direct)
+# 101	Immediate to register
+# 110	Memory (Direct w/Disp32)
+# 111	Register (Direct)
+IMM="$(( 2#00111000 ))";
+MOV_RAX="${M64}$( printEndianValue $(( MOV + IMM + RAX )) ${SIZE_8BITS_1BYTE} )"; # 48 b8
+MOV_RDX="${M64}$( printEndianValue $(( MOV + IMM + RDX )) ${SIZE_8BITS_1BYTE} )"; # 48 ba
+MOV_RSI="${M64}$( printEndianValue $(( MOV + IMM + RDX )) ${SIZE_8BITS_1BYTE} )"; # 48 be
+MOV_RDI="${M64}$( printEndianValue $(( MOV + IMM + RDX )) ${SIZE_8BITS_1BYTE} )"; # 48 bf; #if not prepended with M64(x48) expect 32 bit register (edi: 4 bytes)
+MOV_RSI_RAX="${M64}\x89\xc6"; # move the rax to rsi #11000110
+#In the opcode "48 89 C6", the byte C6 is actually the ModR/M byte, which is divided into three fields:
+#
+#    The first 2 bits (11) indicate the addressing mode.
+#    The next 3 bits (000) specify the destination register (which in this case is RAX).
+#    The last 3 bits (110) specify the source register (which in this case is RSI).
+#
+# So, in summary, the ModR/M byte in the opcode "48 89 C6" indicates that we are using a register-to-register move instruction, with RSI as the source register and RAX as the destination register.
+MOV_R8="\x49\xC7\xC0";
+MOV_R9="\x49\xC7\xC1";
+MOV_R10="\x49\xc7\xc2";
+
+# XOR is useful to set zero at registers using less bytes in the instruction
+# Here's an table with the bytecodes for XORing each 64-bit register with zero:
+# Register	Assembly	Bytecode
+# RAX	xor rax, rax	48 31 C0
+# RBX	xor rbx, rbx	48 31 DB
+# RCX	xor rcx, rcx	48 31 C9
+# RDX	xor rdx, rdx	48 31 D2
+# RSI	xor rsi, rsi	48 31 F6
+# RDI	xor rdi, rdi	48 31 FF
+# RBP	xor rbp, rbp	48 31 E5
+# RSP	xor rsp, rsp	48 31 EC
+# R8	xor r8, r8	4D 31 C0
+# R9	xor r9, r9	4D 31 C9
+# R10	xor r10, r10	4D 31 D2
+# R11	xor r11, r11	4D 31 DB
+# R12	xor r12, r12	4D 31 E4
+# R13	xor r13, r13	4D 31 ED
+# R14	xor r14, r14	4D 31 F6
+# R15	xor r15, r15	4D 31 FF
 
 # JMP
 # We have some types of jump
@@ -66,6 +195,118 @@ ADD_M64_RDI="${ADD_M64}";
 
 # LEA - Load Effective Address (page 1146)
 SYSCALL="$( printEndianValue $(( 16#050f )) $SIZE_16BITS_2BYTES)"
+SYS_READ=0;
+SYS_WRITE=1;
+SYS_OPEN=2;
+SYS_CLOSE=3;
+SYS_STAT=4;
+SYS_MMAP=9;
+
+sys_close(){
+	CODE="";
+	CODE="${CODE}${MOV_RAX}$(printEndianValue $SYS_CLOSE ${SIZE_64BITS_8BYTES})";
+	CODE="${CODE}${SYSCALL}";
+	echo -en "${CODE}" | base64 -w0;
+}
+
+sys_stat(){
+	FD="$1";
+	#    ; Get the file size
+	#    mov rdi, rax        ; File descriptor returned by the open syscall
+	#    mov rax, 0x9c       ; System call number for fstat
+	#    syscall             ; Call the kernel
+	#    mov rsi, qword [rsp + 8]    ; Get the file size from the stat struct
+}
+
+function getpagesize()
+{
+	:
+#	section .data
+#    pagesize: db "Page size: ", 0Ah, 0
+#    pagemsglen: equ $-pagesize
+#
+#section .bss
+#    pagesizebuf: resb 32
+#
+#section .text
+#    global _start
+#
+#_start:
+#    ; Call sysconf to retrieve the page size
+#    mov rax, 0x3f        ; sysconf syscall number
+#    mov rdi, 0x18        ; _SC_PAGESIZE parameter
+#    xor rsi, rsi         ; unused third parameter
+#    syscall
+#
+#    ; Store the result in the pagesizebuf buffer
+#    mov qword [pagesizebuf], rax
+#
+#    ; Write the page size message to the console
+#    mov rax, 1           ; write syscall number
+#    mov rdi, 1           ; stdout file descriptor
+#    mov rsi, pagesize    ; message to write
+#    mov rdx, pagemsglen  ; message length
+#    syscall
+#
+#    ; Write the page size value to the console
+#    mov rax, 1           ; write syscall number
+#    mov rdi, 1           ; stdout file descriptor
+#    mov rsi, pagesizebuf ; value to write
+#    mov rdx, rax         ; value length
+#    syscall
+#
+#    ; Exit the program
+#    mov rax, 60          ; exit syscall number
+#    xor rdi, rdi         ; exit status code (success)
+#    syscall
+#
+#This code uses the sysconf system call with the _SC_PAGESIZE parameter to retrieve the current page size. The result is stored in a buffer (pagesizebuf) and then printed out to the console using the write system call. Finally, the program exits with a status code of 0.
+
+}
+
+# map a memory region
+#|RAX|syscall___________________|RDI______________|RSI________________|RDX________________|R10________________|R8_______________|R9________|
+#| 9 |sys_mmap                  |unsigned long    |unsigned long len  |int prot           |int flags          |int fd           |long off  |
+function sys_mmap()
+{
+	local CODE="";
+	# ; Map the memory region
+	# mov rdi, 0     ; addr (let kernel choose)
+	CODE="${CODE}${MOV_RDI}$(printEndianValue 0 ${SIZE_64BITS_8BYTES})";
+	# TODO use fstat to detect the size and implement a logic to align it to page memory
+	# When using mmap, the size parameter specified in rsi should be aligned to the page size. This is because the kernel allocates memory in units of pages, and trying to mmap a region that is not page-aligned could result in undefined behavior. To ensure that the size is aligned, you can use the getpagesize() system call to determine the page size at runtime and then round up the size parameter to the nearest multiple of the page size.
+	#    mov rsi, size  ; length
+	PAGESIZE=$(( 4 * 1024 )); # 4KiB
+	#if pagesize > requested_size {
+	#	pagesize
+	#} else {
+	#	(1+(requested size / pagesize)) * pagesize
+	#}
+	CODE="${CODE}${MOV_RSI}$(printEndianValue ${PAGESIZE} ${SIZE_64BITS_8BYTES})";
+
+	# Protection flag
+	# Value	Constant	Description
+	# 0	PROT_NONE	No access
+	# 1	PROT_READ	Read access
+	# 2	PROT_WRITE	Write access
+	# 4	PROT_EXEC	Execute access
+	#    mov rdx, 3     ; prot (PROT_READ(1) | PROT_WRITE(2) | PROT_EXEC(4))
+	CODE="${CODE}${MOV_RDX}$(printEndianValue 3 ${SIZE_64BITS_8BYTES})";
+	# man mmap for valid flags
+	#    mov r10, 0    ; flags
+	CODE="${CODE}${MOV_R10}$(printEndianValue 0 ${SIZE_64BITS_8BYTES})"
+	
+	#    mov r8, 0     ; fd
+	MOV_RAX_to_R8="\x48\x89\xc0";
+	CODE="${CODE}${MOV_RAX_to_R8}"
+	#CODE="${CODE}${MOV_R8}$(printEndianValue 3 ${SIZE_64BITS_8BYTES})";
+	#    mov r9, 0     ; offset
+	CODE="${CODE}${MOV_R9}$(printEndianValue 0 ${SIZE_64BITS_8BYTES})"
+	#    mov rax, 9    ; mmap system call number
+	CODE="${CODE}${MOV_RAX}$(printEndianValue $SYS_MMAP ${SIZE_64BITS_8BYTES})"
+	CODE="${CODE}SYSCALL";
+	echo -en "${CODE}" | base64 -w0;
+}
 
 # Jump short is the fastest and cheaper way to run some code,
 # but it has two limitations:
@@ -216,12 +457,48 @@ function system_call_pop_stack()
 	:
 }
 
+
+function system_call_open()
+{
+	local filename="$1"
+	local CODE="";
+	# mov rax, 2 ; System call for open()
+	CODE="${CODE}${MOV_RAX}$(printEndianValue ${SYS_OPEN} "${SIZE_64BITS_8BYTES}")"
+	# mov rdi, filename ; File name
+	local FILENAME_ADDR="$(printEndianValue "${filename}" "${SIZE_64BITS_8BYTES}" )";
+	CODE="${CODE}${MOV_RDI}${FILENAME_ADDR}";
+	# mov rsi, 'r' ; Open mode
+	CODE="${CODE}${MOV_RSI}$(printEndianValue 72 "${SIZE_64BITS_8BYTES}")"; # mode=r (x72)
+	# xor rdx, rdx ; File permissions (ignored when opening)
+	#CODE="${CODE}${XOR}${RDX}${RDX}"
+	CODE="${CODE}${SYSCALL}";
+	echo -ne "${CODE}" | base64 -w0;
+}
+
+function read_file()
+{
+	local filename="$1";
+	local CODE="$(system_call_open "${filename}" | base64 -d | toHexDump)";
+	# now we create a buffer with mmap using this fd in RAX.
+	CODE="${CODE}$(sys_mmap | base64 -d | toHexDump)"
+	# then the fd should be at eax
+	#
+	# DEBUG CODE:
+	CODE="${CODE}${MOV_RSI_RAX}"
+	CODE="${CODE}${MOV_RAX}$(printEndianValue $SYS_READ $SIZE_64BITS_8BYTES)";
+	# 3 is expected to be the new open file descriptor
+	CODE="${CODE}${MOV_RDI}$(printEndianValue 3 $SIZE_64BITS_8BYTES)";
+	local DATA_ADDR="$(printEndianValue "$(( 16#10127 ))" "$SIZE_64BITS_8BYTES" )";
+	CODE="${CODE}${MOV_RSI}${DATA_ADDR}";
+	CODE="${CODE}${MOV_RDX}$(printEndianValue "2708" $SIZE_64BITS_8BYTES)";
+	CODE="${CODE}${SYSCALL}";
+}
+
 function system_call_read()
 {
 	local DATA_ADDR="$(printEndianValue "${1}" "$SIZE_64BITS_8BYTES" )";
 	local len="${2}";
 	local CODE="";
-	SYS_READ=0;
 	STDIN=0;
 	CODE="${CODE}${MOV_RAX}$(printEndianValue $SYS_READ $SIZE_64BITS_8BYTES)";
 	CODE="${CODE}${MOV_RDI}$(printEndianValue $STDIN $SIZE_64BITS_8BYTES)";
@@ -239,7 +516,6 @@ function system_call_write()
 	local DATA_ADDR_V="$2";
 	local DATA_LEN="$3";
 	local DATA_ADDR="$(printEndianValue "$DATA_ADDR_V" "$SIZE_64BITS_8BYTES")";
-	SYS_WRITE=1;
 	local CODE="";
 	CODE="${CODE}${MOV_RAX}$(printEndianValue $SYS_WRITE $SIZE_64BITS_8BYTES)";
 	CODE="${CODE}${MOV_RDI}$(printEndianValue $STDOUT $SIZE_64BITS_8BYTES)";
