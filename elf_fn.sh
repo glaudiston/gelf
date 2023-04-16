@@ -289,26 +289,35 @@ parse_code_line_elements()
 	echo -n "${encoded_array}"
 }
 
+get_symbol_addr()
+{
+	local symbol_name="$1"
+	local SNIPPETS=$2;
+	local symbol_addr="$( echo "$SNIPPETS" | grep "SYMBOL_TABLE,${symbol_name}" | tail -1 | cut -d, -f${SNIPPET_COLUMN_DATA_OFFSET})";
+	debug ${symbol_name} at "${symbol_addr}"
+	echo "${symbol_addr}";
+}
+
 get_b64_symbol_value()
 {
-	local data_output="$1"
+	local symbol_name="$1"
 	local SNIPPETS=$2;
 	local input="ascii";
-	if is_valid_number "$data_output"; then {
-		echo -n "$data_output" | base64 -w0
+	if is_valid_number "$symbol_name"; then {
+		echo -n "$symbol_name" | base64 -w0
 		return
 	}
 	fi;
 
 	# resolve variable
-	local symbol_value="$( echo "$SNIPPETS" | grep "SYMBOL_TABLE,${data_output}" | tail -1 | cut -d, -f${SNIPPET_COLUMN_DATA_BYTES})";
+	local symbol_value="$( echo "$SNIPPETS" | grep "SYMBOL_TABLE,${symbol_name}" | tail -1 | cut -d, -f${SNIPPET_COLUMN_DATA_BYTES})";
 	if [ "${symbol_value}" == "" ];then {
 		# return default values for known internal words
-		if [ "${data_output}" == "input" ]; then
+		if [ "${symbol_name}" == "input" ]; then
 			echo -n "ascii" | base64 -w0
 			return;
 		fi;
-		error "Expected a integer or a valid variable/constant. But got [$data_output]"
+		error "Expected a integer or a valid variable/constant. But got [$symbol_name]"
 		backtrace
 		debug "SYMBOLS:
 $(echo "$SNIPPETS" | grep SYMBOL_TABLE)"
@@ -518,7 +527,6 @@ parse_snippet()
 			# So if a variable is never changed, it will be always a constant hardcoded at the bytecode;
 			symbol_name="$( echo -n "${CODE_LINE/:*/}" )"
 			symbol_value="$( echo -n "${CODE_LINE/*:	/}" )"
-			data_addr_v="${data_offset}"
 			instr_bytes="";
 			instr_len=0;
 			data_bytes="$(set_symbol_value "${symbol_value}" "${SNIPPETS}")";
@@ -537,6 +545,36 @@ parse_snippet()
 			return $?;
 		}
 		fi;
+	}
+	fi;
+	if [[ "${code_line_elements[0]}" =~ :\<=$ ]]; then
+	{
+		symbol_name="$( echo -n "${CODE_LINE/:*/}" )"
+		filename_addr=$(get_symbol_addr "${code_line_elements[1]}" "$SNIPPETS")
+		# sys_open will create a new file descriptor.
+		SYS_OPEN="$(system_call_open "$filename_addr")"
+		# it should return the bytecode, the size
+		#fd="$(set_symbol_value "${symbol_value} fd" "${SYS_OPEN}")";
+		# We should create a new dynamic symbol to have the file descriptor number
+		#CODE="${CODE}$(sys_read $)"
+		#debug symbol_value=$symbol_value
+		#data_addr_v="${data_offset}"
+		instr_bytes="${SYS_OPEN}"
+		instr_len=$(echo -n "${instr_bytes}" | base64 -d | wc -c )
+		data_bytes="";
+		data_len="$( echo -n "${data_bytes}" | base64 -d | wc -c )";
+		struct_parsed_snippet \
+			"SYMBOL_TABLE" \
+			"${symbol_name}" \
+			"${instr_offset}" \
+			"${instr_bytes}" \
+			"${instr_len}" \
+			"${data_offset}" \
+			"${data_bytes}" \
+			"${data_len}" \
+			"${CODE_LINE_B64}" \
+			"1";
+		return $?;
 	}
 	fi;
 	if [[ "${code_line_elements[0]}" == write ]]; then
@@ -587,7 +625,6 @@ parse_snippet()
 	fi;
 	if [[ "${code_line_elements[0]}" == exit ]]; then
 		local exit_value=$(get_b64_symbol_value "${code_line_elements[1]}" "${SNIPPETS}" | base64 -d | tr -d '\00' )
-		get_b64_symbol_value "${code_line_elements[1]}" "${SNIPPETS}" | base64 -d | { read exit_value_test; }
 
 		instr_bytes="$(system_call_exit ${exit_value})"
 		struct_parsed_snippet \
@@ -640,8 +677,8 @@ parse_snippet()
 			"1";
 		return $?;
 	fi;
-	if echo "$SNIPPETS" | grep -q "${CODE_LINE}"; then
-		target="${CODE_LINE/}"
+	if echo "$SNIPPETS" | grep -q "${code_line_elements[0]}"; then
+		target="${code_line_elements[0]}"
 		target_offset="$( echo "$SNIPPETS" | grep "SNIPPET,${target}" | cut -d, -f${SNIPPET_COLUMN_INSTR_OFFSET} )";
 		# debug "call $target: [$target_offset]. [$instr_offset]"
 		local call_bytecode="$(system_call_procedure "${target_offset}" "${instr_offset}" )";
@@ -740,7 +777,7 @@ get_first_code_offset()
 # That includes NONE OF the data section (string table, the elf and program headers
 detect_instruction_size_from_code()
 {
-	grep -E "^(SNIPPET|INSTRUCTION|SNIPPET_CALL)," |
+	grep -E "^(SNIPPET|INSTRUCTION|SNIPPET_CALL|SYMBOL_TABLE)," |
 	cut -d, -f${SNIPPET_COLUMN_INSTR_LEN} |
 	awk '{s+=$1}END{print s}'
 }
@@ -754,7 +791,7 @@ write_elf()
 {
 	local ELF_FILE_OUTPUT="$1";
 	# Virtual Memory Offset
-	local PH_VADDR_V="$(( 1 << 16 ))" # 65536, 0x10000
+	local PH_VADDR_V=$(cat /proc/sys/vm/mmap_min_addr)
 	local SH_COUNT=$(get_section_headers_count "");
 	local INPUT_SOURCE_CODE="$(cat)";
 	local parsed_snippets="$(echo "${INPUT_SOURCE_CODE}" | parse_snippets "${PH_VADDR_V}" "${INSTR_TOTAL_SIZE-0}")";

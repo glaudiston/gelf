@@ -31,10 +31,10 @@
 #
 # but for now we have only real hardcoded support to base64 and ascii.
 
-#input:	integer
+input:	integer
 stdout:	1
 stderr:	2
-#base:	16
+base:	16
 
 # define functions
 func:	{
@@ -50,8 +50,8 @@ main:	{
 	a:	Zmlyc3QgbGluZSBpbiBtYWluCg==
 	write	stdout	a
 	func
-#	b:	c2Vjb25kIGxpbmUgYXQgbWFpbgo=
-#	write	stdout	b
+	b:	c2Vjb25kIGxpbmUgYXQgbWFpbgo=
+	write	stdout	b
 	ret
 }
 
@@ -59,16 +59,20 @@ loop:	{
 	input:	ascii
 	texto:	repetir
 	write	stdout	texto
-	#input:	ascii	evaluate
-	#i:	i + 1
-	#write	stdout	i
+	input:	ascii	evaluate
+#	i:	i + 1
+#	write	stdout	i
+#	i	>	5
+#		x:	out
+#		write	out
 }
+#goto	loop
 
-#input:	ascii
-#text:	sample stderr text 
-#write	stderr	text
+input:	ascii
+text:	sample stderr text 
+write	stderr	text
 
-#main
+main
 #text:	By Glaudiston
 #write	stdout	text
 
@@ -77,17 +81,16 @@ loop:	{
 #i:	i+1	# this will evaluate only if the input has the evaluate value
 #write	stdout	i
 
-#goto	loop
 
 # Where how to run a system command
-#cmd:	/usr/bin/whoami
-#write	stdout	cmd
-#!	cmd
+cmd:	/usr/bin/whoami
+write	stdout	cmd
+!	cmd
 
-#write	stdout	cmd
+write	stdout	cmd
 cmdls:	/usr/bin/ls
 write	stdout	cmdls
 !	cmdls
 
-with no errors:	2
+with no errors:	5
 exit	with no errors
