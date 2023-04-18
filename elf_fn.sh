@@ -552,7 +552,7 @@ parse_snippet()
 		symbol_name="$( echo -n "${CODE_LINE/:*/}" )"
 		filename_addr=$(get_symbol_addr "${code_line_elements[1]}" "$SNIPPETS")
 		# sys_open will create a new file descriptor.
-		SYS_OPEN="$(system_call_open "$filename_addr")"
+		SYS_OPEN="$(read_file "$filename_addr")"
 		# it should return the bytecode, the size
 		#fd="$(set_symbol_value "${symbol_value} fd" "${SYS_OPEN}")";
 		# We should create a new dynamic symbol to have the file descriptor number

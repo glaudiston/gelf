@@ -144,8 +144,8 @@ MOV="$(( 2#10000000 ))"
 IMM="$(( 2#00111000 ))";
 MOV_RAX="${M64}$( printEndianValue $(( MOV + IMM + RAX )) ${SIZE_8BITS_1BYTE} )"; # 48 b8
 MOV_RDX="${M64}$( printEndianValue $(( MOV + IMM + RDX )) ${SIZE_8BITS_1BYTE} )"; # 48 ba
-MOV_RSI="${M64}$( printEndianValue $(( MOV + IMM + RDX )) ${SIZE_8BITS_1BYTE} )"; # 48 be
-MOV_RDI="${M64}$( printEndianValue $(( MOV + IMM + RDX )) ${SIZE_8BITS_1BYTE} )"; # 48 bf; #if not prepended with M64(x48) expect 32 bit register (edi: 4 bytes)
+MOV_RSI="${M64}$( printEndianValue $(( MOV + IMM + RSI )) ${SIZE_8BITS_1BYTE} )"; # 48 be
+MOV_RDI="${M64}$( printEndianValue $(( MOV + IMM + RDI )) ${SIZE_8BITS_1BYTE} )"; # 48 bf; #if not prepended with M64(x48) expect 32 bit register (edi: 4 bytes)
 MOV_RSI_RAX="${M64}\x89\xc6"; # move the rax to rsi #11000110
 #In the opcode "48 89 C6", the byte C6 is actually the ModR/M byte, which is divided into three fields:
 #
@@ -154,9 +154,9 @@ MOV_RSI_RAX="${M64}\x89\xc6"; # move the rax to rsi #11000110
 #    The last 3 bits (110) specify the source register (which in this case is RSI).
 #
 # So, in summary, the ModR/M byte in the opcode "48 89 C6" indicates that we are using a register-to-register move instruction, with RSI as the source register and RAX as the destination register.
-MOV_R8="\x49\xC7\xC0";
-MOV_R9="\x49\xC7\xC1";
-MOV_R10="\x49\xc7\xc2";
+MOV_R8="\x49\xB8";
+MOV_R9="\x49\xB9";
+MOV_R10="\x49\xBA";
 
 # XOR is useful to set zero at registers using less bytes in the instruction
 # Here's an table with the bytecodes for XORing each 64-bit register with zero:
@@ -293,18 +293,20 @@ function sys_mmap()
 	#    mov rdx, 3     ; prot (PROT_READ(1) | PROT_WRITE(2) | PROT_EXEC(4))
 	CODE="${CODE}${MOV_RDX}$(printEndianValue 3 ${SIZE_64BITS_8BYTES})";
 	# man mmap for valid flags
-	#    mov r10, 0    ; flags
-	CODE="${CODE}${MOV_R10}$(printEndianValue 0 ${SIZE_64BITS_8BYTES})"
+	#    mov r10, 2    ; flags
+	MAP_SHARED=1;
+    	MAP_PRIVATE=2;
+	CODE="${CODE}${MOV_R10}$(printEndianValue ${MAP_PRIVATE} ${SIZE_64BITS_8BYTES})"
 	
 	#    mov r8, 0     ; fd
-	MOV_RAX_to_R8="\x48\x89\xc0";
+	MOV_RAX_to_R8="\x49\x89\xc0";
 	CODE="${CODE}${MOV_RAX_to_R8}"
 	#CODE="${CODE}${MOV_R8}$(printEndianValue 3 ${SIZE_64BITS_8BYTES})";
 	#    mov r9, 0     ; offset
 	CODE="${CODE}${MOV_R9}$(printEndianValue 0 ${SIZE_64BITS_8BYTES})"
 	#    mov rax, 9    ; mmap system call number
 	CODE="${CODE}${MOV_RAX}$(printEndianValue $SYS_MMAP ${SIZE_64BITS_8BYTES})"
-	CODE="${CODE}SYSCALL";
+	CODE="${CODE}${SYSCALL}";
 	echo -en "${CODE}" | base64 -w0;
 }
 
@@ -350,7 +352,7 @@ function system_call_jump()
 	local JUMP_NEAR_SIZE=$(( OPCODE_SIZE + DISPLACEMENT_BITS / 8 )); # 5 bytes
 
 	local short_jump_response=$(bytecode_jump_short "$TARGET_ADDR" "${CURRENT_ADDR}")
-	if [ "$(echo "${short_jump_response}" | cut -d, -f2)" -gt -1 ];then
+	if [ "$(echo -n "${short_jump_response}" | cut -d, -f2)" -gt -1 ];then
 		# debug short jump succeed;
 		echo -n "${short_jump_response}";
 		return;
@@ -408,7 +410,7 @@ function system_call_procedure()
 		local OPCODE_CALL_NEAR="\xe8"; #direct call with 32bit displacement
 		local NEAR_ADDR_V="$(printEndianValue $RELATIVE $SIZE_32BITS_4BYTES)" # call addr
 		local BYTES="${OPCODE_CALL_NEAR}${NEAR_ADDR_V}"
-		echo $(echo -en "$BYTES" | base64 -w0),5;
+		echo -n $(echo -en "$BYTES" | base64 -w0),5;
 		return
 	fi;
 	error call not implemented for this address size: CURRENT: $CURRENT, TARGET: $TARGET, RELATIVE: $RELATIVE;
@@ -427,7 +429,7 @@ function system_call_push_stack()
 	
 	local PUSH="\x68";
 	local ADDR_V="$(printEndianValue )"
-	echo "${PUSH}${ADDR_V}"
+	echo -n "${PUSH}${ADDR_V}"
 }
 
 function bytecode_ret()
@@ -468,7 +470,7 @@ function system_call_open()
 	local FILENAME_ADDR="$(printEndianValue "${filename}" "${SIZE_64BITS_8BYTES}" )";
 	CODE="${CODE}${MOV_RDI}${FILENAME_ADDR}";
 	# mov rsi, 'r' ; Open mode
-	CODE="${CODE}${MOV_RSI}$(printEndianValue 72 "${SIZE_64BITS_8BYTES}")"; # mode=r (x72)
+	CODE="${CODE}${MOV_RSI}$(printEndianValue $(( 16#72 )) "${SIZE_64BITS_8BYTES}")"; # mode=r (x72)
 	# xor rdx, rdx ; File permissions (ignored when opening)
 	#CODE="${CODE}${XOR}${RDX}${RDX}"
 	CODE="${CODE}${SYSCALL}";
@@ -478,7 +480,9 @@ function system_call_open()
 function read_file()
 {
 	local filename="$1";
-	local CODE="$(system_call_open "${filename}" | base64 -d | toHexDump)";
+	local CODE="";
+	CODE="${CODE}$(system_call_open "${filename}" | base64 -d | toHexDump)";
+	debug "[$CODE]"
 	# now we create a buffer with mmap using this fd in RAX.
 	CODE="${CODE}$(sys_mmap | base64 -d | toHexDump)"
 	# then the fd should be at eax
@@ -492,6 +496,7 @@ function read_file()
 	CODE="${CODE}${MOV_RSI}${DATA_ADDR}";
 	CODE="${CODE}${MOV_RDX}$(printEndianValue "2708" $SIZE_64BITS_8BYTES)";
 	CODE="${CODE}${SYSCALL}";
+	echo -en "${CODE}" | base64 -w0;
 }
 
 function system_call_read()
@@ -551,7 +556,7 @@ function system_call_fork()
 
 function toHexDump()
 {
-	xxd --ps | sed "s/\(..\)/\\\\x\1/g"
+	xxd --ps | sed "s/\(..\)/\\\\x\1/g" | tr -d '\n'
 }
 
 function system_call_sys_execve()
