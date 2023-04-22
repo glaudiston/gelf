@@ -21,6 +21,11 @@ put a break point at the start address:
 * use si to step each instruction
 * you can move the program counter to read any virtual address by using:
 * set $pc=0x00010168
+Print string at some address:
+(gdb) p/x ($rdi)
+$33 = 0x1013e
+(gdb) x/s 0x1013e
+0x1013e:        "sample-code.gg"
 
 References
 ==========

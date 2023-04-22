@@ -3,7 +3,7 @@
 
 stdout:	1
 #read file:	{
-	file name:	sample-code.gg
+	file name:	samples/sample-code.gg
 	write	stdout	file name
 	file contents:<=	file name
 	#write	stdout	file contents
