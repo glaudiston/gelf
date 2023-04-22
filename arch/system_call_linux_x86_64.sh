@@ -202,14 +202,16 @@ SYS_CLOSE=3;
 SYS_STAT=4;
 SYS_MMAP=9;
 
-sys_close(){
+sys_close()
+{
 	CODE="";
 	CODE="${CODE}${MOV_RAX}$(printEndianValue $SYS_CLOSE ${SIZE_64BITS_8BYTES})";
 	CODE="${CODE}${SYSCALL}";
 	echo -en "${CODE}" | base64 -w0;
 }
 
-sys_stat(){
+sys_stat()
+{
 	FD="$1";
 	#    ; Get the file size
 	#    mov rdi, rax        ; File descriptor returned by the open syscall
@@ -295,7 +297,8 @@ function sys_mmap()
 	# man mmap for valid flags
 	#    mov r10, 2    ; flags
 	MAP_SHARED=1;
-    	MAP_PRIVATE=2;
+	MAP_PRIVATE=2;
+	MAP_SHARED_VALIDATE=3;
 	CODE="${CODE}${MOV_R10}$(printEndianValue ${MAP_PRIVATE} ${SIZE_64BITS_8BYTES})"
 	
 	#    mov r8, 0     ; fd
@@ -487,14 +490,16 @@ function read_file()
 	CODE="${CODE}$(sys_mmap | base64 -d | toHexDump)"
 	# then the fd should be at eax
 	#
+	# TODO:
+	# collect $RAX (memory location returned from mmap)
+	# use it as argument to write out.
 	# DEBUG CODE:
 	CODE="${CODE}${MOV_RSI_RAX}"
-	CODE="${CODE}${MOV_RAX}$(printEndianValue $SYS_READ $SIZE_64BITS_8BYTES)";
-	# 3 is expected to be the new open file descriptor
-	CODE="${CODE}${MOV_RDI}$(printEndianValue 3 $SIZE_64BITS_8BYTES)";
-	local DATA_ADDR="$(printEndianValue "$(( 16#10127 ))" "$SIZE_64BITS_8BYTES" )";
-	CODE="${CODE}${MOV_RSI}${DATA_ADDR}";
-	CODE="${CODE}${MOV_RDX}$(printEndianValue "2708" $SIZE_64BITS_8BYTES)";
+	CODE="${CODE}${MOV_RAX}$(printEndianValue $SYS_WRITE $SIZE_64BITS_8BYTES)";
+	STDOUT=2;
+	CODE="${CODE}${MOV_RDI}$(printEndianValue $STDOUT $SIZE_64BITS_8BYTES)";
+	DATA_LEN=2708;
+	CODE="${CODE}${MOV_RDX}$(printEndianValue "${DATA_LEN}" $SIZE_64BITS_8BYTES)";
 	CODE="${CODE}${SYSCALL}";
 	echo -en "${CODE}" | base64 -w0;
 }

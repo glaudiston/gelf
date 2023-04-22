@@ -1,0 +1,17 @@
+# aarch can be detected by reading the self binary at byte 0x12 that refers to EM(EI_MACHINE) elf field
+# the currently supported values are:
+#	dec	hex	arch
+#	3	3	x86
+#	62	3e	x86_64
+#	183	b7	aarch64
+
+arch byte position:	\x12
+#arch byte value:	read	arch byte position
+
+to standard output:	1
+
+#write	to standard output	Eg==
+#write	to standard output	The current arch is {arch byte position}
+
+with no errors:	3
+exit	5

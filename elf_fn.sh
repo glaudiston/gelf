@@ -794,6 +794,20 @@ write_elf()
 	local PH_VADDR_V=$(cat /proc/sys/vm/mmap_min_addr)
 	local SH_COUNT=$(get_section_headers_count "");
 	local INPUT_SOURCE_CODE="$(cat)";
+	INIT_CODE="
+	mmap 1 page 4096 bytes (private);
+	mmap 1 page 4096 bytes (shared); ?
+	reserve space for:
+		array of mapped pages with struct
+		* page addr
+		* free page left;
+		* shared page left;
+	in private page should put:
+		* argc is $rsp
+		 (gdb) print *((int*)$rsp)
+		* argv is $rsp + 8
+		 (gdb) print *((char**)($rsp + 8))
+	";
 	local parsed_snippets="$(echo "${INPUT_SOURCE_CODE}" | parse_snippets "${PH_VADDR_V}" "${INSTR_TOTAL_SIZE-0}")";
 	local FIRST_CODE_OFFSET="$( echo "$parsed_snippets" | get_first_code_offset)";
 	local ELF_FILE_HEADER="$(

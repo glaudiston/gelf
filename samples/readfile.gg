@@ -1,0 +1,15 @@
+#!/bin/gg
+#
+
+stdout:	1
+#read file:	{
+	file name:	sample-code.gg
+	write	stdout	file name
+	file contents:<=	file name
+	#write	stdout	file contents
+#	#ret
+#}
+#read file	sample-code.gg
+
+no error:	0
+exit	no error
