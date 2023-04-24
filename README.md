@@ -26,6 +26,11 @@ Print string at some address:
 $33 = 0x1013e
 (gdb) x/s 0x1013e
 0x1013e:        "sample-code.gg"
+* argc is $rsp
+(gdb) print *((int*)$rsp)
+* argv is $rsp + 8
+(gdb) print *((char**)($rsp + 8))
+
 
 References
 ==========

@@ -615,3 +615,8 @@ function system_call_exec()
 	echo -en "${CODE}" | base64 -w0;
 	echo -en ",$(echo -en "${CODE}" | wc -c )";
 }
+
+get_base_pointer_value_int()
+{
+	echo -n "base_pointer_value_int"
+}

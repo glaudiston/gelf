@@ -310,14 +310,24 @@ get_b64_symbol_value()
 	fi;
 
 	# resolve variable
-	local symbol_value="$( echo "$SNIPPETS" | grep "SYMBOL_TABLE,${symbol_name}" | tail -1 | cut -d, -f${SNIPPET_COLUMN_DATA_BYTES})";
-	if [ "${symbol_value}" == "" ];then {
+	local symbol_data="$( echo "$SNIPPETS" | grep "SYMBOL_TABLE,${symbol_name}" | tail -1)";
+	if [ "${symbol_data}" == "" ]; then {
 		# return default values for known internal words
 		if [ "${symbol_name}" == "input" ]; then
 			echo -n "ascii" | base64 -w0
 			return;
 		fi;
 		error "Expected a integer or a valid variable/constant. But got [$symbol_name]"
+		backtrace
+		debug "SYMBOLS:
+$(echo "$SNIPPETS" | grep SYMBOL_TABLE)"
+		return 1
+	}
+	fi;
+	local symbol_value="$( echo "$symbol_data" | cut -d, -f${SNIPPET_COLUMN_DATA_BYTES})";
+	if [ "${symbol_value}" == "" ];then {
+		local symbol_instr="$( echo "$symbol_data" | cut -d, -f${SNIPPET_COLUMN_INSTR_BYTES})";
+		error "symbol found but no data. maybe we need to look at registers ? [$symbol_name] [${symbol_instr}]"
 		backtrace
 		debug "SYMBOLS:
 $(echo "$SNIPPETS" | grep SYMBOL_TABLE)"
@@ -560,6 +570,29 @@ parse_snippet()
 		#debug symbol_value=$symbol_value
 		#data_addr_v="${data_offset}"
 		instr_bytes="${SYS_OPEN}"
+		instr_len=$(echo -n "${instr_bytes}" | base64 -d | wc -c )
+		data_bytes="";
+		data_len="$( echo -n "${data_bytes}" | base64 -d | wc -c )";
+		struct_parsed_snippet \
+			"SYMBOL_TABLE" \
+			"${symbol_name}" \
+			"${instr_offset}" \
+			"${instr_bytes}" \
+			"${instr_len}" \
+			"${data_offset}" \
+			"${data_bytes}" \
+			"${data_len}" \
+			"${CODE_LINE_B64}" \
+			"1";
+		return $?;
+	}
+	fi;
+	if [[ "${code_line_elements[0]}" =~ ::\$$ ]]; then
+	{
+		symbol_name="$( echo -n "${code_line_elements[0]/:*/}" )"
+		# create a new dynamic symbol called ${symbol_name}
+		# That should point to the rbp register first 8 bytes (int)
+		instr_bytes="$(get_base_pointer_value_int)"
 		instr_len=$(echo -n "${instr_bytes}" | base64 -d | wc -c )
 		data_bytes="";
 		data_len="$( echo -n "${data_bytes}" | base64 -d | wc -c )";
