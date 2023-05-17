@@ -11,6 +11,13 @@ Elf64_Xword=$SIZE_64BITS_8BYTES;
 Elf64_Addr=$SIZE_64BITS_8BYTES;
 Elf64_Off=$SIZE_64BITS_8BYTES;
 
+# Used for constants hardcoded like STDOUT, STDERR and any other values known at build time.
+SYMBOL_TYPE_STATIC=0
+# Runtime variables stored at memory. Unable to recover the address at built time.
+SYMBOL_TYPE_DYNAMIC=1
+# Values Stored at processor register fields.
+SYMBOL_TYPE_REGISTER=2
+
 # receives the type as first argument
 # and the value as second argument
 # and return the hex string representation

@@ -1,26 +1,33 @@
 #!/bin/gg
 #
+# Note: Early language versions has a bug that force all functions be defined before the first instruction.
 
-# Arguments users :: as definition
-stdout:	1
+# : defines values to symbols (variables or constants / dynamic or static)
+#stdout:	1
+stderr:	2
+# Arguments uses :: as definition
 # ::$ allows recover the number of arguments passed to the program or function
+#args::$
+first argument::	1
+second argument::	2
+#read file:	{
+	#file::	1
+#	file name:	samples/sample-code.gg
+#	write	stderr	file name
+	#file contents:<=	file name
+	#write	stdout	file contents
+#	ret
+#}
 # It can be recovered in gdb by using 
 # (gdb) print *((int*)($rsp))
-args::$
-msg:	arguments: args
-write	args
-write
-bin name::	0
-file name::	1
-read file:	{
-	file::	1
-	file name:	samples/sample-code.gg
-	write	stdout	file name
-	file contents:<=	file name
-	#write	stdout	file contents
-	ret
-}
-read file	sample-code.gg
+#msg:	arguments: args
+#write	stderr	args
+write	stderr	first argument
+write	stderr	second argument
+#write
+#bin name::	0
+#file name::	1
+#read file	samples/sample-code.gg
 
 no error:	0
 exit	no error

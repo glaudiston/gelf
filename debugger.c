@@ -78,9 +78,19 @@ int main(int argc, char *argv[])
 			data = ptrace(PTRACE_PEEKTEXT, child, (void*)addr+1, 0);
 			printf("%08x: MOV eDI 0x%08x\n", addr, data); fflush(stdout);
 		}
+		// MOV RDI HEXVALUE
 		else if ( ( data << 16 >> 16 ) == 0xbf48 ) {
 			data = ptrace(PTRACE_PEEKTEXT, child, (void*)addr+2, 0);
 			printf("%016x: MOV RDI 0x%016x\n", addr, data); fflush(stdout);
+		}
+		// MOV RSP RSI
+		else if ( ( data << 32 >> 32 ) == 0x48e68948 ) {
+			data = ptrace(PTRACE_PEEKTEXT, child, (void*)addr+4, 0);
+			printf("%016x: MOV %RSP, %RSI\n", addr); fflush(stdout);
+		}
+		// ADD RSI HEXVALUE ??
+		else if ( ( data << 16 >> 16 ) == 0x8348 ) {
+			printf("%016x: ADD RSI? 0x%x\n", addr, data >> 24 << 24); fflush(stdout);
 		}
 		// MOV eSI STR ADDR
 		else if ( get_first_byte(data) == 0xbe ) {
