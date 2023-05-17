@@ -130,7 +130,8 @@ RBP=$(( 2#00000101 ));
 RSI=$(( 2#00000110 ));
 RDI=$(( 2#00000111 ));
 
-MOV="$(( 2#10000000 ))"
+MOV="$(( 2#10000000 ))"; # Move using memory as source
+MOVR="$(( 2#11000000 ))"; # move between registers
 # Here's a table with the 3-bit ModR/M values and their corresponding descriptions, including the value 101 for MOV RAX, imm:
 # 3-bit	Description
 # 000	Register (Direct)
@@ -150,10 +151,27 @@ MOV_RSI_RAX="${M64}\x89\xc6"; # move the rax to rsi #11000110
 #In the opcode "48 89 C6", the byte C6 is actually the ModR/M byte, which is divided into three fields:
 #
 #    The first 2 bits (11) indicate the addressing mode.
-#    The next 3 bits (000) specify the destination register (which in this case is RAX).
-#    The last 3 bits (110) specify the source register (which in this case is RSI).
+#    The next 3 bits (110) specify the destination register (which in this case is RSI).
+#    The last 3 bits (000) specify the source register (which in this case is RAX).
 #
-# So, in summary, the ModR/M byte in the opcode "48 89 C6" indicates that we are using a register-to-register move instruction, with RSI as the source register and RAX as the destination register.
+# So, in summary, the ModR/M byte in the opcode "48 89 C6" indicates that we are using a register-to-register move instruction, with RSI as the destination register and RAX as the source register.
+#MOV_RSI_RSP="${M64}\x89\x$( printf %x $(( MOVR + (RSI << 3) + RSP )) )"; # move the RSP to RSI #11000110
+# show_bytecode "MOV %RSI, (%RSP)"
+#48893424
+# show_bytecode "MOV %RSI, %RSP"
+#4889f4
+
+# show_bytecode "mov %rsp, %rsi"
+# 4889e6
+#MOV_RSI_RSP="\x48\x89\xe6"; # Copy the RSP(pointer address) to the RSP(as a pointer address).
+MOV_RSI_RSP="${M64}\x89\x$( printf %x $(( MOVR + (RSP << 3) + RSI )) )"; # move the RSP to RSI #11000110
+ADD_RSI="${M64}\x83\xC6";
+MOV_RSI_RSI="\x48\x8b\x36";# mov (%rsi), %rsi
+
+# show_bytecode "movq (%rsp), %rsi"
+# 488b3424
+# MOV_VALUE_RSI_RSP="\x48\x8b\x34\x24"; # Copy the RSP(pointer value, not address) to the RSI(as a integer value).
+
 MOV_R8="\x49\xB8";
 MOV_R9="\x49\xB9";
 MOV_R10="\x49\xBA";
@@ -496,7 +514,7 @@ function read_file()
 	# DEBUG CODE:
 	CODE="${CODE}${MOV_RSI_RAX}"
 	CODE="${CODE}${MOV_RAX}$(printEndianValue $SYS_WRITE $SIZE_64BITS_8BYTES)";
-	STDOUT=2;
+	STDOUT=1;
 	CODE="${CODE}${MOV_RDI}$(printEndianValue $STDOUT $SIZE_64BITS_8BYTES)";
 	DATA_LEN=2708;
 	CODE="${CODE}${MOV_RDX}$(printEndianValue "${DATA_LEN}" $SIZE_64BITS_8BYTES)";
@@ -518,21 +536,63 @@ function system_call_read()
 	echo -en "${CODE}" | base64 -w0;
 }
 
-system_call_write_len=42
 # given a data address as argument, write it to stdout
-function system_call_write()
+function system_call_write_addr()
 {
-	local STDOUT="$1";
+	local OUT="$1";
 	local DATA_ADDR_V="$2";
 	local DATA_LEN="$3";
 	local DATA_ADDR="$(printEndianValue "$DATA_ADDR_V" "$SIZE_64BITS_8BYTES")";
 	local CODE="";
 	CODE="${CODE}${MOV_RAX}$(printEndianValue $SYS_WRITE $SIZE_64BITS_8BYTES)";
-	CODE="${CODE}${MOV_RDI}$(printEndianValue $STDOUT $SIZE_64BITS_8BYTES)";
+	CODE="${CODE}${MOV_RDI}$(printEndianValue $OUT $SIZE_64BITS_8BYTES)";
 	CODE="${CODE}${MOV_RSI}${DATA_ADDR}";
 	CODE="${CODE}${MOV_RDX}$(printEndianValue "${DATA_LEN}" $SIZE_64BITS_8BYTES)";
 	CODE="${CODE}${SYSCALL}";
 	echo -en "${CODE}" | base64 -w0;
+}
+
+function system_call_write()
+{
+	local TYPE="$1"
+	local OUT="$2";
+	local DATA_ADDR_V="$3";
+	local DATA_LEN="$4";
+	if [ "${TYPE}" == "${SYMBOL_TYPE_STATIC}" ]; then
+		echo -n "$(system_call_write_addr "${OUT}" "${DATA_ADDR_V}" "${DATA_LEN}")";
+	elif [ "${TYPE}" == ${SYMBOL_TYPE_REGISTER} -a "${DATA_ADDR_V}" == "$( echo -n ${ARCH_CONST_ARGUMENT_COUNTER_POINTER} | base64 -w0)" ]; then
+		local DATA_LEN="${SIZE_64BITS_8BYTES}"; # The RSP is a 64bits so 8 bytes
+		local CODE="";
+		CODE="${CODE}${MOV_RAX}$(printEndianValue $SYS_WRITE $SIZE_64BITS_8BYTES)";
+		CODE="${CODE}${MOV_RDI}$(printEndianValue $OUT $SIZE_64BITS_8BYTES)";
+		CODE="${CODE}${MOV_RSI_RSP}";
+		CODE="${CODE}${MOV_RDX}$(printEndianValue ${DATA_LEN} $SIZE_64BITS_8BYTES)";
+		CODE="${CODE}${SYSCALL}";
+		echo -en "${CODE}" | base64 -w0;
+	elif [ "${TYPE}" == ${SYMBOL_TYPE_DYNAMIC} ]; then
+	       if [ "$(echo -n "${DATA_ADDR_V}" | base64 -d | cut -d, -f1)" == "$( echo -n ${ARCH_CONST_ARGUMENT_ADDRESS})" ]; then
+			local argument_number=$(echo -n "${DATA_ADDR_V}" | base64 -d | cut -d, -f2)
+			local CODE="";
+			CODE="${CODE}${MOV_RAX}$(printEndianValue $SYS_WRITE $SIZE_64BITS_8BYTES)";
+			CODE="${CODE}${MOV_RDI}$(printEndianValue $OUT $SIZE_64BITS_8BYTES)";
+			CODE="${CODE}${MOV_RSI_RSP}";
+			local ARGUMENT_DISPLACEMENT=$(printEndianValue $(( 8 * argument_number )) ${SIZE_8BITS_1BYTE})
+			CODE="${CODE}${ADD_RSI}${ARGUMENT_DISPLACEMENT}";
+			CODE="${CODE}${MOV_RSI_RSI}";
+			local DATA_LEN="16"; # TODO: figure out the data size dynamically.
+			# To do it we can get the next address - the current address
+			# the arg2 - arg1 address - 1(NULL) should be the data size
+			CODE="${CODE}${MOV_RDX}$(printEndianValue ${DATA_LEN} $SIZE_64BITS_8BYTES)";
+			CODE="${CODE}${SYSCALL}";
+			echo -en "${CODE}" | base64 -w0;
+
+		else
+			error "Dyn path Not Implemented: path type[$TYPE], DATA_ADDR_V=[$DATA_ADDR_V]"
+		fi;
+	else
+		error "Not Implemented path type[$TYPE], DATA_ADDR_V=[$DATA_ADDR_V]"
+	fi
+	return
 }
 
 system_call_exit_len=22
@@ -616,7 +676,16 @@ function system_call_exec()
 	echo -en ",$(echo -en "${CODE}" | wc -c )";
 }
 
-get_base_pointer_value_int()
-{
-	echo -n "base_pointer_value_int"
-}
+# The base pointer integer value is by convention the argc(argument count)
+# In x86_64 is the RSP with integer size.
+# It can be recovered in gdb by using 
+# (gdb) print *((int*)($rsp))
+# 
+# The issue is that, in build time, we can not see that value, so we need to create a dynamic ref
+# so we can evaluate it at runtime.
+# 
+# My strategy is to set the constat _ARG_COUNTER_ then I can figure out latter that is means "RSP Integer"
+# Probably should prefix it with the jump sort instruction to make sure those bytes will not affect
+# the program execution. But not a issue now.
+ARCH_CONST_ARGUMENT_COUNTER_POINTER="_ARG_CNT_";
+ARCH_CONST_ARGUMENT_ADDRESS="_ARG_ADDR_ARG_ADDR_";

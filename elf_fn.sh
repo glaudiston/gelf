@@ -304,7 +304,9 @@ get_b64_symbol_value()
 	local SNIPPETS=$2;
 	local input="ascii";
 	if is_valid_number "$symbol_name"; then {
-		echo -n "$symbol_name" | base64 -w0
+		out=$(echo -n "$symbol_name" | base64 -w0);
+		outsize=$(echo -n "${out}" | base64 -d | wc -c)
+		echo -n ${out},${outsize},${SYMBOL_TYPE_STATIC}
 		return
 	}
 	fi;
@@ -314,7 +316,9 @@ get_b64_symbol_value()
 	if [ "${symbol_data}" == "" ]; then {
 		# return default values for known internal words
 		if [ "${symbol_name}" == "input" ]; then
-			echo -n "ascii" | base64 -w0
+			out=$(echo -n "ascii" | base64 -w0)
+			outsize=$(echo -n "${out}" | base64 -d | wc -c)
+			echo -n ${out},${outsize},${SYMBOL_TYPE_STATIC}
 			return;
 		fi;
 		error "Expected a integer or a valid variable/constant. But got [$symbol_name]"
@@ -327,14 +331,23 @@ $(echo "$SNIPPETS" | grep SYMBOL_TABLE)"
 	local symbol_value="$( echo "$symbol_data" | cut -d, -f${SNIPPET_COLUMN_DATA_BYTES})";
 	if [ "${symbol_value}" == "" ];then {
 		local symbol_instr="$( echo "$symbol_data" | cut -d, -f${SNIPPET_COLUMN_INSTR_BYTES})";
-		error "symbol found but no data. maybe we need to look at registers ? [$symbol_name] [${symbol_instr}]"
-		backtrace
-		debug "SYMBOLS:
-$(echo "$SNIPPETS" | grep SYMBOL_TABLE)"
-		return 1
+		if [ "${symbol_instr}" == $(echo -n "${ARCH_CONST_ARGUMENT_COUNTER_POINTER}" | base64 -w0) ]; then
+			out=$(echo -n "${symbol_instr}")
+			outsize=$(echo -n "${out}" | base64 -d | wc -c)
+			echo -n ${out},${outsize},${SYMBOL_TYPE_REGISTER}
+	debug b64_sym $1, instr=[${symbol_instr}], out[$(echo -n ${out},${outsize},${SYMBOL_TYPE_REGISTER})]
+			return;
+		fi;
+		out=$(echo -n "${symbol_instr}")
+		outsize=$(echo -n "${out}" | base64 -d | wc -c)
+		echo -n ${out},${outsize},${SYMBOL_TYPE_DYNAMIC}
+	debug b64_sym $1, instr=[${symbol_instr}], out[$(echo -n ${out},${outsize},${SYMBOL_TYPE_DYNAMIC})]
+		return;
 	};
 	fi
-	echo -n "${symbol_value}"
+	out=$(echo -n "${symbol_value}")
+	outsize=$(echo -n "${out}" | base64 -d | wc -c)
+	echo -n ${out},${outsize},${SYMBOL_TYPE_STATIC}
 	return
 	# TODO, increment usage count in SNIPPETS SYMBOL_TABLE
 }
@@ -345,7 +358,7 @@ set_symbol_value() {
 	local data_bytes="${symbol_value}";
 	local input="${symbol_value}";
 	if [ "${symbol_name}" != "input" ]; then
-		input=$(get_b64_symbol_value "input" "$SNIPPETS" | base64 -d | tr -d '\0')
+		input=$(get_b64_symbol_value "input" "$SNIPPETS" | cut -d, -f1 | base64 -d | tr -d '\0')
 	fi;
 	#debug "input[$input]: [${symbol_value}] "
 	if [ "${symbol_name}" != "input" -a "${input}" == "base64" ]; then
@@ -376,7 +389,7 @@ set_symbol_value() {
 
 is_a_valid_number_on_base(){
 	SNIPPETS=$2
-	base=$(get_b64_symbol_value "base" "${SNIPPETS}" | base64 -d);
+	base=$(get_b64_symbol_value "base" "${SNIPPETS}" | cut -d, -f1 | base64 -d);
 	debug "validate (( ${base:=10}#${raw_data_bytes} ))"
 	echo -n "$(( ${base:10}#${raw_data_bytes} ))" 2>&1 >/dev/null || 
 		return 1;
@@ -522,37 +535,67 @@ parse_snippet()
 		};
 		else # maybe it is just a variable or constant
 		{
-			# All variables, constants, macros are symbols and should be managed by a symbol table
-			# It should have name type, scope and memory address
-			# The compile should updated that items in the first code read
-			#
-			# TODO implement scoped variables and constants
-			# TODO implement global macro values, replacing code with values
-			#
-			# Constants should replace the code value before process the code.
-			# Constants should not keep in memory, instead should replace the vlaue hardcoded in bytecode.
-			# Variables should recover the target address and size at runtime.
-			# A variable and constant are defined at the same way. The compiler should consider everything as constant.
-			# Once the code changes the variable value, it will be converted to variable.
-			# So if a variable is never changed, it will be always a constant hardcoded at the bytecode;
-			symbol_name="$( echo -n "${CODE_LINE/:*/}" )"
-			symbol_value="$( echo -n "${CODE_LINE/*:	/}" )"
-			instr_bytes="";
-			instr_len=0;
-			data_bytes="$(set_symbol_value "${symbol_value}" "${SNIPPETS}")";
-			data_len="$( echo -n "${data_bytes}" | base64 -d | wc -c)";
-			struct_parsed_snippet \
-				"SYMBOL_TABLE" \
-				"${symbol_name}" \
-				"${instr_offset}" \
-				"${instr_bytes}" \
-				"${instr_len}" \
-				"${data_offset}" \
-				"${data_bytes}" \
-				"${data_len}" \
-				"${CODE_LINE_B64}" \
-				"1";
-			return $?;
+			if [[ "${code_line_elements[0]}" =~ ::$ ]]; then
+			{
+				debug defining symbol [${code_line_elements[0]}]
+				# TODO this code is for RSP, we need add (n * 8) to it
+				symbol_name="$( echo -n "${code_line_elements[0]/:*/}" )"
+				# create a new dynamic symbol called ${symbol_name}
+				# That should point to the rbp register first 8 bytes (int)
+				arg_number=${code_line_elements[1]};
+				instr_bytes="$(echo -n "${ARCH_CONST_ARGUMENT_ADDRESS},${arg_number}" | base64 -w0)"
+				instr_len=$(echo -n "${instr_bytes}" | base64 -d | wc -c )
+				data_bytes="";
+				data_len="$( echo -n "${data_bytes}" | base64 -d | wc -c )";
+				debug "adding symbol_name=[$symbol_name], data_len=$data_len"
+				struct_parsed_snippet \
+					"SYMBOL_TABLE" \
+					"${symbol_name}" \
+					"${instr_offset}" \
+					"${instr_bytes}" \
+					"${instr_len}" \
+					"${data_offset}" \
+					"${data_bytes}" \
+					"${data_len}" \
+					"${CODE_LINE_B64}" \
+					"1";
+				return $?;
+			}
+			else 
+			{
+				# All variables, constants, macros are symbols and should be managed by a symbol table
+				# It should have name type, scope and memory address
+				# The compile should updated that items in the first code read
+				#
+				# TODO implement scoped variables and constants
+				# TODO implement global macro values, replacing code with values
+				#
+				# Constants should replace the code value before process the code.
+				# Constants should not keep in memory, instead should replace the vlaue hardcoded in bytecode.
+				# Variables should recover the target address and size at runtime.
+				# A variable and constant are defined at the same way. The compiler should consider everything as constant.
+				# Once the code changes the variable value, it will be converted to variable.
+				# So if a variable is never changed, it will be always a constant hardcoded at the bytecode;
+				symbol_name="$( echo -n "${CODE_LINE/:*/}" )"
+				symbol_value="$( echo -n "${CODE_LINE/*:	/}" )"
+				instr_bytes="";
+				instr_len=0;
+				data_bytes="$(set_symbol_value "${symbol_value}" "${SNIPPETS}")";
+				data_len="$( echo -n "${data_bytes}" | base64 -d | wc -c)";
+				struct_parsed_snippet \
+					"SYMBOL_TABLE" \
+					"${symbol_name}" \
+					"${instr_offset}" \
+					"${instr_bytes}" \
+					"${instr_len}" \
+					"${data_offset}" \
+					"${data_bytes}" \
+					"${data_len}" \
+					"${CODE_LINE_B64}" \
+					"1";
+				return $?;
+			}
+			fi;
 		}
 		fi;
 	}
@@ -592,10 +635,11 @@ parse_snippet()
 		symbol_name="$( echo -n "${code_line_elements[0]/:*/}" )"
 		# create a new dynamic symbol called ${symbol_name}
 		# That should point to the rbp register first 8 bytes (int)
-		instr_bytes="$(get_base_pointer_value_int)"
+		instr_bytes="$(echo -n "${ARCH_CONST_ARGUMENT_COUNTER_POINTER}" |base64 -w0)"
 		instr_len=$(echo -n "${instr_bytes}" | base64 -d | wc -c )
 		data_bytes="";
 		data_len="$( echo -n "${data_bytes}" | base64 -d | wc -c )";
+		debug "adding symbol_name=[$symbol_name], data_len=$data_len"
 		struct_parsed_snippet \
 			"SYMBOL_TABLE" \
 			"${symbol_name}" \
@@ -615,21 +659,30 @@ parse_snippet()
 		local WRITE_OUTPUT_ELEM=1;
 		local WRITE_DATA_ELEM=2;
 		local out=${code_line_elements[$WRITE_OUTPUT_ELEM]};
-		local data_output=1; #stdout by default
-		data_output=$(get_b64_symbol_value "${out}" "${SNIPPETS}" | base64 -d | tr -d '\0' );
+		# expected: STDOUT, STDERR, FD...
+		local data_output=$(get_b64_symbol_value "${out}" "${SNIPPETS}" | cut -d, -f1 | base64 -d | tr -d '\0' );
 		# I think we can remove the parse_data_bytes and force the symbol have the data always
-		#data_bytes="$(parse_data_bytes "${code_line_elements[$WRITE_DATA_ELEM]}" "${SNIPPETS}" )";
-		data_bytes=$(get_b64_symbol_value "${code_line_elements[$WRITE_DATA_ELEM]}" "${SNIPPETS}");
-		#debug data-bytes=[$data_bytes]
-		data_bytes_len="$( echo -n "${data_bytes}"| base64 -d | wc -c)";
-		data_addr_v="${data_offset}"
-		instr_bytes="$(system_call_write "${data_output}" "$data_addr_v" "$data_bytes_len")";
+		local symbol_data=$(get_b64_symbol_value "${code_line_elements[$WRITE_DATA_ELEM]}" "${SNIPPETS}" )
+		debug "symbol_data=[$symbol_data]"
+		local symbol_type=$(echo "${symbol_data}" | cut -d, -f3);
+		local symbol_value=$( echo "$symbol_data" | cut -d, -f1);
+		local data_bytes=$(echo -n "${symbol_value}"| cut -d, -f1);
+		local data_bytes_len="$(echo -n "${symbol_data}"| cut -d, -f2)";
+		# debug t=[${symbol_type}],symbol_value=[${symbol_value}] 
+		local data_addr_v="${data_offset}"
+		if [ "${symbol_type}" != "${SYMBOL_TYPE_STATIC}" ]; then
+			data_bytes="";
+			data_bytes_len=0; # no data to append. just registers used.
+			data_addr_v="${symbol_value}";
+		fi;
+		local instr_bytes="$(system_call_write "${symbol_type}" "${data_output}" "$data_addr_v" "$data_bytes_len")";
+		local instr_size="$(echo -e "$instr_bytes" | base64 -d | wc -c)"
 		struct_parsed_snippet \
 			"INSTRUCTION" \
 			"sys_write" \
 			"${instr_offset}" \
 			"${instr_bytes}" \
-			"${system_call_write_len}" \
+			"${instr_size}" \
 			"${data_offset}" \
 			"${data_bytes}" \
 			"${data_bytes_len}" \
@@ -657,7 +710,7 @@ parse_snippet()
 		return $?;
 	fi;
 	if [[ "${code_line_elements[0]}" == exit ]]; then
-		local exit_value=$(get_b64_symbol_value "${code_line_elements[1]}" "${SNIPPETS}" | base64 -d | tr -d '\00' )
+		local exit_value=$(get_b64_symbol_value "${code_line_elements[1]}" "${SNIPPETS}" | cut -d, -f1 | base64 -d | tr -d '\00' )
 
 		instr_bytes="$(system_call_exit ${exit_value})"
 		struct_parsed_snippet \
