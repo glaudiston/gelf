@@ -8,26 +8,25 @@ stderr:	2
 # Arguments uses :: as definition
 # ::$ allows recover the number of arguments passed to the program or function
 #args::$
-first argument::	1
-second argument::	2
-#read file:	{
+binary name::	1
+file to read::	2
+read file:	{
 	#file::	1
-#	file name:	samples/sample-code.gg
-#	write	stderr	file name
+	#write	stderr	file name
 	#file contents:<=	file name
 	#write	stdout	file contents
-#	ret
-#}
+	ret
+}
 # It can be recovered in gdb by using 
 # (gdb) print *((int*)($rsp))
 #msg:	arguments: args
 #write	stderr	args
-write	stderr	first argument
-write	stderr	second argument
+#write	stderr	binary name
+write	stderr	file to read
 #write
 #bin name::	0
 #file name::	1
-#read file	samples/sample-code.gg
+read file	file to read
 
 no error:	0
 exit	no error

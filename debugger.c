@@ -55,7 +55,7 @@ int main(int argc, char *argv[])
 		}
 		else if ( ( data << 16 >> 16 ) == 0xb848 ) {
 			data = ptrace(PTRACE_PEEKTEXT, child, (void*)addr+2, 0);
-			printf("%016x: MOV RAX %x\n", addr, data);fflush(stdout);
+			printf("%016x: MOV 0x%x, %RAX\n", addr, data);fflush(stdout);
 		}
 		else if ( ( data << 16 >> 16 ) == 0xb849 ) {
 			data = ptrace(PTRACE_PEEKTEXT, child, (void*)addr+2, 0);
@@ -73,6 +73,42 @@ int main(int argc, char *argv[])
 			data = ptrace(PTRACE_PEEKTEXT, child, (void*)addr+2, 0);
 			printf("%016x: MOV R8 RAX\n", addr);fflush(stdout);
 		}
+		// MOV RSI RSI
+		else if ( ( data << 8 >> 8 ) == 0x368b48 ) {
+			data = ptrace(PTRACE_PEEKTEXT, child, (void*)addr+2, 0);
+			printf("%016x: MOV RSI RSI (resolve address)\n", addr);fflush(stdout);
+		}
+		// MOV RDX RDX
+		else if ( ( data << 8 >> 8 ) == 0x128b48 ) {
+			data = ptrace(PTRACE_PEEKTEXT, child, (void*)addr+2, 0);
+			printf("%016x: MOV RDX RDX (resolve address)\n", addr);fflush(stdout);
+		}
+		// SUB RDX RSI // RESULT IN RDX
+		else if ( ( data << 8 >> 8 ) == 0xf22948 ) {
+			data = ptrace(PTRACE_PEEKTEXT, child, (void*)addr+2, 0);
+			printf("%016x: SUB RDX RSI (result in RDX)\n", addr);fflush(stdout);
+		}
+		// CMP RDX 00
+		else if ( ( data << 16 >> 16 ) == 0x850f ) {
+			data = ptrace(PTRACE_PEEKTEXT, child, (void*)addr+3, 0) << 8;
+			printf("%016x: CMP RDX %x\n", addr, data);fflush(stdout);
+		}
+		// JNE
+		else if ( ( data << 16 >> 16 ) == 0xea83 ) {
+			printf("%016x: JNE\n", addr);fflush(stdout);
+		}
+		// JG
+		else if ( ( data << 16 >> 16 ) == 0x8f0f ) {
+			printf("%016x: JG\n", addr);fflush(stdout);
+		}
+		// CALL
+		else if ( ( get_first_byte(data) ) == 0xe8 ) {
+			printf("%016x: CALL\n", addr); fflush(stdout);
+		}
+		// RET
+		else if ( ( get_first_byte(data) ) == 0xc3 ) {
+			printf("%016x: RET\n", addr); fflush(stdout);
+		}
 		// MOV RDI STDOUT
 		else if ( ( get_first_byte(data) ) == 0xbf ) {
 			data = ptrace(PTRACE_PEEKTEXT, child, (void*)addr+1, 0);
@@ -81,16 +117,30 @@ int main(int argc, char *argv[])
 		// MOV RDI HEXVALUE
 		else if ( ( data << 16 >> 16 ) == 0xbf48 ) {
 			data = ptrace(PTRACE_PEEKTEXT, child, (void*)addr+2, 0);
-			printf("%016x: MOV RDI 0x%016x\n", addr, data); fflush(stdout);
+			printf("%016x: MOV 0x%x, %RDI\n", addr, data); fflush(stdout);
+		}
+		// MOV_RDX_RSI
+		else if ( ( data << 32 >> 32 ) == 0x48f28948 ) {
+			printf("%016x: MOV %RSI, %RDX\n", addr); fflush(stdout);
 		}
 		// MOV RSP RSI
 		else if ( ( data << 32 >> 32 ) == 0x48e68948 ) {
-			data = ptrace(PTRACE_PEEKTEXT, child, (void*)addr+4, 0);
 			printf("%016x: MOV %RSP, %RSI\n", addr); fflush(stdout);
+		}
+		// MOV RSP RDX
+		else if ( ( data << 8 >> 8 ) == 0xe28948 ) {
+			printf("%016x: MOV %RSP, %RDX\n", addr); fflush(stdout);
 		}
 		// ADD RSI HEXVALUE ??
 		else if ( ( data << 16 >> 16 ) == 0x8348 ) {
-			printf("%016x: ADD RSI? 0x%x\n", addr, data >> 24 << 24); fflush(stdout);
+			long r=data >> 16 << 24;
+			if ( r == 0xc6000000 ) {
+				printf("%016x: ADD 0x%x, %RSI\n", addr, data >> 24 ); fflush(stdout);
+			} else if ( r == 0xc2000000 ) {
+				printf("%016x: ADD 0x%x, %RDX\n", addr, data >> 24 ); fflush(stdout);
+			} else {
+				printf("%016x: CMP 0x%x\n", addr, r); fflush(stdout);
+			}
 		}
 		// MOV eSI STR ADDR
 		else if ( get_first_byte(data) == 0xbe ) {

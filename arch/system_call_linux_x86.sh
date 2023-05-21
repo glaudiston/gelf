@@ -29,4 +29,13 @@
 #  EFLAG
 # Instruction Pointer: Address of the next instruction to execute.
 #  EIP
+# 8bit Register Low 3 bits
 #
+#AL 000
+#CL 001
+#DL 010
+#BL 011
+#SPL 100
+#BPL 101
+#SIL 110
+#DIL 111
