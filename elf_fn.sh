@@ -603,9 +603,16 @@ parse_snippet()
 	if [[ "${code_line_elements[0]}" =~ :\<=$ ]]; then
 	{
 		symbol_name="$( echo -n "${CODE_LINE/:*/}" )"
+		local symbol_data=$(get_b64_symbol_value "${code_line_elements[1]}" "${SNIPPETS}" )
 		filename_addr=$(get_symbol_addr "${code_line_elements[1]}" "$SNIPPETS")
 		# sys_open will create a new file descriptor.
-		SYS_OPEN="$(read_file "$filename_addr")"
+		local symbol_type=$(echo "${symbol_data}" | cut -d, -f3);
+		if [ "${symbol_type}" != "${SYMBOL_TYPE_STATIC}" ]; then
+			data_bytes="";
+			data_bytes_len=0; # no data to append. just registers used.
+			data_addr_v="${symbol_value}";
+		fi;
+		SYS_OPEN="$(read_file "${symbol_type}" "$filename_addr")"
 		# it should return the bytecode, the size
 		#fd="$(set_symbol_value "${symbol_value} fd" "${SYS_OPEN}")";
 		# We should create a new dynamic symbol to have the file descriptor number
@@ -663,7 +670,6 @@ parse_snippet()
 		local data_output=$(get_b64_symbol_value "${out}" "${SNIPPETS}" | cut -d, -f1 | base64 -d | tr -d '\0' );
 		# I think we can remove the parse_data_bytes and force the symbol have the data always
 		local symbol_data=$(get_b64_symbol_value "${code_line_elements[$WRITE_DATA_ELEM]}" "${SNIPPETS}" )
-		debug "symbol_data=[$symbol_data]"
 		local symbol_type=$(echo "${symbol_data}" | cut -d, -f3);
 		local symbol_value=$( echo "$symbol_data" | cut -d, -f1);
 		local data_bytes=$(echo -n "${symbol_value}"| cut -d, -f1);
