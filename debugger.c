@@ -51,11 +51,27 @@ int main(int argc, char *argv[])
 		// MOV RAX SYS_WRITE
 		if ( ( get_first_byte(data) ) == 0xb8 ) {
 			data = ptrace(PTRACE_PEEKTEXT, child, (void*)addr+1, 0);
-			printf("%08x: MOV eAX %x\n", addr, data);fflush(stdout);
+			printf("%08x: mov eAX %x\n", addr, data);fflush(stdout);
 		}
 		else if ( ( data << 16 >> 16 ) == 0xb848 ) {
 			data = ptrace(PTRACE_PEEKTEXT, child, (void*)addr+2, 0);
-			printf("%016x: MOV 0x%x, %RAX\n", addr, data);fflush(stdout);
+			printf("%016x: mov 0x%x, %rAX\n", addr, data);fflush(stdout);
+		}
+		else if ( ( data << 8 >> 8 ) == 0xc0c748 ) {
+			data = ptrace(PTRACE_PEEKTEXT, child, (void*)addr+3, 0);
+			printf("%016x: mov 0x%x, %rAX\n", addr, data);fflush(stdout);
+		}
+		else if ( ( data << 8 >> 8 ) == 0xc7c748 ) {
+			data = ptrace(PTRACE_PEEKTEXT, child, (void*)addr+3, 0);
+			printf("%016x: mov 0x%x, %rdi\n", addr, data);fflush(stdout);
+		}
+		else if ( ( data << 8 >> 8 ) == 0xc2c748 ) {
+			data = ptrace(PTRACE_PEEKTEXT, child, (void*)addr+3, 0);
+			printf("%016x: mov 0x%x, %rdx\n", addr, data);fflush(stdout);
+		}
+		else if ( ( data << 8 >> 8 ) == 0xf63148 ) {
+			data = ptrace(PTRACE_PEEKTEXT, child, (void*)addr+2, 0);
+			printf("%016x: xor %rsi, %rsi\n", addr, data);fflush(stdout);
 		}
 		else if ( ( data << 16 >> 16 ) == 0xb849 ) {
 			data = ptrace(PTRACE_PEEKTEXT, child, (void*)addr+2, 0);
@@ -69,9 +85,31 @@ int main(int argc, char *argv[])
 			data = ptrace(PTRACE_PEEKTEXT, child, (void*)addr+2, 0);
 			printf("%016x: MOV R10 %x\n", addr, data);fflush(stdout);
 		}
+		// MOV RDI STDOUT
+		else if ( ( get_first_byte(data) ) == 0xbf ) {
+			data = ptrace(PTRACE_PEEKTEXT, child, (void*)addr+1, 0);
+			printf("%08x: MOV eDI 0x%08x\n", addr, data); fflush(stdout);
+		}
+		// MOV R8 RAX
 		else if ( ( data << 8 >> 8 ) == 0xc08949 ) {
 			data = ptrace(PTRACE_PEEKTEXT, child, (void*)addr+2, 0);
 			printf("%016x: MOV R8 RAX\n", addr);fflush(stdout);
+		}
+		else if ( ( data << 8 >> 8 ) == 0xc68948 ) {
+			data = ptrace(PTRACE_PEEKTEXT, child, (void*)addr+2, 0);
+			printf("%016x: MOV %RAX %RSI\n", addr);fflush(stdout);
+		}
+		// MOV_RDX_RSI
+		else if ( ( data << 8 >> 8 ) == 0xf28948 ) {
+			printf("%016x: MOV %RSI, %RDX\n", addr); fflush(stdout);
+		}
+		// MOV RSP RSI
+		else if ( ( data << 8 >> 8 ) == 0xe68948 ) {
+			printf("%016x: MOV %RSP, %RSI\n", addr); fflush(stdout);
+		}
+		// MOV RSP RDX
+		else if ( ( data << 8 >> 8 ) == 0xe28948 ) {
+			printf("%016x: MOV %RSP, %RDX\n", addr); fflush(stdout);
 		}
 		// MOV RSI RSI
 		else if ( ( data << 8 >> 8 ) == 0x368b48 ) {
@@ -82,6 +120,11 @@ int main(int argc, char *argv[])
 		else if ( ( data << 8 >> 8 ) == 0x128b48 ) {
 			data = ptrace(PTRACE_PEEKTEXT, child, (void*)addr+2, 0);
 			printf("%016x: MOV RDX RDX (resolve address)\n", addr);fflush(stdout);
+		}
+		// MOV RDI HEXVALUE
+		else if ( ( data << 16 >> 16 ) == 0xbf48 ) {
+			data = ptrace(PTRACE_PEEKTEXT, child, (void*)addr+2, 0);
+			printf("%016x: MOV 0x%x, %RDI\n", addr, data); fflush(stdout);
 		}
 		// SUB RDX RSI // RESULT IN RDX
 		else if ( ( data << 8 >> 8 ) == 0xf22948 ) {
@@ -108,28 +151,6 @@ int main(int argc, char *argv[])
 		// RET
 		else if ( ( get_first_byte(data) ) == 0xc3 ) {
 			printf("%016x: RET\n", addr); fflush(stdout);
-		}
-		// MOV RDI STDOUT
-		else if ( ( get_first_byte(data) ) == 0xbf ) {
-			data = ptrace(PTRACE_PEEKTEXT, child, (void*)addr+1, 0);
-			printf("%08x: MOV eDI 0x%08x\n", addr, data); fflush(stdout);
-		}
-		// MOV RDI HEXVALUE
-		else if ( ( data << 16 >> 16 ) == 0xbf48 ) {
-			data = ptrace(PTRACE_PEEKTEXT, child, (void*)addr+2, 0);
-			printf("%016x: MOV 0x%x, %RDI\n", addr, data); fflush(stdout);
-		}
-		// MOV_RDX_RSI
-		else if ( ( data << 32 >> 32 ) == 0x48f28948 ) {
-			printf("%016x: MOV %RSI, %RDX\n", addr); fflush(stdout);
-		}
-		// MOV RSP RSI
-		else if ( ( data << 32 >> 32 ) == 0x48e68948 ) {
-			printf("%016x: MOV %RSP, %RSI\n", addr); fflush(stdout);
-		}
-		// MOV RSP RDX
-		else if ( ( data << 8 >> 8 ) == 0xe28948 ) {
-			printf("%016x: MOV %RSP, %RDX\n", addr); fflush(stdout);
 		}
 		// ADD RSI HEXVALUE ??
 		else if ( ( data << 16 >> 16 ) == 0x8348 ) {

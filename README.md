@@ -1,15 +1,15 @@
-What is this?
-=============
+Gelf - What is this?
+====================
 
-This is my playground for elf related stuff... I started to scratch it... and here I put my notes... maybe you can learn something with it too.
+This started as a playground for elf related stuff. I created a bash script to generate a tiny working elf file. Just using bash. Useless for anything else than learn how elf files work. But as it grows up started to look like a compiler. Then I started to define my own source file syntax. Maybe some day I can call it my own programming language. For now it is just a dream.
 
-I'm testing it on native linux `x86_64` and in a `aarch64`(osx, using ubuntu within docker container).
+In early tests it did work on native linux `x86_64` and in a `aarch64`(osx, using ubuntu within docker container). Currently it is only working on `x86_64`. I pretend to update the `aarch64` latter. But first I want to bootstrap it in `x86_64` without using bash anymore.
 
 ELF
 ===
 Executable and Linkable Format(ELF) are the format used in all linux executables and libraries.
 
-This repo is my try to write them from scratch. Just for fun and learning.
+This repo is my try to write them from scratch. For fun and learning.
 
 
 GDB
@@ -41,7 +41,7 @@ https://reverseengineering.stackexchange.com/questions/1992/what-is-plt-got/1993
 https://www.technovelty.org/linux/plt-and-got-the-key-to-code-sharing-and-dynamic-libraries.html
 
 # What should be a nice language
-Just a Maybe someday this can be a new lang... then here I go with some notes about it
+Maybe someday this can be a new lang... then here I go with some notes about it
 - profiling/telemetry oriented
 - debugging oriented
 - binary updatable at real time
@@ -53,8 +53,8 @@ Just a Maybe someday this can be a new lang... then here I go with some notes ab
 ASM
 ===
 To discover bytecode one good way is create an asm file with the instruction, compile it and use ld with the --oformat binary:
-
+```
 $ show_bytecode(){ echo "$@" | as -o temp.o && ld --oformat binary -o temp.bin temp.o 2>/dev/null && xxd --ps temp.bin && rm temp.o temp.bin; }
 $ show_bytecode "mov %r8, %r10"
 4d89c2
-
+```
