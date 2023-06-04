@@ -7,9 +7,9 @@
 #include <string.h>
 #include <sys/wait.h>
 
+struct user_regs_struct regs;
 unsigned print_current_address(pid_t child)
 {
-	struct user_regs_struct regs;
 	unsigned data = ptrace(PTRACE_GETREGS, child, 0, &regs);
 	if ( data != 0 ) {
 		perror("unexpected getregs");
@@ -23,10 +23,28 @@ unsigned get_first_byte(unsigned data)
 	return data << 24 >> 24;
 }
 
+void peek_string(pid_t child, void *addr, char* out){
+	int pos=0;
+	int done=0;
+	while(!done) {
+		unsigned data = ptrace(PTRACE_PEEKTEXT, child, addr+pos, 0);
+		sprintf(out+pos, "%c%c%c%c", data, data >> 8, data >> 16, data >> 24);
+		if ( ((char)(data)) == 0
+		|| ( ((char)(data >> 8)) == 0 )
+		|| ( ((char)(data >> 16)) == 0 )
+		|| ( ((char)(data >> 24)) == 0 )){
+			done=1;
+		} else {
+			pos+=4;
+		}
+	}
+}
 int main(int argc, char *argv[])
 {
+    char filename[256];
     pid_t child;
     int status;
+    int printNextData=0;
 
     if (argc < 2) {
         fprintf(stderr, "Usage: %s <executable>\n", argv[0]);
@@ -47,6 +65,10 @@ int main(int argc, char *argv[])
 		    exit(0);
 		}
 		addr = print_current_address(child);
+		if ( printNextData ) {
+			printf(" = %i\n", regs.rax);
+			printNextData=0;
+		}
 		unsigned data = ptrace(PTRACE_PEEKTEXT, child, (void*)addr, 0);
 		// MOV RAX SYS_WRITE
 		if ( ( get_first_byte(data) ) == 0xb8 ) {
@@ -54,12 +76,12 @@ int main(int argc, char *argv[])
 			printf("%08x: mov eAX %x\n", addr, data);fflush(stdout);
 		}
 		else if ( ( data << 16 >> 16 ) == 0xb848 ) {
-			data = ptrace(PTRACE_PEEKTEXT, child, (void*)addr+2, 0);
-			printf("%016x: mov 0x%x, %rAX\n", addr, data);fflush(stdout);
+			unsigned rax = ptrace(PTRACE_PEEKTEXT, child, (void*)addr+2, 0);
+			printf("%016x: mov 0x%x, %rAX\n", addr, rax);fflush(stdout);
 		}
 		else if ( ( data << 8 >> 8 ) == 0xc0c748 ) {
-			data = ptrace(PTRACE_PEEKTEXT, child, (void*)addr+3, 0);
-			printf("%016x: mov 0x%x, %rAX\n", addr, data);fflush(stdout);
+			unsigned rax = ptrace(PTRACE_PEEKTEXT, child, (void*)addr+3, 0);
+			printf("%016x: mov 0x%x, %rAX\n", addr, rax);fflush(stdout);
 		}
 		else if ( ( data << 8 >> 8 ) == 0xc7c748 ) {
 			data = ptrace(PTRACE_PEEKTEXT, child, (void*)addr+3, 0);
@@ -90,10 +112,9 @@ int main(int argc, char *argv[])
 			data = ptrace(PTRACE_PEEKTEXT, child, (void*)addr+1, 0);
 			printf("%08x: MOV eDI 0x%08x\n", addr, data); fflush(stdout);
 		}
-		// MOV R8 RAX
 		else if ( ( data << 8 >> 8 ) == 0xc08949 ) {
 			data = ptrace(PTRACE_PEEKTEXT, child, (void*)addr+2, 0);
-			printf("%016x: MOV R8 RAX\n", addr);fflush(stdout);
+			printf("%016x: mov %rax %r8\n", addr);fflush(stdout);
 		}
 		else if ( ( data << 8 >> 8 ) == 0xc68948 ) {
 			data = ptrace(PTRACE_PEEKTEXT, child, (void*)addr+2, 0);
@@ -123,8 +144,8 @@ int main(int argc, char *argv[])
 		}
 		// MOV RDI HEXVALUE
 		else if ( ( data << 16 >> 16 ) == 0xbf48 ) {
-			data = ptrace(PTRACE_PEEKTEXT, child, (void*)addr+2, 0);
-			printf("%016x: MOV 0x%x, %RDI\n", addr, data); fflush(stdout);
+			unsigned rdi = ptrace(PTRACE_PEEKTEXT, child, (void*)addr+2, 0);
+			printf("%016x: mov 0x%x, %rDI\n", addr, rdi); fflush(stdout);
 		}
 		// SUB RDX RSI // RESULT IN RDX
 		else if ( ( data << 8 >> 8 ) == 0xf22948 ) {
@@ -226,7 +247,28 @@ int main(int argc, char *argv[])
 		// SYSCALL
 		else if ( ( data << 16 >> 16 ) == 0x050f )
 		{
-			printf("%016x: syscall\n", addr);fflush(stdout);
+			char syscall[255];
+			syscall[0]=0;
+			char SYS_WRITE=1;
+			char SYS_OPEN=2;
+			char SYS_MMAP=9;
+			char SYS_EXIT=60;
+			if ( regs.rax==SYS_OPEN ) {
+				peek_string(child, (void*)regs.rdi, filename);
+				sprintf(&syscall, "open(%s)", filename);
+			} else if ( regs.rax == SYS_WRITE ){
+				char buff[256];
+				peek_string(child, (void*)regs.rsi, buff);
+				sprintf(&syscall, "write(%i, %x, %i)", regs.rdi, regs.rsi, regs.rdx);
+			} else if ( regs.rax == SYS_MMAP ){
+				sprintf(&syscall, "mmap(...); #alocates %i bytes using fd %i", regs.rsi, regs.r8);
+			} else if ( regs.rax == SYS_EXIT ){
+				sprintf(&syscall, "exit(%i)",regs.rdi);
+			} else {
+				printf("not implemented syscall for rax=%i...\n",regs.rax);
+			}
+			printf("%016x: syscall: %s", addr, syscall);fflush(stdout);
+			printNextData = 1;
 		}
 		else
 		{
