@@ -1,0 +1,7 @@
+# return the virtual address value to set in the program header
+system virtual memory map minimum address path:	/proc/sys/vm/mmap_min_addr
+program header address value:<=	system virtual memory map minimum address path
+stdout:	1
+write	stdout	program header address value
+with no error:	0
+exit	with no error

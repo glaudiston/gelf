@@ -9,4 +9,4 @@
 
 source_file="$1"
 target_file="$2"
-write_elf ${target_file:=sample-elf} <${source_file:=sample-code.gg}
+write_elf ${target_file:=build/sample-elf} <${source_file:=samples/sample-code.gg}

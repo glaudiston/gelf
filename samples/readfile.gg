@@ -3,7 +3,7 @@
 # Note: Early language versions has a bug that force all functions be defined before the first instruction.
 
 # : defines values to symbols (variables or constants / dynamic or static)
-#stdout:	1
+stdout:	1
 stderr:	2
 # Arguments uses :: as definition
 # ::$ allows recover the number of arguments passed to the program or function
@@ -11,9 +11,9 @@ stderr:	2
 binary name::	1
 file to read::	2
 read file:	{
-	#file::	1
-	#write	stderr	file name
-	#file contents:<=	file name
+	file::	2
+	#write	stderr	file
+	file contents:<=	file
 	#write	stdout	file contents
 	ret
 }
@@ -22,11 +22,13 @@ read file:	{
 #msg:	arguments: args
 #write	stderr	args
 #write	stderr	binary name
-write	stderr	file to read
+#write	stderr	file to read
 #write
 #bin name::	0
 #file name::	1
-read file	file to read
+#read file	file to read
+file contents:<=	file to read
+write	stdout	file contents
 
 no error:	0
 exit	no error

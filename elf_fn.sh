@@ -115,7 +115,8 @@ get_program_segment_headers()
 	# https://www.airs.com/blog/archives/45
 	# this point the current segment offset is 0x40
 	PH_TYPE="$(printEndianValue $PT_LOAD $Elf64_Word)"		# Elf64_Word p_type 4;
-	PH_FLAGS="$(printEndianValue $(( PF_X + PF_R )) $Elf64_Word)"	# Elf64_Word p_flags 4;
+	# TODO: this PF_W is insecure and can allow rewrite the memory code. should not be used in this context. For now it is ok because i am lazy. and I want to use this memory page to store stat on read file context.
+	PH_FLAGS="$(printEndianValue $(( PF_X + PF_W + PF_R )) $Elf64_Word)"	# Elf64_Word p_flags 4;
 	# offset, vaddr and p_align are stringly related.
 	PH_OFFSET="$(printEndianValue 0 $Elf64_Off)"		# Elf64_Off p_offset 8;
 	PH_VADDR="$(printEndianValue $PH_VADDR_V $Elf64_Addr)"	# VADDR where to load program
@@ -293,8 +294,8 @@ get_symbol_addr()
 {
 	local symbol_name="$1"
 	local SNIPPETS=$2;
-	local symbol_addr="$( echo "$SNIPPETS" | grep "SYMBOL_TABLE,${symbol_name}" | tail -1 | cut -d, -f${SNIPPET_COLUMN_DATA_OFFSET})";
-	debug ${symbol_name} at "${symbol_addr}"
+	local symbol_addr="$( echo "$SNIPPETS" | grep "SYMBOL_TABLE,${symbol_name}," | tail -1 | cut -d, -f${SNIPPET_COLUMN_DATA_OFFSET})";
+	# debug ${symbol_name} at "${symbol_addr}"
 	echo "${symbol_addr}";
 }
 
@@ -312,19 +313,26 @@ get_b64_symbol_value()
 	fi;
 
 	# resolve variable
-	local symbol_data="$( echo "$SNIPPETS" | grep "SYMBOL_TABLE,${symbol_name}" | tail -1)";
+	local procedure_data="$( echo "$SNIPPETS" | grep "PROCEDURE_TABLE,${symbol_name}," | tail -1)";
+	if [ "${procedure_data}" != "" ]; then
+		echo -n ${out},${outsize},${SYMBOL_TYPE_PROCEDURE}
+		return 1;
+	fi
+	local symbol_data="$( echo "$SNIPPETS" | grep "SYMBOL_TABLE,${symbol_name}," | tail -1)";
 	if [ "${symbol_data}" == "" ]; then {
 		# return default values for known internal words
 		if [ "${symbol_name}" == "input" ]; then
-			out=$(echo -n "ascii" | base64 -w0)
+			local symbol_instr="$( echo "$procedure_data" | cut -d, -f${SNIPPET_COLUMN_INSTR_BYTES})";
+			out=$(echo -n "${symbol_instr}")
+			outsize=$(echo -n "${out}" | base64 -d | wc -c)
 			outsize=$(echo -n "${out}" | base64 -d | wc -c)
 			echo -n ${out},${outsize},${SYMBOL_TYPE_STATIC}
 			return;
 		fi;
 		error "Expected a integer or a valid variable/constant. But got [$symbol_name]"
 		backtrace
-		debug "SYMBOLS:
-$(echo "$SNIPPETS" | grep SYMBOL_TABLE)"
+		# debug "SYMBOLS:
+# $(echo "$SNIPPETS" | grep SYMBOL_TABLE)"
 		return 1
 	}
 	fi;
@@ -335,13 +343,13 @@ $(echo "$SNIPPETS" | grep SYMBOL_TABLE)"
 			out=$(echo -n "${symbol_instr}")
 			outsize=$(echo -n "${out}" | base64 -d | wc -c)
 			echo -n ${out},${outsize},${SYMBOL_TYPE_REGISTER}
-	debug b64_sym $1, instr=[${symbol_instr}], out[$(echo -n ${out},${outsize},${SYMBOL_TYPE_REGISTER})]
+	# debug b64_sym $1, instr=[${symbol_instr}], out[$(echo -n ${out},${outsize},${SYMBOL_TYPE_REGISTER})]
 			return;
 		fi;
 		out=$(echo -n "${symbol_instr}")
 		outsize=$(echo -n "${out}" | base64 -d | wc -c)
 		echo -n ${out},${outsize},${SYMBOL_TYPE_DYNAMIC}
-	debug b64_sym $1, instr=[${symbol_instr}], out[$(echo -n ${out},${outsize},${SYMBOL_TYPE_DYNAMIC})]
+	# debug b64_sym $1, instr=[${symbol_instr}], out[$(echo -n ${out},${outsize},${SYMBOL_TYPE_DYNAMIC})]
 		return;
 	};
 	fi
@@ -369,7 +377,7 @@ set_symbol_value() {
 	# append NULL char at symbol
 	data_bytes=$( { echo "${data_bytes}" | base64 -d | xxd --ps; echo -n "00"; } | xxd --ps -r | base64 -w0 )
 	if [ "$symbol_name" != input ] && echo "${input[@]}" | grep -q "evaluate"; then
-		debug "eval [${data_bytes}]"
+		# debug "eval [${data_bytes}]"
 		#TODO detect eval type. if all operations are static, and not call or jump is used(between the definition and evaluation).
 		eval_type="static";
 		if [ "${eval_type}" == "static" ]; then
@@ -390,7 +398,7 @@ set_symbol_value() {
 is_a_valid_number_on_base(){
 	SNIPPETS=$2
 	base=$(get_b64_symbol_value "base" "${SNIPPETS}" | cut -d, -f1 | base64 -d);
-	debug "validate (( ${base:=10}#${raw_data_bytes} ))"
+	# debug "validate (( ${base:=10}#${raw_data_bytes} ))"
 	echo -n "$(( ${base:10}#${raw_data_bytes} ))" 2>&1 >/dev/null || 
 		return 1;
 	echo "${base:10}"
@@ -425,7 +433,7 @@ parse_data_bytes()
 		return;
 	fi;
 	if ! { echo "${raw_data_bytes}" | base64 -d 2>&1 >/dev/null; }; then
-		debug "not base 64"
+		# debug "not base 64"
 		echo "${raw_data_bytes}" | base64 -w0
 		return;
 	fi
@@ -537,7 +545,7 @@ parse_snippet()
 		{
 			if [[ "${code_line_elements[0]}" =~ ::$ ]]; then
 			{
-				debug defining symbol [${code_line_elements[0]}]
+				# debug defining symbol [${code_line_elements[0]}]
 				# TODO this code is for RSP, we need add (n * 8) to it
 				symbol_name="$( echo -n "${code_line_elements[0]/:*/}" )"
 				# create a new dynamic symbol called ${symbol_name}
@@ -547,7 +555,7 @@ parse_snippet()
 				instr_len=$(echo -n "${instr_bytes}" | base64 -d | wc -c )
 				data_bytes="";
 				data_len="$( echo -n "${data_bytes}" | base64 -d | wc -c )";
-				debug "adding symbol_name=[$symbol_name], data_len=$data_len"
+				#debug "adding symbol_name=[$symbol_name], data_len=$data_len"
 				struct_parsed_snippet \
 					"SYMBOL_TABLE" \
 					"${symbol_name}" \
@@ -602,9 +610,9 @@ parse_snippet()
 	fi;
 	if [[ "${code_line_elements[0]}" =~ :\<=$ ]]; then
 	{
-		symbol_name="$( echo -n "${CODE_LINE/:*/}" )"
-		local symbol_data=$(get_b64_symbol_value "${code_line_elements[1]}" "${SNIPPETS}" )
-		filename_addr=$(get_symbol_addr "${code_line_elements[1]}" "$SNIPPETS")
+		local symbol_name="$(echo -n "${CODE_LINE/:*/}")"
+		local symbol_data=$(get_b64_symbol_value "${code_line_elements[1]}" "${SNIPPETS}")
+		local filename_addr=$(get_symbol_addr "${code_line_elements[1]}" "$SNIPPETS")
 		# sys_open will create a new file descriptor.
 		local symbol_type=$(echo "${symbol_data}" | cut -d, -f3);
 		if [ "${symbol_type}" != "${SYMBOL_TYPE_STATIC}" ]; then
@@ -612,19 +620,35 @@ parse_snippet()
 			data_bytes_len=0; # no data to append. just registers used.
 			data_addr_v="${symbol_value}";
 		fi;
-		SYS_OPEN="$(read_file "${symbol_type}" "$filename_addr")"
+		# TODO use a better place this is an insecure way, because on this page
+		# we have all code, so we can rewrite it.
+		local stat_addr=$(( 16#10400 ));
+		# Reading file involve some steps.
+		# 1. Opening the file, if succeed, we have a file descriptor
+		#    in success the rax will have the fd
+		local open_code="$(system_call_open "${filename_addr}")";
+		# 2. fstat that fd, so we have the information on data size, to allocate properly the memory.
+		# TODO guarantee a valid writable memory location
+		local fstat_code="$(sys_fstat "${stat_addr}")";
+		# 	To do this we need to have some memory space to set the stat data struct.
+		# 	TODO decide if we should mmap every time, or have a program buffer to use.
+		# 3.a. in normal files, allocate memory with mmap using the fd.
+		local mmap_code="";
+		# 3.b. in case of virtual file like pipes or nodes(/proc/...) we can't map directly, but we still need to have a memory space to read the data in, so the fstat is still necessary. We should then use the sys_read to copy the data into memory.
+		# 4. So we can access the data directly using memory addresses.
+		local read_code="$(read_file "${symbol_type}" "${stat_addr}")"
 		# it should return the bytecode, the size
 		#fd="$(set_symbol_value "${symbol_value} fd" "${SYS_OPEN}")";
 		# We should create a new dynamic symbol to have the file descriptor number
 		#CODE="${CODE}$(sys_read $)"
 		#debug symbol_value=$symbol_value
 		#data_addr_v="${data_offset}"
-		instr_bytes="${SYS_OPEN}"
+		instr_bytes="${open_code}${fstat_code}${mmap_code}${read_code}";
 		instr_len=$(echo -n "${instr_bytes}" | base64 -d | wc -c )
 		data_bytes="";
 		data_len="$( echo -n "${data_bytes}" | base64 -d | wc -c )";
 		struct_parsed_snippet \
-			"SYMBOL_TABLE" \
+			"PROCEDURE_TABLE" \
 			"${symbol_name}" \
 			"${instr_offset}" \
 			"${instr_bytes}" \
@@ -646,7 +670,7 @@ parse_snippet()
 		instr_len=$(echo -n "${instr_bytes}" | base64 -d | wc -c )
 		data_bytes="";
 		data_len="$( echo -n "${data_bytes}" | base64 -d | wc -c )";
-		debug "adding symbol_name=[$symbol_name], data_len=$data_len"
+		#debug "adding symbol_name=[$symbol_name], data_len=$data_len"
 		struct_parsed_snippet \
 			"SYMBOL_TABLE" \
 			"${symbol_name}" \
@@ -680,7 +704,10 @@ parse_snippet()
 			data_bytes="";
 			data_bytes_len=0; # no data to append. just registers used.
 			data_addr_v="${symbol_value}";
+		else
+			error "write not implemented for symbol_type $symbol_type";
 		fi;
+		# TODO: detect if using dyn data addr and pass it 
 		local instr_bytes="$(system_call_write "${symbol_type}" "${data_output}" "$data_addr_v" "$data_bytes_len")";
 		local instr_size="$(echo -e "$instr_bytes" | base64 -d | wc -c)"
 		struct_parsed_snippet \
@@ -697,8 +724,8 @@ parse_snippet()
 		return $?;
 	}
 	fi;
-	if [[ "${CODE_LINE_XXD}" =~ ^(09)*726574 ]]; then # ret
-		ret_value="$( echo -n "${CODE_LINE/ret/}" | tr -s " " | cut -d " " -f2 )"
+	if [[ "${code_line_elements[0]}" == ret ]]; then
+		ret_value="${code_line_elements[1]}"
 		bytecode_return="$(bytecode_ret "${ret_value}")"
 		instr_bytes="$(echo $bytecode_return | cut -d, -f1)"
 		instr_size="$(echo $bytecode_return | cut -d, -f2)"
@@ -749,7 +776,7 @@ parse_snippet()
 	if [[ "${code_line_elements[0]}" == goto ]]; then
 		target="${code_line_elements[1]}"
 		# debug "GOTO [$target]"
-		target_offset="$( echo "$SNIPPETS" | grep "SNIPPET,${target}" | cut -d, -f${SNIPPET_COLUMN_INSTR_OFFSET} )";
+		target_offset="$( echo "$SNIPPETS" | grep "SNIPPET,${target}," | cut -d, -f${SNIPPET_COLUMN_INSTR_OFFSET} )";
 		# debug "goto $target: [$target_offset]. [$instr_offset]"
 		jmp_result="$(system_call_jump "${target_offset}" "${instr_offset}" )";
 		# debug jmp_result=$jmp_result
@@ -771,7 +798,7 @@ parse_snippet()
 	fi;
 	if echo "$SNIPPETS" | grep -q "${code_line_elements[0]}"; then
 		target="${code_line_elements[0]}"
-		target_offset="$( echo "$SNIPPETS" | grep "SNIPPET,${target}" | cut -d, -f${SNIPPET_COLUMN_INSTR_OFFSET} )";
+		target_offset="$( echo "$SNIPPETS" | grep "SNIPPET,${target}," | cut -d, -f${SNIPPET_COLUMN_INSTR_OFFSET} )";
 		# debug "call $target: [$target_offset]. [$instr_offset]"
 		local call_bytecode="$(system_call_procedure "${target_offset}" "${instr_offset}" )";
 		local call_bytes="$(echo "${call_bytecode}" | cut -d, -f1)";
@@ -791,11 +818,14 @@ parse_snippet()
 	fi;
 	if [[ "${code_line_elements[0]}" == ! ]]; then
 		local target="${code_line_elements[1]}"
-		#debug "EXEC [$target]"
-		local target_offset="$( echo "$SNIPPETS" | grep "SYMBOL_TABLE,${target}" | cut -d, -f${SNIPPET_COLUMN_DATA_OFFSET} )";
+		# debug "EXEC [$target]"
+		local target_offset="$( echo "$SNIPPETS" | grep "SYMBOL_TABLE,${target}," | cut -d, -f${SNIPPET_COLUMN_DATA_OFFSET} )";
 		local data_bytes="";
 		local data_len=0;
-		exec_result="$(system_call_exec "${target_offset}" "${instr_offset}" )";
+		local args=""; # memory address to the args
+		local env=""; # memory address to the env
+		# debug "SNIPPETS=[${SNIPPETS}]"
+		exec_result="$(system_call_exec "${target_offset}" "${instr_offset}" "$args" "$env" )";
 		instr_bytes="$(echo "${exec_result}" | cut -d, -f1)";
 		instr_len="$(echo "${exec_result}" | cut -d, -f2)";
 		struct_parsed_snippet \
@@ -851,15 +881,19 @@ parse_snippets()
 }
 
 # get_first_code_offset should return the size of all instructions before the first call that is outside a bloc
+# the strategy is to look for all instructions and break as soon as we identify a first valid code
+#
 get_first_code_offset()
 {
 	local SNIPPETS="$(cat)";
+	# debug "get_first_code_offset \n
+#$SNIPPETS"
 	local i=0;
 	echo "${SNIPPETS}" |
 	cut -d, -f${SNIPPET_COLUMN_TYPE},${SNIPPET_COLUMN_INSTR_LEN} |
 	while IFS=, read k s;
 	do
-		[ $k == INSTRUCTION -o $k == SNIPPET_CALL ] && break;
+		[ $k == INSTRUCTION -o $k == SNIPPET_CALL -o $k == SYMBOL_TABLE ] && break;
 		i=$(( i + s ));
 		echo "$i";
 	done | tail -1;
@@ -869,7 +903,7 @@ get_first_code_offset()
 # That includes NONE OF the data section (string table, the elf and program headers
 detect_instruction_size_from_code()
 {
-	grep -E "^(SNIPPET|INSTRUCTION|SNIPPET_CALL|SYMBOL_TABLE)," |
+	grep -E "^(SNIPPET|INSTRUCTION|SNIPPET_CALL|SYMBOL_TABLE|PROCEDURE_TABLE)," |
 	cut -d, -f${SNIPPET_COLUMN_INSTR_LEN} |
 	awk '{s+=$1}END{print s}'
 }
@@ -883,7 +917,7 @@ write_elf()
 {
 	local ELF_FILE_OUTPUT="$1";
 	# Virtual Memory Offset
-	local PH_VADDR_V=$(cat /proc/sys/vm/mmap_min_addr)
+	local PH_VADDR_V=$(./ph_vaddr_v)
 	local SH_COUNT=$(get_section_headers_count "");
 	local INPUT_SOURCE_CODE="$(cat)";
 	INIT_CODE="

@@ -43,7 +43,7 @@ SNIPPET_PARSER_ERROR_INVALID_SNIPPET_UNSTRUCTION_OFFSET_INVALID=3
 
 struct_parsed_snippet(){
 	local snippet_type="$(eval echo -n \${$SNIPPET_COLUMN_TYPE})";
-	if ! [[ ${snippet_type} =~ (EMPTY|INVALID|COMMENT|INSTRUCTION|SNIPPET|SNIPPET_CALL|SYMBOL_TABLE) ]]; then
+	if ! [[ ${snippet_type} =~ (EMPTY|INVALID|COMMENT|INSTRUCTION|SNIPPET|SNIPPET_CALL|SYMBOL_TABLE|PROCEDURE_TABLE) ]]; then
 		error "Invalid snippet type: $@";
 		exit $SNIPPET_PARSER_ERROR_INVALID_SNIPPET_TYPE;
 	fi;
