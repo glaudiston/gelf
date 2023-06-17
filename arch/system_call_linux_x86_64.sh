@@ -652,10 +652,10 @@ function system_call_procedure()
 		local OPCODE_CALL_NEAR="\xe8"; #direct call with 32bit displacement
 		local NEAR_ADDR_V="$(printEndianValue $RELATIVE $SIZE_32BITS_4BYTES)" # call addr
 		local BYTES="${OPCODE_CALL_NEAR}${NEAR_ADDR_V}"
-		echo -n $(echo -en "$BYTES" | base64 -w0),5;
+		echo -en "$BYTES" | base64 -w0;
 		return
 	fi;
-	error call not implemented for this address size: CURRENT: $CURRENT, TARGET: $TARGET, RELATIVE: $RELATIVE;
+	error "call not implemented for this address size: CURRENT: $CURRENT, TARGET: $TARGET, RELATIVE: $RELATIVE";
 
 
 	FAR_CALL="\x9a";
@@ -837,6 +837,7 @@ function system_call_write()
 	local OUT="$2";
 	local DATA_ADDR_V="$3";
 	local DATA_LEN="$4";
+	local CURRENT_RIP="$5";
 	if [ "${TYPE}" == "${SYMBOL_TYPE_STATIC}" ]; then
 		echo -n "$(system_call_write_addr "${OUT}" "${DATA_ADDR_V}" "${DATA_LEN}")";
 	elif [ "${TYPE}" == ${SYMBOL_TYPE_REGISTER} -a "${DATA_ADDR_V}" == "$( echo -n ${ARCH_CONST_ARGUMENT_COUNTER_POINTER} | base64 -w0)" ]; then
@@ -910,6 +911,7 @@ function system_call_write()
 	elif [ "$TYPE" == "${SYMBOL_TYPE_PROCEDURE}" ]; then
 	{
 		local code="";
+		code="${CODE}$(system_call_procedure ${DATA_ADDR_V} ${CURRENT_RIP} | base64 -d | toHexDump)";
 		code="${code}${MOV_RAX}$(printEndianValue $SYS_WRITE $SIZE_64BITS_8BYTES)";
 		code="${code}${MOV_R9_RDX}"
 		code="${code}${MOV_RDI}$(printEndianValue $OUT $SIZE_64BITS_8BYTES)";

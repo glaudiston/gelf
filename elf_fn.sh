@@ -299,6 +299,11 @@ get_symbol_addr()
 	echo "${symbol_addr}";
 }
 
+# it returns
+B64_SYMBOL_VALUE_RETURN_OUT=1;
+B64_SYMBOL_VALUE_RETURN_SIZE=2;
+B64_SYMBOL_VALUE_RETURN_TYPE=3;
+B64_SYMBOL_VALUE_RETURN_ADDR=4;
 get_b64_symbol_value()
 {
 	local symbol_name="$1"
@@ -315,14 +320,15 @@ get_b64_symbol_value()
 	# resolve variable
 	local procedure_data="$( echo "$SNIPPETS" | grep "PROCEDURE_TABLE,${symbol_name}," | tail -1)";
 	if [ "${procedure_data}" != "" ]; then
-		echo -n ${out},${outsize},${SYMBOL_TYPE_PROCEDURE}
+		local addr=$(echo "${procedure_data}" | cut -d, -f${SNIPPET_COLUMN_INSTR_OFFSET});
+		echo -n ${out},${outsize},${SYMBOL_TYPE_PROCEDURE},${addr}
 		return 1;
 	fi
 	local symbol_data="$( echo "$SNIPPETS" | grep "SYMBOL_TABLE,${symbol_name}," | tail -1)";
 	if [ "${symbol_data}" == "" ]; then {
 		# return default values for known internal words
 		if [ "${symbol_name}" == "input" ]; then
-			local symbol_instr="$( echo "$procedure_data" | cut -d, -f${SNIPPET_COLUMN_INSTR_BYTES})";
+			local symbol_instr="$( echo "$symbol_data" | cut -d, -f${SNIPPET_COLUMN_INSTR_BYTES})";
 			out=$(echo -n "${symbol_instr}")
 			outsize=$(echo -n "${out}" | base64 -d | wc -c)
 			outsize=$(echo -n "${out}" | base64 -d | wc -c)
@@ -366,7 +372,7 @@ set_symbol_value() {
 	local data_bytes="${symbol_value}";
 	local input="${symbol_value}";
 	if [ "${symbol_name}" != "input" ]; then
-		input=$(get_b64_symbol_value "input" "$SNIPPETS" | cut -d, -f1 | base64 -d | tr -d '\0')
+		input=$(get_b64_symbol_value "input" "$SNIPPETS" | cut -d, -f${B64_SYMBOL_VALUE_RETURN_OUT} | base64 -d | tr -d '\0')
 	fi;
 	#debug "input[$input]: [${symbol_value}] "
 	if [ "${symbol_name}" != "input" -a "${input}" == "base64" ]; then
@@ -397,7 +403,7 @@ set_symbol_value() {
 
 is_a_valid_number_on_base(){
 	SNIPPETS=$2
-	base=$(get_b64_symbol_value "base" "${SNIPPETS}" | cut -d, -f1 | base64 -d);
+	base=$(get_b64_symbol_value "base" "${SNIPPETS}" | cut -d, -f${B64_SYMBOL_VALUE_RETURN_OUT} | base64 -d);
 	# debug "validate (( ${base:=10}#${raw_data_bytes} ))"
 	echo -n "$(( ${base:10}#${raw_data_bytes} ))" 2>&1 >/dev/null || 
 		return 1;
@@ -614,7 +620,7 @@ parse_snippet()
 		local symbol_data=$(get_b64_symbol_value "${code_line_elements[1]}" "${SNIPPETS}")
 		local filename_addr=$(get_symbol_addr "${code_line_elements[1]}" "$SNIPPETS")
 		# sys_open will create a new file descriptor.
-		local symbol_type=$(echo "${symbol_data}" | cut -d, -f3);
+		local symbol_type=$(echo "${symbol_data}" | cut -d, -f${B64_SYMBOL_VALUE_RETURN_TYPE});
 		if [ "${symbol_type}" != "${SYMBOL_TYPE_STATIC}" ]; then
 			data_bytes="";
 			data_bytes_len=0; # no data to append. just registers used.
@@ -643,7 +649,8 @@ parse_snippet()
 		#CODE="${CODE}$(sys_read $)"
 		#debug symbol_value=$symbol_value
 		#data_addr_v="${data_offset}"
-		instr_bytes="${open_code}${fstat_code}${mmap_code}${read_code}";
+		bytecode_return="$(bytecode_ret "${ret_value}")"
+		instr_bytes="${open_code}${fstat_code}${mmap_code}${read_code}$(echo $bytecode_return | cut -d, -f1)"
 		instr_len=$(echo -n "${instr_bytes}" | base64 -d | wc -c )
 		data_bytes="";
 		data_len="$( echo -n "${data_bytes}" | base64 -d | wc -c )";
@@ -691,24 +698,31 @@ parse_snippet()
 		local WRITE_DATA_ELEM=2;
 		local out=${code_line_elements[$WRITE_OUTPUT_ELEM]};
 		# expected: STDOUT, STDERR, FD...
-		local data_output=$(get_b64_symbol_value "${out}" "${SNIPPETS}" | cut -d, -f1 | base64 -d | tr -d '\0' );
+		local data_output=$(get_b64_symbol_value "${out}" "${SNIPPETS}" | cut -d, -f${B64_SYMBOL_VALUE_RETURN_OUT} | base64 -d | tr -d '\0' );
 		# I think we can remove the parse_data_bytes and force the symbol have the data always
 		local symbol_data=$(get_b64_symbol_value "${code_line_elements[$WRITE_DATA_ELEM]}" "${SNIPPETS}" )
-		local symbol_type=$(echo "${symbol_data}" | cut -d, -f3);
-		local symbol_value=$( echo "$symbol_data" | cut -d, -f1);
+		local symbol_type=$(echo "${symbol_data}" | cut -d, -f${B64_SYMBOL_VALUE_RETURN_TYPE});
+		local symbol_value=$(echo "$symbol_data" | cut -d, -f${B64_SYMBOL_VALUE_RETURN_OUT});
 		local data_bytes=$(echo -n "${symbol_value}"| cut -d, -f1);
 		local data_bytes_len="$(echo -n "${symbol_data}"| cut -d, -f2)";
 		# debug t=[${symbol_type}],symbol_value=[${symbol_value}] 
 		local data_addr_v="${data_offset}"
 		if [ "${symbol_type}" != "${SYMBOL_TYPE_STATIC}" ]; then
-			data_bytes="";
-			data_bytes_len=0; # no data to append. just registers used.
-			data_addr_v="${symbol_value}";
-		else
-			error "write not implemented for symbol_type $symbol_type";
+			if [ "${symbol_type}" == "${SYMBOL_TYPE_PROCEDURE}" ]; then
+				data_bytes="";
+				local procedure_addr=$(echo "$symbol_data" | cut -d, -f${B64_SYMBOL_VALUE_RETURN_ADDR});
+				debug symbol_data=[$symbol_data]
+				debug procedure_addr=[$procedure_addr]
+				data_bytes_len=0; # no data to append. just registers used.
+				data_addr_v="${procedure_addr}"; # point to the procedure address
+			else
+				data_bytes="";
+				data_bytes_len=0; # no data to append. just registers used.
+				data_addr_v="${symbol_value}";
+			fi;
 		fi;
 		# TODO: detect if using dyn data addr and pass it 
-		local instr_bytes="$(system_call_write "${symbol_type}" "${data_output}" "$data_addr_v" "$data_bytes_len")";
+		local instr_bytes="$(system_call_write "${symbol_type}" "${data_output}" "$data_addr_v" "$data_bytes_len" "${instr_offset}")";
 		local instr_size="$(echo -e "$instr_bytes" | base64 -d | wc -c)"
 		struct_parsed_snippet \
 			"INSTRUCTION" \
@@ -743,7 +757,7 @@ parse_snippet()
 		return $?;
 	fi;
 	if [[ "${code_line_elements[0]}" == exit ]]; then
-		local exit_value=$(get_b64_symbol_value "${code_line_elements[1]}" "${SNIPPETS}" | cut -d, -f1 | base64 -d | tr -d '\00' )
+		local exit_value=$(get_b64_symbol_value "${code_line_elements[1]}" "${SNIPPETS}" | cut -d, -f${B64_SYMBOL_VALUE_RETURN_OUT} | base64 -d | tr -d '\00' )
 
 		instr_bytes="$(system_call_exit ${exit_value})"
 		struct_parsed_snippet \
@@ -800,9 +814,8 @@ parse_snippet()
 		target="${code_line_elements[0]}"
 		target_offset="$( echo "$SNIPPETS" | grep "SNIPPET,${target}," | cut -d, -f${SNIPPET_COLUMN_INSTR_OFFSET} )";
 		# debug "call $target: [$target_offset]. [$instr_offset]"
-		local call_bytecode="$(system_call_procedure "${target_offset}" "${instr_offset}" )";
-		local call_bytes="$(echo "${call_bytecode}" | cut -d, -f1)";
-		local call_len="$(echo "${call_bytecode}" | cut -d, -f2)";
+		local call_bytes="$(system_call_procedure "${target_offset}" "${instr_offset}" )";
+		local call_len="$(echo "${call_bytes}" | base64 -d | wc -c)";
 		struct_parsed_snippet \
 			"SNIPPET_CALL" \
 			"call" \
@@ -881,7 +894,8 @@ parse_snippets()
 }
 
 # get_first_code_offset should return the size of all instructions before the first call that is outside a bloc
-# the strategy is to look for all instructions and break as soon as we identify a first valid code
+# the strategy is to look for all instructions and break as soon as we identify a first valid code 
+# at the first level
 #
 get_first_code_offset()
 {
@@ -893,7 +907,7 @@ get_first_code_offset()
 	cut -d, -f${SNIPPET_COLUMN_TYPE},${SNIPPET_COLUMN_INSTR_LEN} |
 	while IFS=, read k s;
 	do
-		[ $k == INSTRUCTION -o $k == SNIPPET_CALL -o $k == SYMBOL_TABLE ] && break;
+		[ $k == INSTRUCTION -o $k == SNIPPET_CALL ] && break;
 		i=$(( i + s ));
 		echo "$i";
 	done | tail -1;
@@ -918,9 +932,12 @@ write_elf()
 	local ELF_FILE_OUTPUT="$1";
 	# Virtual Memory Offset
 	local PH_VADDR_V=$(./ph_vaddr_v)
+	if [ "$PH_VADDR_V" == "" ]; then
+		PH_VADDR_V=$(cat /proc/sys/vm/mmap_min_addr)
+	fi;
 	local SH_COUNT=$(get_section_headers_count "");
 	local INPUT_SOURCE_CODE="$(cat)";
-	INIT_CODE="
+	local INIT_CODE="
 	mmap 1 page 4096 bytes (private);
 	mmap 1 page 4096 bytes (shared); ?
 	reserve space for:
