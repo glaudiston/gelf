@@ -117,6 +117,7 @@ void trace_watcher(pid_t child)
 		unsigned char first_byte = data << 24 >> 24;
 		unsigned char second_byte = data << 16 >> 24;
 		unsigned char thirdbyte=data << 8 >> 24;
+		unsigned char fourthbyte=data >> 24;
 
 		switch (first_byte) {
 			case 0x48:
@@ -150,6 +151,13 @@ void trace_watcher(pid_t child)
 					}
 				}
 				if ( second_byte == 0x89 ) {
+					if ( thirdbyte == 0x24 ) {
+						if ( fourthbyte == 0x25 ) {
+							printf("%016lx: mov %%rsp, 0x%llx\n", addr, regs.rsp);
+						} else {
+							printf("%016lx: ??", addr);
+						}
+					}
 					if ( thirdbyte == 0xc7 ) {
 						printf("%016lx: mov %%rax, %%rdi # 0x%llx(%lli)\n", addr, regs.rax, regs.rax); fflush(stdout);
 					}
