@@ -54,8 +54,10 @@ ASM
 ===
 To discover bytecode one good way is create an asm file with the instruction, compile it and use ld with the --oformat binary:
 ```
-$ show_bytecode(){ echo "$@" | as -o temp.o && ld --oformat binary -o temp.bin temp.o 2>/dev/null && xxd --ps temp.bin && rm temp.o temp.bin; }
-$ show_bytecode "mov %r8, %r10"
+show_bytecode(){ echo "$@" | as -o temp.o && ld --oformat binary -o temp.bin temp.o 2>/dev/null && xxd --ps temp.bin && rm temp.o temp.bin; }
+```
+```
+show_bytecode "mov %r8, %r10"
 4d89c2
 ```
 

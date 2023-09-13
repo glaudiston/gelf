@@ -42,9 +42,9 @@ void peek_string(pid_t child, void *addr, char* out){
 void printRegValue(unsigned long r)
 {
 	if ( r < 0 ) {
-		printf(" = 0x%x(%li|%lu)\n", r, r, r);
+		printf(" = 0x%lx(%li|%lu)\n", r, r, r);
 	} else {
-		printf(" = 0x%x(%lu)\n", r, r);
+		printf(" = 0x%lx(%lu)\n", r, r);
 	}
 }
 
@@ -70,8 +70,8 @@ void trace_watcher(pid_t child)
 	char filename[256];
 	int printNextData=0;
 	int status;
-	unsigned addr = 0;
-	unsigned straddr;
+	unsigned long addr = 0;
+	unsigned long straddr;
 	while ( 1 ) {
 		waitpid(child, &status, 0);
 		if (WIFEXITED(status)) {
@@ -117,74 +117,82 @@ void trace_watcher(pid_t child)
 		unsigned char first_byte = data << 24 >> 24;
 		unsigned char second_byte = data << 16 >> 24;
 		unsigned char thirdbyte=data << 8 >> 24;
+		unsigned char fourthbyte=data >> 24;
 
 		switch (first_byte) {
 			case 0x48:
 				if ( second_byte == 0xb8 ) {
-					unsigned rax = ptrace(PTRACE_PEEKTEXT, child, (void*)addr+2, 0);
-					printf("%016x: mov 0x%x, %rax # %li\n", addr, rax, rax);fflush(stdout);
+					long unsigned rax = ptrace(PTRACE_PEEKTEXT, child, (void*)addr+2, 0);
+					printf("%016lx: mov 0x%lx, %%rax # %li\n", addr, rax, rax);fflush(stdout);
 				}
 				if ( second_byte == 0x8b ) {
 					if ( thirdbyte == 0x36 ) {
 						data = ptrace(PTRACE_PEEKTEXT, child, (void*)addr+2, 0);
-						printf("%016x: mov %rsi, %rsi # (resolve address)\n", addr);fflush(stdout);
+						printf("%016lx: mov %%rsi, %%rsi # (resolve address)\n", addr);fflush(stdout);
 						printNextData = TRUE + RSI;
 					}
 					if ( thirdbyte == 0x12 ){
 						data = ptrace(PTRACE_PEEKTEXT, child, (void*)addr+2, 0);
-						printf("%016x: mov %rdx %rdx # (resolve address)\n", addr);fflush(stdout);
+						printf("%016lx: mov %%rdx %%rdx # (resolve address)\n", addr);fflush(stdout);
 					}
 				}
 				if ( second_byte == 0xc7 ){
 					if ( thirdbyte == 0xc0 ) {
 						unsigned rax = ptrace(PTRACE_PEEKTEXT, child, (void*)addr+3, 0);
-						printf("%016x: mov 0x%x, %rAX\n", addr, rax);fflush(stdout);
+						printf("%016lx: mov 0x%x, %%rAX\n", addr, rax);fflush(stdout);
 					}
 					else if ( thirdbyte == 0xc7 ) {
 						data = ptrace(PTRACE_PEEKTEXT, child, (void*)addr+3, 0);
-						printf("%016x: mov 0x%x, %rdi\n", addr, data);fflush(stdout);
+						printf("%016lx: mov 0x%x, %%rdi\n", addr, data);fflush(stdout);
 					}
 					else if ( thirdbyte == 0xc2 ) {
 						data = ptrace(PTRACE_PEEKTEXT, child, (void*)addr+3, 0);
-						printf("%016x: mov 0x%x, %rdx\n", addr, data);fflush(stdout);
+						printf("%016lx: mov 0x%x, %%rdx\n", addr, data);fflush(stdout);
 					}
 				}
 				if ( second_byte == 0x89 ) {
+					if ( thirdbyte == 0x24 ) {
+						if ( fourthbyte == 0x25 ) {
+							printf("%016lx: mov %%rsp, 0x%llx\n", addr, regs.rsp);
+						} else {
+							printf("%016lx: ??", addr);
+						}
+					}
 					if ( thirdbyte == 0xc7 ) {
-						printf("%016x: mov %rax, %rdi # 0x%x(%li)\n", addr, regs.rax, regs.rax); fflush(stdout);
+						printf("%016lx: mov %%rax, %%rdi # 0x%llx(%lli)\n", addr, regs.rax, regs.rax); fflush(stdout);
 					}
 					else if ( thirdbyte == 0xc6 ) {
-						printf("%016x: mov %rax %rsi # 0x%x(%li)\n", addr,regs.rax, regs.rax);fflush(stdout);
+						printf("%016lx: mov %%rax %%rsi # 0x%llx(%lli)\n", addr,regs.rax, regs.rax);fflush(stdout);
 					}
 					else if ( thirdbyte == 0xf2 ) {
-						printf("%016x: mov %rsi, %rdx # 0x%x(%li)\n", addr, regs.rsi, regs.rsi); fflush(stdout);
+						printf("%016lx: mov %%rsi, %%rdx # 0x%llx(%lli)\n", addr, regs.rsi, regs.rsi); fflush(stdout);
 					}
 					else if ( thirdbyte == 0xe6) {
-						printf("%016x: MOV %RSP, %RSI\n", addr); fflush(stdout);
+						printf("%016lx: mov %%rsp, %%rsi\n", addr); fflush(stdout);
 					}
 					else if ( thirdbyte == 0xe2 ) {
-						printf("%016x: MOV %RSP, %RDX\n", addr); fflush(stdout);
+						printf("%016lx: mov %%rsp, %%rdx\n", addr); fflush(stdout);
 					}
 					else if ( thirdbyte == 0xf0 ) {
-						printf("%016x: mov %rsi, %rax # %x(%li)\n", addr, regs.rsi, regs.rsi); fflush(stdout);
+						printf("%016lx: mov %%rsi, %%rax # %llx(%lli)\n", addr, regs.rsi, regs.rsi); fflush(stdout);
 					} else {
 						data = ptrace(PTRACE_PEEKTEXT, child, (void*)addr+2, 0);
-						printf("%016x: mov %li, %rsi\n", addr, data);
+						printf("%016lx: mov 0x%x, %%rsi # %i\n", addr, data, data);
 						straddr = data;
 					}
 				}
 				else if ( second_byte == 0xbf ) {
 					unsigned rdi = ptrace(PTRACE_PEEKTEXT, child, (void*)addr+2, 0);
-					printf("%016x: mov 0x%x, %rdi # %li\n", addr, rdi, rdi); fflush(stdout);
+					printf("%016lx: mov 0x%x, %%rdi # %i\n", addr, rdi, rdi); fflush(stdout);
 				}
 				else if ( second_byte == 0xbe ) {
 					long rsi = ptrace(PTRACE_PEEKTEXT, child, (void*)addr+2, 0);
-					printf("%016x: mov 0x%x, %rsi # %li\n", addr, rsi, rsi);
+					printf("%016lx: mov 0x%lx, %%rsi # %li\n", addr, rsi, rsi);
 				}
 				else if ( second_byte == 0xba ) {
 					data = ptrace(PTRACE_PEEKTEXT, child,
 						(void*)addr+2, 0);
-					printf("%016x: mov 0x%016x, %rdx", addr, data); fflush(stdout);
+					printf("%016lx: mov 0x%016x, %%rdx", addr, data); fflush(stdout);
 					int strsize = (int)data;
 					char* c = malloc(sizeof(char) * strsize + 4);
 					int i = 0;
@@ -200,20 +208,19 @@ void trace_watcher(pid_t child)
 				}
 				else if ( second_byte == 0x31 ) {
 				       	if ( thirdbyte == 0xf6 ) {
-						data = ptrace(PTRACE_PEEKTEXT, child, (void*)addr+2, 0);
-						printf("%016x: xor %rsi, %rsi\n", addr, data);fflush(stdout);
+						printf("%016lx: xor %%rsi, %%rsi\n", addr);fflush(stdout);
 					} else {
-						printf("%016x: ??? xor %rsi, %rsi\n", addr, data);fflush(stdout);
+						printf("%016lx: ??? xor %%rsi, %%rsi\n", addr);fflush(stdout);
 					}
 				}
 				else if ( second_byte == 0x29 ) {
 					if ( thirdbyte == 0xf2 ) {
 						// SUB RDX RSI // RESULT IN RDX
 						data = ptrace(PTRACE_PEEKTEXT, child, (void*)addr+2, 0);
-						printf("%016x: SUB RDX RSI (result in RDX)\n", addr);fflush(stdout);
+						printf("%016lx: SUB RDX RSI (result in RDX)\n", addr);fflush(stdout);
 					} else {
 						data = ptrace(PTRACE_PEEKTEXT, child, (void*)addr+2, 0);
-						printf("%016x: ??? SUB RDX RSI (result in RDX)\n", addr);fflush(stdout);
+						printf("%016lx: ??? SUB RDX RSI (result in RDX)\n", addr);fflush(stdout);
 					}
 				}
 				else if ( second_byte == 0x83 ) {
@@ -221,64 +228,64 @@ void trace_watcher(pid_t child)
 					long r=data;
 					if ( thirdbyte == 0xc6 ) {
 						// ADD RSI HEXVALUE ??
-						printf("%016x: ADD 0x%x, %RSI\n", addr, data >> 24 ); fflush(stdout);
+						printf("%016lx: add 0x%x, %%rsi\n", addr, data >> 24 ); fflush(stdout);
 					} else if ( r == 0xc2000000 ) {
-						printf("%016x: ADD 0x%x, %RDX\n", addr, data >> 24 ); fflush(stdout);
+						printf("%016lx: add 0x%x, %%rdx\n", addr, data >> 24 ); fflush(stdout);
 					} else if ( thirdbyte == 0xf8 ) {
-						printf("%016x: cmp %rax, %i\n", addr, (char)r); fflush(stdout);
+						printf("%016lx: cmp %%rax, %i\n", addr, (char)r); fflush(stdout);
 					} else if ( thirdbyte == 0xfe ) {
-						printf("%016x: cmp %rsi, %i\n", addr, (char)r ); fflush(stdout);
+						printf("%016lx: cmp %%rsi, %i\n", addr, (char)r ); fflush(stdout);
 					} else {
-						printf("%016x: CMP ?? %i\n", addr, (char)r); fflush(stdout);
+						printf("%016lx: cmp ?? %i\n", addr, (char)r); fflush(stdout);
 					}
 				}
 				break;
 			case 0x49:
 				if ( second_byte == 0xb8 ) {
 					data = ptrace(PTRACE_PEEKTEXT, child, (void*)addr+2, 0);
-					printf("%016x: MOV R8, %x\n", addr, data);fflush(stdout);
+					printf("%016lx: mov %x, %%r8\n", addr, data);fflush(stdout);
 				}
 				else if ( second_byte == 0xb9 ) {
 					data = ptrace(PTRACE_PEEKTEXT, child, (void*)addr+2, 0);
-					printf("%016x: mov %x, %r9\n", addr, data);fflush(stdout);
+					printf("%016lx: mov %x, %%r9\n", addr, data);fflush(stdout);
 				}
 				else if ( second_byte == 0xba ) {
 					data = ptrace(PTRACE_PEEKTEXT, child, (void*)addr+2, 0);
-					printf("%016x: mov %x, %r10\n", addr, data);fflush(stdout);
+					printf("%016lx: mov %x, %%r10\n", addr, data);fflush(stdout);
 				}
 				if ( second_byte == 0x89 ) {
 					if ( thirdbyte == 0xc0 ) {
 						data = ptrace(PTRACE_PEEKTEXT, child, (void*)addr+2, 0);
-						printf("%016x: mov %rax, %r8 # 0x%x(%li)\n", addr,regs.rax,regs.rax);fflush(stdout);
+						printf("%016lx: mov %%rax, %%r8 # 0x%llx(%lli)\n", addr,regs.rax,regs.rax);fflush(stdout);
 					}
 					if ( thirdbyte == 0xc1 ) { // 0x4989c1
 						data = ptrace(PTRACE_PEEKTEXT, child, (void*)addr+2, 0);
-						printf("%016x: mov %rax, %r9 # 0x%x(%x)\n", addr, regs.rax, regs.rax);fflush(stdout);
+						printf("%016lx: mov %%rax, %%r9 # 0x%llx(%llx)\n", addr, regs.rax, regs.rax);fflush(stdout);
 					}
 				}
 				break;
 			case 0x4c:
 				if ( second_byte == 0x89 ) {
 					if ( thirdbyte == 0xc7 ) { // 0x4c89c7
-						printf("%016x: mov %r8, %rdi # 0x%x(%li)\n", addr, regs.r8, regs.r8); fflush(stdout);
+						printf("%016lx: mov %%r8, %%rdi # 0x%llx(%lli)\n", addr, regs.r8, regs.r8); fflush(stdout);
 					}
 					else if ( thirdbyte == 0xc2 ) { // 0x4c89c7
-						printf("%016x: mov %r8, %rdx # 0x%x(%li)\n", addr, regs.r8, regs.r8); fflush(stdout);
+						printf("%016lx: mov %%r8, %%rdx # 0x%llx(%lli)\n", addr, regs.r8, regs.r8); fflush(stdout);
 					} else if (thirdbyte == 0xca ) {
-						printf("%016x: MOV %r9, %rdx # 0x%x\n", addr, regs.r9); fflush(stdout);
+						printf("%016lx: MOV %%r9, %%rdx # 0x%llx\n", addr, regs.r9); fflush(stdout);
 					} else {
-						printf("%016x: ??? MOV, %r9, %rdx\n", addr); fflush(stdout);
+						printf("%016lx: ??? mov, %%r9, %%rdx\n", addr); fflush(stdout);
 					}
 				}
 				break;
 			case 0xb8:
 				data = ptrace(PTRACE_PEEKTEXT, child, (void*)addr+1, 0);
-				printf("%08x: mov eAX %x\n", addr, data);fflush(stdout);
+				printf("%08lx: mov %x, %%eax\n", addr, data);fflush(stdout);
 				break;
 			case 0xba: // MOV eDX SIZE
 				data = ptrace(PTRACE_PEEKTEXT, child,
 					(void*)addr+1, 0);
-				printf("%08x: MOV eDX %i", addr, data); fflush(stdout);
+				printf("%08lx: MOV %i, %%edx", addr, data); fflush(stdout);
 				int strsize = (int)data;
 				char* c = malloc(sizeof(char) * strsize + 4);
 				int i = 0;
@@ -294,54 +301,54 @@ void trace_watcher(pid_t child)
 				break;
 			case 0xbe: // 32 bit mov
 				data = ptrace(PTRACE_PEEKTEXT, child, (void*)addr+1, 0);
-				printf("%08x: MOV eSI %x\n", addr, data);
+				printf("%08lx: MOV %x, %%esi\n", addr, data);
 				straddr = data;
 				break;
 			case 0xbf:
 				data = ptrace(PTRACE_PEEKTEXT, child, (void*)addr+1, 0);
-				printf("%08x: MOV eDI 0x%08x\n", addr, data); fflush(stdout);
+				printf("%08lx: MOV 0x%08x, %%edi\n", addr, data); fflush(stdout);
 				break;
 			default:
 				// JNE
 				if ( ( data << 16 >> 16 ) == 0xea83 ) {
-					printf("%016x: JNE\n", addr);fflush(stdout);
+					printf("%016lx: jne\n", addr);fflush(stdout);
 				}
 				// CMP RDX 00
 				if ( ( data << 16 >> 16 ) == 0x850f ) {
 					data = ptrace(PTRACE_PEEKTEXT, child, (void*)addr+3, 0) << 8;
-					printf("%016x: CMP RDX %x\n", addr, data);fflush(stdout);
+					printf("%016lx: cmp rdx %x\n", addr, data);fflush(stdout);
 				}
 				// JG
 				else if ( ( data << 16 >> 16 ) == 0x8f0f ) {
 					data = ptrace(PTRACE_PEEKTEXT, child, (void*)addr+2, 0) << 8;
 					int d = (data >> 8 + ( data << 8 >> 8 ));
 					unsigned char instr_size=6;
-					printf("%016x: jg, %x # jump %i bytes ahead\n", addr, instr_size + regs.rip + d, d);fflush(stdout);
+					printf("%016lx: jg, %llx # jump %i bytes ahead\n", addr, instr_size + regs.rip + d, d);fflush(stdout);
 				}
 				// CALL
 				else if ( first_byte == 0xe8 ) {
-					printf("%016x: CALL\n", addr); fflush(stdout);
+					printf("%016lx: call\n", addr); fflush(stdout);
 				}
 				// RET
 				else if ( first_byte == 0xc3 ) {
-					printf("%016x: RET\n", addr); fflush(stdout);
+					printf("%016lx: ret\n", addr); fflush(stdout);
 				}
 				// JMP SHORT
 				else if ( first_byte == 0xeb )
 				{
 					data = ptrace(PTRACE_PEEKTEXT, child, (void*)addr+1, 0);
-					printf("%08x: JMP SHORT (%i) %x\n", addr, first_byte, data);
+					printf("%08lx: jmp short (%i) %x\n", addr, first_byte, data);
 				}
 				// JMP NEAR
 				else if ( first_byte == 0xe9 )
 				{
 					data = ptrace(PTRACE_PEEKTEXT, child, (void*)addr+1, 0);
-					printf("%08x: JMP NEAR (%d) %x (%i)\n", addr, (signed int)data, data, sizeof(signed int) * 8);
+					printf("%08lx: jmp near (%d) %x (%li)\n", addr, (signed int)data, data, sizeof(signed int) * 8);
 				}
 				// SYSCALL
 				else if ( ( data << 16 >> 16 ) == 0x050f )
 				{
-					char syscall[255];
+					char syscall[512];
 					syscall[0]=0;
 					char SYS_READ=0;
 					char SYS_WRITE=1;
@@ -352,33 +359,33 @@ void trace_watcher(pid_t child)
 					char SYS_EXIT=60;
 					if ( regs.rax==SYS_OPEN ) {
 						peek_string(child, (void*)regs.rdi, filename);
-						sprintf(&syscall, "open(%s)", filename);
+						sprintf((char*)&syscall, "open(%s)", filename);
 					} else if ( regs.rax == SYS_READ ){
 						char buff[256];
 						peek_string(child, (void*)regs.rsi, buff);
-						sprintf(&syscall, "read(%i, %x, %i)", regs.rdi, regs.rsi, regs.rdx);
+						sprintf((char*)&syscall, "read(%lli, %llx, %lli)", regs.rdi, regs.rsi, regs.rdx);
 					} else if ( regs.rax == SYS_WRITE ){
 						char buff[256];
 						peek_string(child, (void*)regs.rsi, buff);
-						sprintf(&syscall, "write(%i, 0x%x, %i)", regs.rdi, regs.rsi, regs.rdx);
+						sprintf((char*)&syscall, "write(%lli, 0x%llx, %lli)", regs.rdi, regs.rsi, regs.rdx);
 					} else if ( regs.rax == SYS_MMAP ){
-						sprintf(&syscall, "mmap(0x%x, 0x%x, 0x%x, 0x%x, 0x%x, 0x%x); # alocates %i bytes using fd %i", 
+						sprintf((char*)&syscall, "mmap(0x%llx, 0x%llx, 0x%llx, 0x%llx, 0x%llx, 0x%llx); # alocates %lli bytes using fd %lli", 
 								regs.rdi, regs.rsi, regs.rdx, regs.r10, regs.r8, regs.r9, regs.rsi, regs.r8);
 					} else if ( regs.rax == SYS_STAT ){
-						sprintf(&syscall, "stat(%i)",regs.rsi);
+						sprintf((char*)&syscall, "stat(%lli)",regs.rsi);
 					} else if ( regs.rax == SYS_FSTAT ){
-						sprintf(&syscall, "fstat(%i, 0x%016x)",regs.rdi,regs.rsi);
+						sprintf((char*)&syscall, "fstat(%lli, 0x%016llx)",regs.rdi,regs.rsi);
 					} else if ( regs.rax == SYS_EXIT ){
-						sprintf(&syscall, "exit(%i)",regs.rdi);
+						sprintf((char*)&syscall, "exit(%lli)",regs.rdi);
 					} else {
-						printf("not implemented syscall for rax=%i...\n",regs.rax);
+						printf("not implemented syscall for rax=%lli...\n",regs.rax);
 					}
-					printf("%016x: syscall: %s", addr, syscall);fflush(stdout);
+					printf("%016lx: syscall: %s", addr, syscall);fflush(stdout);
 					printNextData = 1;
 				}
 				else
 				{
-					printf("%016x: unknown data: %016x, %06x \n", addr, data, data << 8 >> 8);fflush(stdout);
+					printf("%016lx: unknown data: %016x, %06x \n", addr, data, data << 8 >> 8);fflush(stdout);
 				}
 			break;
 		}

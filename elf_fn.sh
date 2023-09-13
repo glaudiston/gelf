@@ -253,7 +253,7 @@ print_elf_body()
 		cut -d, -f${SNIPPET_COLUMN_INSTR_BYTES}
 	);
 
-	DATA_ALL="$(echo "${SNIPPETS}" | cut -d, -f$SNIPPET_COLUMN_DATA_BYTES)"
+	DATA_ALL="$(echo "${SNIPPETS}" | grep -v INSTRUCTION | cut -d, -f$SNIPPET_COLUMN_DATA_BYTES)"
 
 	local SECTION_ELF_DATA="";
 	SECTION_ELF_DATA="${SECTION_ELF_DATA}${PROGRAM_HEADERS}";
@@ -343,25 +343,26 @@ get_b64_symbol_value()
 	}
 	fi;
 	local symbol_value="$( echo "$symbol_data" | cut -d, -f${SNIPPET_COLUMN_DATA_BYTES})";
+	local symbol_addr="$( echo "$symbol_data" | cut -d, -f${SNIPPET_COLUMN_DATA_OFFSET})";
 	if [ "${symbol_value}" == "" ];then {
 		local symbol_instr="$( echo "$symbol_data" | cut -d, -f${SNIPPET_COLUMN_INSTR_BYTES})";
 		if [ "${symbol_instr}" == $(echo -n "${ARCH_CONST_ARGUMENT_COUNTER_POINTER}" | base64 -w0) ]; then
 			out=$(echo -n "${symbol_instr}")
 			outsize=$(echo -n "${out}" | base64 -d | wc -c)
-			echo -n ${out},${outsize},${SYMBOL_TYPE_REGISTER}
+			echo -n ${out},${outsize},${SYMBOL_TYPE_PROCEDURE},${symbol_addr}
 	# debug b64_sym $1, instr=[${symbol_instr}], out[$(echo -n ${out},${outsize},${SYMBOL_TYPE_REGISTER})]
 			return;
 		fi;
 		out=$(echo -n "${symbol_instr}")
 		outsize=$(echo -n "${out}" | base64 -d | wc -c)
-		echo -n ${out},${outsize},${SYMBOL_TYPE_DYNAMIC}
+		echo -n ${out},${outsize},${SYMBOL_TYPE_DYNAMIC},${symbol_addr}
 	# debug b64_sym $1, instr=[${symbol_instr}], out[$(echo -n ${out},${outsize},${SYMBOL_TYPE_DYNAMIC})]
 		return;
 	};
 	fi
 	out=$(echo -n "${symbol_value}")
 	outsize=$(echo -n "${out}" | base64 -d | wc -c)
-	echo -n ${out},${outsize},${SYMBOL_TYPE_STATIC}
+	echo -n ${out},${outsize},${SYMBOL_TYPE_STATIC},${symbol_addr}
 	return
 	# TODO, increment usage count in SNIPPETS SYMBOL_TABLE
 }
@@ -468,7 +469,12 @@ parse_snippet()
 	local instr_offset="$(( ${previous_instr_offset} + previous_instr_sum ))";
 	local previous_data_offset=$(echo "${previous_snippet}" | cut -d, -f$SNIPPET_COLUMN_DATA_OFFSET);
 	local previous_data_len=$(echo "${previous_snippet}" | cut -d, -f$SNIPPET_COLUMN_DATA_LEN);
+	local previous_snip_type=$(echo "${previous_snippet}" | cut -d, -f${SNIPPET_COLUMN_TYPE});
+	if [ "$previous_snip_type" == "INSTRUCTION" ]; then
+		previous_data_len=0;
+	fi;
 	previous_data_offset="${previous_data_offset:=$(( PH_VADDR_V + EH_SIZE + PH_SIZE + INSTR_TOTAL_SIZE ))}"
+	debug "previous_data_offset=[0x$( printf %x "${previous_data_offset}")], previous_snip_type [${previous_snip_type}], previous_data_len=[${previous_data_len}]"
 	local data_offset="$(( previous_data_offset + previous_data_len ))";
 	if [[ "${code_line_elements[0]}" =~ ^[#] ]]; then # ignoring tabs, starts with pound symbol(#)
 	{
@@ -679,7 +685,7 @@ parse_snippet()
 		data_len="$( echo -n "${data_bytes}" | base64 -d | wc -c )";
 		#debug "adding symbol_name=[$symbol_name], data_len=$data_len"
 		struct_parsed_snippet \
-			"SYMBOL_TABLE" \
+			"PROCEDURE_TABLE" \
 			"${symbol_name}" \
 			"${instr_offset}" \
 			"${instr_bytes}" \
@@ -705,8 +711,8 @@ parse_snippet()
 		local symbol_value=$(echo "$symbol_data" | cut -d, -f${B64_SYMBOL_VALUE_RETURN_OUT});
 		local data_bytes=$(echo -n "${symbol_value}"| cut -d, -f1);
 		local data_bytes_len="$(echo -n "${symbol_data}"| cut -d, -f2)";
-		# debug t=[${symbol_type}],symbol_value=[${symbol_value}] 
-		local data_addr_v="${data_offset}"
+		local data_addr_v=$(echo "${symbol_data}" | cut -d, -f${B64_SYMBOL_VALUE_RETURN_ADDR});
+		debug data address [$(printf 0x%x $data_addr_v)]
 		if [ "${symbol_type}" != "${SYMBOL_TYPE_STATIC}" ]; then
 			if [ "${symbol_type}" == "${SYMBOL_TYPE_PROCEDURE}" ]; then
 				data_bytes="";
@@ -951,6 +957,7 @@ write_elf()
 		* argv is $rsp + 8
 		 (gdb) print *((char**)($rsp + 8))
 	";
+	debug first parse round
 	local parsed_snippets="$(echo "${INPUT_SOURCE_CODE}" | parse_snippets "${PH_VADDR_V}" "${INSTR_TOTAL_SIZE-0}")";
 	local FIRST_CODE_OFFSET="$( echo "$parsed_snippets" | get_first_code_offset)";
 	local ELF_FILE_HEADER="$(
@@ -962,6 +969,7 @@ write_elf()
 	# now we have the all information parsed
 	# but the addresses are just offsets
 	# we need to redo the addresses references
+	debug second parse round
 	local ELF_BODY="$(echo "$parsed_snippets" |
 		print_elf_body \
 			"${PH_VADDR_V}" \
