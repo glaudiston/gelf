@@ -17,9 +17,9 @@ build/readfile: samples/readfile.gg ## Build the readfile.gg file that is a very
 	bash make-elf.sh samples/readfile.gg build/readfile
 	chmod +x build/readfile
 
-build/debugger: debugger.c ## Build the debugger binary that print all registers changes and syscalls
-	mkdir -pv build
-	gcc -o build/debugger debugger.c -fdiagnostics-color=always
+.PHONY: debugger
+debugger:
+	make -C debugger build
 
 all: prepare build/gelf samples build/debugger ## Build everithing, gelf compiler, samples and the debugger.
 
