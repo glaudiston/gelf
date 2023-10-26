@@ -331,6 +331,11 @@ get_b64_symbol_value()
 			local symbol_instr="$( echo "$symbol_data" | cut -d, -f${SNIPPET_COLUMN_INSTR_BYTES})";
 			out=$(echo -n "${symbol_instr}")
 			outsize=$(echo -n "${out}" | base64 -d | wc -c)
+			echo -n ${out},${outsize},${SYMBOL_TYPE_STATIC}
+			return;
+		elif [ "${symbol_name}" == "args" ]; then
+			local symbol_instr="$( echo "$symbol_data" | cut -d, -f${SNIPPET_COLUMN_INSTR_BYTES})";
+			out=$(echo -n "${symbol_instr}")
 			outsize=$(echo -n "${out}" | base64 -d | wc -c)
 			echo -n ${out},${outsize},${SYMBOL_TYPE_STATIC}
 			return;
@@ -476,6 +481,22 @@ parse_snippet()
 	previous_data_offset="${previous_data_offset:=$(( PH_VADDR_V + EH_SIZE + PH_SIZE + INSTR_TOTAL_SIZE ))}"
 	debug "previous_data_offset=[0x$( printf %x "${previous_data_offset}")], previous_snip_type [${previous_snip_type}], previous_data_len=[${previous_data_len}]"
 	local data_offset="$(( previous_data_offset + previous_data_len ))";
+	if [ "$CODE_LINE" == "" ]; then
+	{
+		struct_parsed_snippet \
+			"EMPTY" \
+			"" \
+			"${instr_offset}" \
+			"" \
+			"0" \
+			"${data_offset}" \
+			"" \
+			"0" \
+			"${CODE_LINE_B64}" \
+			"1";
+		return $?;
+	}
+	fi;
 	if [[ "${code_line_elements[0]}" =~ ^[#] ]]; then # ignoring tabs, starts with pound symbol(#)
 	{
 		struct_parsed_snippet \
@@ -493,7 +514,6 @@ parse_snippet()
 	}
 	fi;
 	if [[ "${code_line_elements[0]}" =~ :$ ]]; then
-	#if [[ "${CODE_LINE_XXD}" =~ .*3a09.*$ ]]; then # check if has ":\t..."
 	{
 		if [[ "${CODE_LINE_XXD}" =~ .*3a097b$ ]]; then # check if ends with ":\t{" ... so it's a code block function
 		{
@@ -555,7 +575,7 @@ parse_snippet()
 		};
 		else # maybe it is just a variable or constant
 		{
-			if [[ "${code_line_elements[0]}" =~ ::$ ]]; then
+			if [[ "${code_line_elements[0]}" =~ ::$ ]]; then # Argument
 			{
 				# debug defining symbol [${code_line_elements[0]}]
 				# TODO this code is for RSP, we need add (n * 8) to it
@@ -676,16 +696,17 @@ parse_snippet()
 	fi;
 	if [[ "${code_line_elements[0]}" =~ ::\$$ ]]; then
 	{
-		symbol_name="$( echo -n "${code_line_elements[0]/:*/}" )"
-		# create a new dynamic symbol called ${symbol_name}
-		# That should point to the rbp register first 8 bytes (int)
-		instr_bytes="$(echo -n "${ARCH_CONST_ARGUMENT_COUNTER_POINTER}" |base64 -w0)"
-		instr_len=$(echo -n "${instr_bytes}" | base64 -d | wc -c )
-		data_bytes="";
-		data_len="$( echo -n "${data_bytes}" | base64 -d | wc -c )";
-		#debug "adding symbol_name=[$symbol_name], data_len=$data_len"
-		struct_parsed_snippet \
-			"PROCEDURE_TABLE" \
+		debug "[CODE_LINE: ${CODE_LINE}]"
+		local symbol_name="$(echo -n "${code_line_elements[0]/:*/}")"
+		# add it to the snippets
+		instr_bytes=$(mov_arg_count_bytecode_to_address "${data_offset}");
+		debug "instr_bytes [${instr_bytes}]"
+		instr_len=$(echo -ne "${instr_bytes}" | base64 -d | wc -c);
+		data_bytes="$(echo -en "$(printEndianValue 0)" | base64 -w0)";
+		data_len="${SIZE_64BITS_8BYTES}";
+		local source_code_count=0;
+		arg_cnt_proc_snippet=$(struct_parsed_snippet \
+			"INSTRUCTION" \
 			"${symbol_name}" \
 			"${instr_offset}" \
 			"${instr_bytes}" \
@@ -694,7 +715,8 @@ parse_snippet()
 			"${data_bytes}" \
 			"${data_len}" \
 			"${CODE_LINE_B64}" \
-			"1";
+			"${source_code_count}");
+		echo "${arg_cnt_proc_snippet}";
 		return $?;
 	}
 	fi;
@@ -712,11 +734,10 @@ parse_snippet()
 		local data_bytes=$(echo -n "${symbol_value}"| cut -d, -f1);
 		local data_bytes_len="$(echo -n "${symbol_data}"| cut -d, -f2)";
 		local data_addr_v=$(echo "${symbol_data}" | cut -d, -f${B64_SYMBOL_VALUE_RETURN_ADDR});
-		debug data address [$(printf 0x%x $data_addr_v)]
 		if [ "${symbol_type}" != "${SYMBOL_TYPE_STATIC}" ]; then
 			if [ "${symbol_type}" == "${SYMBOL_TYPE_PROCEDURE}" ]; then
 				data_bytes="";
-				local procedure_addr=$(echo "$symbol_data" | cut -d, -f${B64_SYMBOL_VALUE_RETURN_ADDR});
+				local procedure_addr=$(printf 0x%x $(echo "$symbol_data" | cut -d, -f${B64_SYMBOL_VALUE_RETURN_ADDR}));
 				debug symbol_data=[$symbol_data]
 				debug procedure_addr=[$procedure_addr]
 				data_bytes_len=0; # no data to append. just registers used.
@@ -763,6 +784,7 @@ parse_snippet()
 		return $?;
 	fi;
 	if [[ "${code_line_elements[0]}" == exit ]]; then
+	{
 		local exit_value=$(get_b64_symbol_value "${code_line_elements[1]}" "${SNIPPETS}" | cut -d, -f${B64_SYMBOL_VALUE_RETURN_OUT} | base64 -d | tr -d '\00' )
 
 		instr_bytes="$(system_call_exit ${exit_value})"
@@ -778,22 +800,10 @@ parse_snippet()
 			"${CODE_LINE_B64}" \
 			"1";
 		return $?;
-	fi;
-	if [ "$CODE_LINE" == "" ]; then
-		struct_parsed_snippet \
-			"EMPTY" \
-			"" \
-			"${instr_offset}" \
-			"" \
-			"0" \
-			"${data_offset}" \
-			"" \
-			"0" \
-			"${CODE_LINE_B64}" \
-			"1";
-		return $?;
+	}
 	fi;
 	if [[ "${code_line_elements[0]}" == goto ]]; then
+	{
 		target="${code_line_elements[1]}"
 		# debug "GOTO [$target]"
 		target_offset="$( echo "$SNIPPETS" | grep "SNIPPET,${target}," | cut -d, -f${SNIPPET_COLUMN_INSTR_OFFSET} )";
@@ -815,8 +825,10 @@ parse_snippet()
 			"${CODE_LINE_B64}" \
 			"1";
 		return $?;
+	}
 	fi;
 	if echo "$SNIPPETS" | grep -q "${code_line_elements[0]}"; then
+	{
 		target="${code_line_elements[0]}"
 		target_offset="$( echo "$SNIPPETS" | grep "SNIPPET,${target}," | cut -d, -f${SNIPPET_COLUMN_INSTR_OFFSET} )";
 		# debug "call $target: [$target_offset]. [$instr_offset]"
@@ -834,8 +846,10 @@ parse_snippet()
 			"${CODE_LINE_B64}" \
 			"1";
 		return $?;
+	}
 	fi;
 	if [[ "${code_line_elements[0]}" == ! ]]; then
+	{
 		local target="${code_line_elements[1]}"
 		# debug "EXEC [$target]"
 		local target_offset="$( echo "$SNIPPETS" | grep "SYMBOL_TABLE,${target}," | cut -d, -f${SNIPPET_COLUMN_DATA_OFFSET} )";
@@ -859,8 +873,9 @@ parse_snippet()
 			"${CODE_LINE_B64}" \
 			"1";
 		return $?;
+	}
 	fi;
-	error "invalid code line instruction: [$CODE_LINE_B64][${code_line_elements[0]}]"
+	error "invalid code line instruction (missing tabs instead spaces?): [$CODE_LINE_B64][${code_line_elements[0]}]"
 	struct_parsed_snippet \
 		"INVALID" \
 		"" \
@@ -913,7 +928,7 @@ get_first_code_offset()
 	cut -d, -f${SNIPPET_COLUMN_TYPE},${SNIPPET_COLUMN_INSTR_LEN} |
 	while IFS=, read k s;
 	do
-		[ $k == INSTRUCTION -o $k == SNIPPET_CALL ] && break;
+		[ "$k" == INSTRUCTION -o "$k" == SNIPPET_CALL ] && break;
 		i=$(( i + s ));
 		echo "$i";
 	done | tail -1;
