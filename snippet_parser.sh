@@ -49,7 +49,7 @@ struct_parsed_snippet(){
 	fi;
 
 	local snippet_subname="$(eval echo -n \${$SNIPPET_COLUMN_SUBNAME})";
-	if [ "${snippet_type}" == INSTRUCTION ] && ! [[ "${snippet_subname}" =~ (sys_exit|sys_write|sys_ret|sys_execve) ]];then
+	if [ "${snippet_type}" == INSTRUCTION ] && ! [[ "${snippet_subname}" =~ (sys_exit|sys_write|sys_ret|sys_execve|args) ]];then
 		error "unsupported instruction $snippet_subname";
 		exit $SNIPPET_PARSER_ERROR_INVALID_SNIPPET_UNSUPPORTED_UNSTRUCTION;
 	fi;
@@ -100,9 +100,11 @@ struct_parsed_snippet(){
 		)
 	));
 	local snippet_source_lines_count="$(eval echo -n \${$SNIPPET_COLUMN_SOURCE_LINES_COUNT})";
-	if ! is_valid_number "$snippet_source_lines_count" ||
-	   [ "$snippet_source_lines_count" -ne "${expected_source_lines_count}" ] ; then
-	   error "at ${snippet_subname} the source lines count(${snippet_source_lines_count}) does not match the actual source lines(${expected_source_lines_count}): [$snippet_type][${snippet_source_code}]"
+	if ! is_valid_number "$snippet_source_lines_count"; then
+		error "at ${snippet_subname} invalid source lines count. Expected zero or (${expected_source_lines_count}) but got (${snippet_source_lines_count}): [$snippet_type][$( echo "${snippet_source_code}" | base64 -d)]"
+	fi
+	if [ "${snippet_source_lines_count}" -ne 0 -a "$snippet_source_lines_count" -ne "${expected_source_lines_count}" ] ; then
+		error "at ${snippet_subname} Invalid source lines count. Expected zero or (${expected_source_lines_count}) but got (${snippet_source_lines_count}): [$snippet_type][$( echo "${snippet_source_code}" | base64 -d)]"
 	fi;
 
 	local snippet_usages=0
