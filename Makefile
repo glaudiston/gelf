@@ -13,7 +13,7 @@ build/sample-elf: samples/sample-code.gg ## Build the sample-elf.gg that shows s
 	bash make-elf.sh samples/sample-code.gg build/sample-elf
 	chmod +x build/sample-elf
 
-build/readfile: samples/readfile.gg ## Build the readfile.gg file that is a very limited cat clone.
+build/readfile: prepare samples/readfile.gg ## Build the readfile.gg file that is a very limited cat clone.
 	bash make-elf.sh samples/readfile.gg build/readfile
 	chmod +x build/readfile
 
