@@ -1,0 +1,30 @@
+#!/bin/gelf
+#
+# This is the main binary for gelf.
+# For now it will
+# Wrap the call to make-elf.sh.
+#
+
+stderr:	1
+args::$
+write	stderr	args
+t1:	Compiling "
+cmdarg1::	1
+t3:	" to "
+write	stderr	t1
+#debug message[]:	t1	cmdarg1	t3
+#write	stderr	debug message
+#write	stderr	cmdarg1
+#write	stderr	t3
+#cmdarg2:	samples/sample-code.gg
+#write	stderr	cmdarg2
+#t4:	"
+#write	stderr	t4
+
+#cmd:	/home/glaudiston/src/elf/make-elf.sh
+#cmdargs[]:	cmdarg1	cmdarg2
+#cmdenv[]:
+#!	cmd	cmdargs	cmdenv
+
+with no errors:	0
+exit	with no errors
