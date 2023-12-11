@@ -1,28 +1,26 @@
-BUILD_DIR=build
-
 help: ## This message listing all useful make targets
 	@cat Makefile | grep ' ##' | grep -v "cat Makefile" | sed "s/\(.*\):.*## \(.*\)/\1:\n\t\2/"
-all: gelf samples debugger ## Build everithing, gelf compiler, samples and the debugger.
-
 prepare: *.sh
-	mkdir -pv $(BUILD_DIR)
+	mkdir -pv build
 
-gelf: prepare ## Build the gelf compiler to the $(BUILD_DIR) folder
-	bash make-elf.sh gelf.gg $(BUILD_DIR)/gelf
-	chmod +x $(BUILD_DIR)/gelf
-samples: prepare sample-elf readfile ## Compile all samples in sample folder. Currently sample-elf and readfile
+build/gelf: prepare ## Build the gelf compiler to the build folder
+	bash make-elf.sh gelf.gg build/gelf
+	chmod +x build/gelf
 
-sample-elf: prepare ## Build the sample-elf.gg that shows some working features
-	bash make-elf.sh samples/sample-code.gg $(BUILD_DIR)/sample-elf
-	chmod +x $(BUILD_DIR)/sample-elf
+samples: prepare build/sample-elf build/readfile ## Compile all samples in sample folder. Currently sample-elf and readfile
 
-readfile: prepare ## Build the readfile.gg file that is a very limited cat clone.
-	bash make-elf.sh samples/readfile.gg $(BUILD_DIR)/readfile
-	chmod +x $(BUILD_DIR)/readfile
+build/sample-elf: samples/sample-code.gg ## Build the sample-elf.gg that shows some working features
+	bash make-elf.sh samples/sample-code.gg build/sample-elf
+	chmod +x build/sample-elf
+
+build/readfile: samples/readfile.gg ## Build the readfile.gg file that is a very limited cat clone.
+	bash make-elf.sh samples/readfile.gg build/readfile
+	chmod +x build/readfile
 
 debugger: prepare debugger.c ## Build the debugger binary that print all registers changes and syscalls
-	mkdir -pv $(BUILD_DIR)
-	gcc -o $(BUILD_DIR)/debugger debugger.c -fdiagnostics-color=always
+	make -C debugger build
+
+all: prepare build/gelf samples build/debugger ## Build everithing, gelf compiler, samples and the debugger.
 
 clean: ## Remove the build directory
-	rm -fr elf $(BUILD_DIR)
+	rm -fr elf build
