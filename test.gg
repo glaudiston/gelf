@@ -1,0 +1,44 @@
+#!/bin/gg
+# define struct
+#	size
+#	type
+#	value
+#	endianness
+
+:bit
+	size	1
+#!set default type.type bit
+#!set default type.value 1
+:v1
+:v2
+:v3
+:v4
+:v5
+:v6
+:v7
+:v8
+
+# write bits
+:byte	8	bit
+:p	byte
+w	p	v1
+w	p	v2
+w	p	v3
+w	p	v4
+w	p	v5
+w	p	v6
+w	p	v7
+w	p	v8
+# once the write buffer fulfills it flushes
+
+#!set default type.endianness little
+:int
+	size		8
+
+#!set default type.type int
+:stdout
+	value	1
+
+w	stdout	p
+
+

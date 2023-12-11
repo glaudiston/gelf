@@ -3,7 +3,7 @@ help: ## This message listing all useful make targets
 prepare: *.sh
 	mkdir -pv build
 
-build/gelf: ## Build the gelf compiler to the build folder
+build/gelf: prepare ## Build the gelf compiler to the build folder
 	bash make-elf.sh gelf.gg build/gelf
 	chmod +x build/gelf
 
@@ -17,8 +17,7 @@ build/readfile: prepare samples/readfile.gg ## Build the readfile.gg file that i
 	bash make-elf.sh samples/readfile.gg build/readfile
 	chmod +x build/readfile
 
-.PHONY: debugger
-debugger:
+debugger: prepare debugger.c ## Build the debugger binary that print all registers changes and syscalls
 	make -C debugger build
 
 all: prepare build/gelf samples build/debugger ## Build everithing, gelf compiler, samples and the debugger.

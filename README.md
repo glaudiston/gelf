@@ -60,3 +60,4 @@ show_bytecode(){ echo "$@" | as -o temp.o && ld --oformat binary -o temp.bin tem
 show_bytecode "mov %r8, %r10"
 4d89c2
 ```
+
