@@ -1,20 +1,147 @@
 #!/bin/gg
 #
-# The first line shebang #!/bin/gg is optional, but when exists allows the file to work like a script
-# to execute the host should have the /bin/gg binary installed, and set the proper execution permittion 
-# to the file scripit; in practice, it will build in memory and execute the compiled file.
-# That first line is shebang, a linux kernel feature.
+# This file targets to describe the GG language specification.
 #
-# comments starts with pound key(#) symbol it should be at the first line char (except for tab)
+# This is a work in progress. It will be updated as the language.
+# Refer to the official git repo for the history and latest version.
 #
-# each argument is tab separated.
-# functions are defined with the function name suffixed with colon(:) synbol.
-# function names can have spaces.
+# General concepts:
+#	Source files:
+#		The source file can have any extension. we recommend to be '.gg' suffix. not mandatody
+#
+# 	Indentation matters. 
+#		See Reserved symbol and words -> 0x09;
+#		Indentation is defined as the TAB symbol (0x09).
+#		Any subsequent lines that has greather level of indentation is expected to be related to the previous valid non comment line.
+#		Spaces are not accepted as indentation and should not exists prior the indentation.
+#
+#	Circular dependencies:
+#		Sometimes concepts are paradoxal and need to allow complex/dangerous behaviors.
+#		This normally cause design issues like deadlocks, but some times can not be avoided.
+#		Other languages always try to avoid circular dependencies. GG allow them.
+#		It can be useful for performance and complex async contexts.
+#		In this language definition we have this concept cycle dependency:
+#			Functions -> depends on types -> depends on functions
+#
+#	Functions:
+#		Functions are procedures defined with :function name<0x09>input-type<0x09>code
+# 		Function names can have any non reserved symbols including spaces.
+#		Functions can have only one input argument, that should be consistent with the input-type provided in the function definition.
+# 		Functions input can be integer representing the input defined number of bits; If the 0(zero) integer value is provided the function has no input
+#		Fountions input can be one type, it allows multiline style type instance definition.(see types definition)
+#		The return type is implicit by the ret definition.
+#		It is not allowed to have multiple ret instructions with conflicting ret value type in same function.
+#		Functions can be passed to another functions as argument or type fields (see types definition)
+#
+#	Arguments(function input):
+#		Functions allow one, and just one argument.
+#		An argument can be a type. if an integer number is provided instead, it will be the bit count of the input data.
+#		The argument is separated from the function by the indentation mark(TAB, 0x09).
+#		To allow visual adjustments on the text file, multiple tab can be used. On the parser step it will be shrinked, so multiple tabs acts as one tab.
+#		Arguments can be inline types or multiline named types. (see types definition)
+#
+#	Types:
+#		To allow input and output typed data we can define types.
+#		Types are functions that represent abstractions of memory addresses, they have instructions on how to deal with bits.
+#		By defining a type, any bit map can be used.
+#		The only core concept here is bit. The language will manage the code to allow multiple types to share the same byte or bit map.
+#		minimum type size is 1 bit, even if in binary and memory we can not allocate less than 1 byte, when merging or using shared areas we can.
+#		That allows to have up to 8 different data type in the same byte.
+#		
+#		Types can be instantiated like:
+#		# define integer type as 1 bit
+#		:type
+#			name: integer
+#			# defines integer as 16 bits
+#			value:	16
+#
+#		:i	integer	1
+#		where
+#			:	defines something
+#			i	is the variable name choosen
+#			integer	is the type function
+#			1	is tha value passed to the type function as argument
+#
+#
+#	bit address type:
+#		description
+#			composed of two parts, the virtual address type and the bit offset.
+#
+#	allocate:
+#		description
+#			reserve n bits in memory and return the bit address type.
+#			allocate function keeps control on where are free bits to use. 
+#			It will group bits to store multiple types in same bytes
+#		arguments
+#			static integer representing the number of bits required
+#
+# bit is a variable that call type allocat 1.
+# allocate 1 returns the address and offset to the choosen memory address but it will be done only when using bit
+:type	allocate	1
+:bit	type		1
+:byte	allocate	8 * bit
+:b	bit
+# bitshift group of bytes
+# no type safe
+# byte:
+# boolean:	bit
+# char:	8 bit
+# string:	char...
+# integer:	16 bit	system_endian
+# long:	32 bit	system_endian
+#		Types can be defined with the colon definition mark(:)
+#		Example:
+#			:bit		1
+#			# Define boolean type using only 1 bit
+#			:boolean	1	bit
+#				# scoped context valid values for boolean
+#				1	on	true
+#				0	off	false
+#			# Define byte as 8 bits
+#			:byte		8	bit
+#			# Define char type as an alias to byte
+#			:char		1	byte
+#				# scoped context valid values for char (asc table)
+#				0	{NULL}
+#				...
+#				9	{TAB}
+#				...
+#				97	A
+#				...
+#
+#		Multi-line type instance definition can be used anywhere. Make sure the indentation is at least one level greater than the context where it will be instantiated.
+#			Example:
+#				function call
+#					type field name	type field value
+############
+# a type can have flags for example a flag to report about endianness can have the values
+# no_endianness: this type is not affected in any way by endianness
+# system: follow the system rules to use endianness (normally little endian)
+# big: force big endian
+# little: force little endian
+#
+# type defaults
+# a type can have a default value. some constant can be set on the default value:
+# bit zeroed - safe but has some instruction cost
+# any valid value for the type - can be bitmap or some other time instance
+# unitialized - unsafe, nothing avoid dirty memory usage. this avoid any operation to clean up the memory
+#
+# type cast
+#	cast method -> raw, endianess. left pad bitmap, right pad bitmap, truncate left, truncate right, custom cast processor
+#
+#
+# Generics
+#	to be defined
+##############
 # data should be in base64 encoding
-# function just for testing purposes
+# function can have name, content, argument type and return type
 # return 0x0a is mandatory to separated statements
-# indentation is optional but auto enforced on save or build pre-step
-# indentation should use tab only.
+# statements can be group as one using { multiple statements (one per line) } like:
+# {
+#   statemnet a
+#   statement b
+#   ... 
+# }
 # if an argument base64 is invalid, it will be checked as text input
 # any text can have enclosed with {} can have a argument to replace the text with variables 
 # sample:
@@ -26,5 +153,42 @@
 # output: the sample variable has sample text
 # same applies to base64 data inputs
 #
-# The source file can have any extension. we recommend to be '.gg' suffix. not mandatody
+################
+#
+# Reserved symbols and words
+# #	comment
+# 	description:
+#		Comments starts with pound key(#) symbol it should be at the first line char (except for tab)
+#		in future comments can be compiled given a flag, that can allow debug and troubleshooting better.
+#
+#		The first line on each source file can be a shebang #!/bin/gg. That is optional, and a linux kernel feture.
+#		When provided allows the file to work like a script. To work, the host should have the /bin/gg binary installed,
+#		and set the proper execution permission to the file script;
+#		In practice, it will build in memory and execute the compiled file.
+#
+# :	define
+#	description:
+#		Define one or more constants functions or variables.
+#		The first tab after the colon symbol is optional
+#		If nothing is provided after the colon symbol it will read all subsequent lines looking for group
+#		of things to be defined. In this case, all subsequent lines should be indented in a level greather than the colon symbol.
+#
+# 0x09	tab
+#	descrition:
+#		Indentation is defined as the TAB symbol (0x09).
+#		Any subsequent lines that has greather level of indentation is expected to be related to the previous valid non comment line.
+#		Spaces are not accepted as indentation and should not exists prior the indentation.
+#		Indentation is used to separate function and argument.
+#		When duplicated, tabs are shrinked. So multiple tabs act like one tab, and therefore can be used to visual adujustments on the source code.
+#		In indentation the shink just apply when more than 1 tab exists over the previous indent level.
+#
+# package
+#	arguments:
+#		id		A identifier for the package.
+#		descrition	A package descrition for documentation purposes.
+# 	description:
+#		package is a optional statement that allows group definition in a named collection.
+#		A package can use and import another package.
+#		 when using another package it just consumes that package.
+#		 when importing another package it will auto share all it's contents.
 #

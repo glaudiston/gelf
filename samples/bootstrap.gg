@@ -1,33 +1,55 @@
 # This program targets to reproduce the shell script behavior to compile elf binaries: elf_fn.sh
 #
 # each elf has composed by header and body.
+# : alias define
+# :(<name>	<code block or static value>	[argument])
 #
-print elf header:	{
+# constants are shared in sub scopes, variables are not
+# variables should be expliced referenced to allow change values in sub scopes
+#
+# . can be used to import anyther source file
+# it can be an external raw url
+# it can be a git repo
+#
+# all available standard libraries are auto imported but can be replaced.
+#
+
+. ./io.gg
+
+:NO INPUT	0
+:print elf header	NO INPUT
 	# 00-0f
+	# ELFMAG: f0VMRg==	# x7f	ELF
 	#"${ELFMAG}${EI_CLASS}${EI_DATA}${EI_VERSION}${EI_OSABI}${EI_PAD}"; # 16 bytes
-	write	1	f0VMRgIBAQAAAAAAAAAAAA==
+	write
+		output	out
+		text	f0VMRgIBAQAAAAAAAAAAAA== 
 	# 10-1f
-	#"${SECTION_ELF_HEADER}${EI_ETYPE}${EI_MACHINE}${EI_MACHINE_VERSION}${EI_ENTRY}";
-	write	1	AgA+AAEAAADBAAEAAAAAAA==
+	#"${EI_ETYPE}${EI_MACHINE}${EI_MACHINE_VERSION}${EI_ENTRY}";
+	write	out	AgA+AAEAAADBAAEAAAAAAA== 
 	# 20-2f
-	#"${SECTION_ELF_HEADER}${EI_PHOFF}${EI_SHOFF}";
-	write	1	QAAAAAAAAAAAAAAAAAAAAA==
+	#"${EI_PHOFF}${EI_SHOFF}";
+	write	out	QAAAAAAAAAAAAAAAAAAAAA== 
 	# 30-3f
-	#"${SECTION_ELF_HEADER}${EI_FLAGS}${EI_EHSIZE}${EI_PHENTSIZE}${EI_PHNUM}${EI_SHENTSIZE}${EI_SHNUM}${EI_SHSTRNDX}";
-	write	1	AAAAAEAAOAABAAAAAAAAAA==
-	ret
-}
-print elf body:	{
+	#"${EI_FLAGS}${EI_EHSIZE}${EI_PHENTSIZE}${EI_PHNUM}${EI_SHENTSIZE}${EI_SHNUM}${EI_SHSTRNDX}";
+	write	out	AAAAAEAAOAABAAAAAAAAAA==
+
+:print elf body		NO INPUT
 	# print program segments
 	#	Program segments describe multiple programs builtin on this elf. at least one program segment is required. At least I was unable to make it run without program headers.
 	# print section headers segments
 	#	each program segment can have multiple section header segments, but they are optional.
 	#	Those section segments describes memory areas that can have different purposes and permissions(rwx)
 	#
-	write	1	AQAAAAUAAAAAAAAAAAAAAAAAAQAAAAAAAAAAAAAAAAB4AAAAAAAAAHgAAAAAAAAAAAAAAAAAAAC4AQAAAL8BAAAAvv4AAQC6EwAAAA8Fw7gBAAAAvwEAAAC+EQEBALoTAAAADwXozv///7gBAAAAvwEAAAC+JAEBALoUAAAADwXDuAEAAAC/AQAAAL44AQEAuhEAAAAPBeiz////uAEAAAC/AQAAAL5JAQEAug8AAAAPBbg8AAAAvwEAAAAPBWZpcnN0IGNvZGUgYXQgZnVuYwpmaXJzdCBsaW5lIGluIG1haW4Kc2Vjb25kIGxpbmUgYXQgbWFpbgpQcm9ncmFtIHN0YXJ0LlxuCkJ5IEdsYXVkaXN0b24uCg==
-	ret
-}
+	write	AQAAAAUAAAAAAAAAAAAAAAAAAQAAAAAAAAAAAAAAAAB4AAAAAAAAAHgAAAAAAAAAAAAAAAAAAAC4AQAAAL8BAAAAvv4AAQC6EwAAAA8Fw7gBAAAAvwEAAAC+EQEBALoTAAAADwXozv///7gBAAAAvwEAAAC+JAEBALoUAAAADwXDuAEAAAC/AQAAAL44AQEAuhEAAAAPBeiz////uAEAAAC/AQAAAL5JAQEAug8AAAAPBbg8AAAAvwEAAAAPBWZpcnN0IGNvZGUgYXQgZnVuYwpmaXJzdCBsaW5lIGluIG1haW4Kc2Vjb25kIGxpbmUgYXQgbWFpbgpQcm9ncmFtIHN0YXJ0LlxuCkJ5IEdsYXVkaXN0b24uCg==
+
 write	2	UHJvZ3JhbSBTdGFydGVkIQo=
-print elf header
-print elf body
+# TODO read the source file
+# TODO parse all snippets
+# TODO get the first instruction
+# TODO pass required arguments to the header
+print	elf header
+# TODO pass snippets to the body writer
+print	elf body
 exit	0
+
