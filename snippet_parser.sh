@@ -41,6 +41,14 @@ SNIPPET_PARSER_ERROR_INVALID_SNIPPET_TYPE=1
 SNIPPET_PARSER_ERROR_INVALID_SNIPPET_UNSUPPORTED_UNSTRUCTION=2
 SNIPPET_PARSER_ERROR_INVALID_SNIPPET_UNSTRUCTION_OFFSET_INVALID=3
 
+# SYMBOL_TABLE can be
+# SYMBOL_TABLE_STATIC_BUILD: Static values, will be replaced in build time. No data section bytes will be added to the binary. Ex: STDIN, STDOUT, STDERR... Variables that can be replaced by the actual value at any bin usage.
+# SYMBOL_TABLE_DYN: Runtime variables; At runtime it will be mapped on a RW memory position. All usages will point to that position not known at build time.
+# SYMBOL_TABLE_STATIC_RUNTIME: The value will be in the binary, and when used it will point to that position.
+
+# TODO: Variables not covered
+# DYN_BUILD: useful to macros
+
 struct_parsed_snippet(){
 	local snippet_type="$(eval echo -n \${$SNIPPET_COLUMN_TYPE})";
 	if ! [[ ${snippet_type} =~ (EMPTY|INVALID|COMMENT|INSTRUCTION|SNIPPET|SNIPPET_CALL|SYMBOL_TABLE|PROCEDURE_TABLE) ]]; then

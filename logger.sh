@@ -13,6 +13,12 @@ function debug()
 	echo "[DEBUG] $@" >&2
 }
 
+function warn()
+{
+	local IFS='	'
+	echo "[WARN] $@" >&2
+}
+
 function error()
 {
 	echo "[ERROR] $@" >&2

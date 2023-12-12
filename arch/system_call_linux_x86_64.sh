@@ -44,7 +44,7 @@
 #  RSI(64): Points to source in stream operations
 #  EDI(32): Points to destination in streams operations
 #  RDI(64): Points to destination in streams operations
-# 6 segment registers: points to memory segment addresses ( but uses pagin instead segmentation)
+# 6 segment registers: points to memory segment addresses (but uses paging instead segmentation)
 # 1 flag register: used to support arithmetic functions and debugging.
 #  EFLAG(32)
 #  RFLAG(64)
@@ -1009,10 +1009,10 @@ function system_call_exec()
 # It can be recovered in gdb by using 
 # (gdb) print *((int*)($rsp))
 # 
-# The issue is that, in build time, we can not see that value, so we need to create a dynamic ref
-# so we can evaluate it at runtime.
+# But given it is a runtime only value, we don't have that value at build time, 
+# so we need to create a dynamic ref that can be evaluatet at runtime.
 # 
-# My strategy is to set the constat _ARG_COUNTER_ then I can figure out latter that is means "RSP Integer"
+# My strategy is to set the constant _ARG_CNT_ then I can figure out latter that is means "RSP Integer"
 # Probably should prefix it with the jump sort instruction to make sure those bytes will not affect
 # the program execution. But not a issue now.
 ARCH_CONST_ARGUMENT_COUNTER_POINTER="_ARG_CNT_";
