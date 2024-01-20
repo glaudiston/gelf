@@ -285,16 +285,26 @@ int mov_rax_r8(pid_t child, unsigned long addr)
 {
 	unsigned long data = ptrace(PTRACE_PEEKTEXT, child, (void*)addr+3, 0);
 	printf("%016lx: mov %%rax, %%r8 # 0x%llx(%lli)\n", addr,regs.rax,regs.rax);fflush(stdout);
+	return 0;
 }
 int mov_rax_r9(pid_t child, unsigned long addr)
 {
 	unsigned long data = ptrace(PTRACE_PEEKTEXT, child, (void*)addr+3, 0);
 	printf("%016lx: mov %%rax, %%r9 # 0x%llx(%lli)\n", addr,regs.rax,regs.rax);fflush(stdout);
+	return 0;
 }
 
 int lea_rsp_rdi(pid_t child, unsigned long addr)
 {
 	printf("%016lx: lea %%rsp, %%rdi;\n", addr);
+	return 0;
+}
+
+int call(pid_t child, unsigned long addr)
+{
+	int data = (int)ptrace(PTRACE_PEEKTEXT, child, (void*)addr+1, 0);
+	int bytecode_instr_size = 5;
+	printf("%016lx: call %016lx; # near int: %i\n", addr, addr+data+bytecode_instr_size,(int) data + bytecode_instr_size); fflush(stdout);
 	return 0;
 }
 // a map is better, this this is better than ifs
@@ -538,6 +548,11 @@ struct bytecode_entry
 		.k = {0x0f,0x05},
 		.kl = 2,
 		.fn = p_syscall,
+	},
+	{
+		.k = {0xe8},
+		.kl = 1,
+		.fn = call,
 	},
 	{
 		.k = {0xff,0xc6},

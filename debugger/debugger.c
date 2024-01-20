@@ -191,10 +191,6 @@ void trace_watcher(pid_t child)
 						unsigned char instr_size=6;
 						printf("%016lx: jg, %llx # jump %i bytes ahead\n", addr, instr_size + regs.rip + d, d);fflush(stdout);
 					}
-					// CALL
-					else if ( first_byte == 0xe8 ) {
-						printf("%016lx: call\n", addr); fflush(stdout);
-					}
 					// RET
 					else if ( first_byte == 0xc3 ) {
 						printf("%016lx: ret\n", addr); fflush(stdout);
