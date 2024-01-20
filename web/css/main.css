@@ -1,0 +1,20 @@
+:root {
+  color-scheme: light dark;
+}
+
+body{
+ /*@media(prefers-color-scheme: dark){background-color: red;}*/
+  display: flex;
+}
+
+input[type=file] {
+  display: block;
+}
+#elf-xxd-input{
+  width: 31rem;
+  height: calc( 100vh - 4rem );
+}
+
+.elf-header {
+	display: block;
+}
