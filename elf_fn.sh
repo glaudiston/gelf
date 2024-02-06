@@ -252,7 +252,16 @@ print_elf_body()
 		cut -d, -f${SNIPPET_COLUMN_INSTR_BYTES}
 	);
 
-	local DATA_ALL="$(echo "${SNIPPETS}" | grep -v INSTRUCTION | cut -d, -f$SNIPPET_COLUMN_DATA_BYTES)"
+	local DATA_ALL="$( echo "${SNIPPETS}" | 
+		grep -v INSTRUCTION | 
+		while read d;
+		do
+			ds=$(echo -en "$d" | cut -d, -f$SNIPPET_COLUMN_DATA_LEN;);
+			if [ "$ds" -gt 0 ]; then # avoid hard coded values
+				echo -en "$d" | cut -d, -f$SNIPPET_COLUMN_DATA_BYTES;
+			fi;
+		done; 
+	)"
 
 	local SECTION_ELF_DATA="";
 	SECTION_ELF_DATA="${SECTION_ELF_DATA}${PROGRAM_HEADERS}";
@@ -352,19 +361,12 @@ get_b64_symbol_value()
 	fi;
 	local symbol_value="$( echo "$symbol_data" | cut -d, -f${SNIPPET_COLUMN_DATA_BYTES})";
 	local symbol_addr="$( echo "$symbol_data" | cut -d, -f${SNIPPET_COLUMN_DATA_OFFSET})";
-	if [ "${symbol_value}" == "" ];then {
-		local symbol_instr="$( echo "$symbol_data" | cut -d, -f${SNIPPET_COLUMN_INSTR_BYTES})";
-		if [ "${symbol_instr}" == $(echo -n "${ARCH_CONST_ARGUMENT_COUNTER_POINTER}" | base64 -w0) ]; then
-			out=$(echo -n "${symbol_instr}")
-			outsize=$(echo -n "${out}" | base64 -d | wc -c)
-			echo -n ${out},${outsize},${SYMBOL_TYPE_PROCEDURE},${symbol_addr}
-	# debug b64_sym $1, instr=[${symbol_instr}], out[$(echo -n ${out},${outsize},${SYMBOL_TYPE_REGISTER})]
-			return;
-		fi;
-		out=$(echo -n "${symbol_instr}")
-		outsize=$(echo -n "${out}" | base64 -d | wc -c)
+	debug "got symbol_value=[$symbol_value]"
+	debug "got symbol_addr=[$symbol_addr]"
+	if [ "${symbol_value}" == "" ];then { # Empty values will be only accessible at runtime, eg: args, arg count...
+		out=$(echo -n "${symbol_addr}" | base64 -w0)
+		outsize=8; # memory_addr_size; TODO: this is platform specific, in x64 is 8 bytes
 		echo -n ${out},${outsize},${SYMBOL_TYPE_DYNAMIC},${symbol_addr}
-	# debug b64_sym $1, instr=[${symbol_instr}], out[$(echo -n ${out},${outsize},${SYMBOL_TYPE_DYNAMIC})]
 		return;
 	};
 	fi
@@ -389,9 +391,6 @@ set_symbol_value() {
 	else
 		data_bytes="$(echo -ne "${symbol_value}" | base64 -w0)";
 	fi;
-	# append NULL char at symbol. 
-	# I don't remember why, but I do suspect it is because strings ends with null
-	data_bytes=$( { echo "${data_bytes}" | base64 -d | xxd --ps; echo -n "00"; } | xxd --ps -r | base64 -w0 )
 	if [ "$symbol_name" != input ] && echo "${input[@]}" | grep -q "evaluate"; then
 		# debug "eval [${data_bytes}]"
 		#TODO detect eval type. if all operations are static, and not call or jump is used(between the definition and evaluation).
@@ -456,6 +455,20 @@ parse_data_bytes()
 	echo -n "${raw_data_bytes}"
 }
 
+is_hard_coded_value()
+{
+	local NO_ERR=0;
+	local ERR=1;
+	# TODO: implement a better way this one just work for numbers
+	local v="$(echo "$1" | base64 -d)";
+	if is_valid_number "$v"; then
+		debug "$v is a valid nr"
+		return $NO_ERR;
+	fi;
+	debug "$v is NOT a valid nr"
+	return $ERR;
+}
+
 # parse_snippet given a source code snippet echoes snippet struct to stdout
 # allowing a pipeline to read a full instruction or bloc at time;
 # it should return a code snippet
@@ -484,7 +497,7 @@ parse_snippet()
 		previous_data_len=0;
 	fi;
 	previous_data_offset="${previous_data_offset:=$(( PH_VADDR_V + EH_SIZE + PH_SIZE + INSTR_TOTAL_SIZE ))}"
-	debug "previous_data_offset=[0x$( printf %x "${previous_data_offset}")], previous_snip_type [${previous_snip_type}], previous_data_len=[${previous_data_len}]"
+	debug "cur l e:${code_line_elements[0]}: previous_data_offset=[0x$( printf %x "${previous_data_offset}")], previous_snip_type [${previous_snip_type}], previous_data_len=[${previous_data_len}]"
 	local data_offset="$(( previous_data_offset + previous_data_len ))";
 	if [[ "${code_line_elements[0]}" =~ ^[#] ]]; then # ignoring tabs, starts with pound symbol(#)
 	{
@@ -503,7 +516,6 @@ parse_snippet()
 	}
 	fi;
 	if [[ "${code_line_elements[0]}" =~ :$ ]]; then
-	#if [[ "${CODE_LINE_XXD}" =~ .*3a09.*$ ]]; then # check if has ":\t..."
 	{
 		if [[ "${CODE_LINE_XXD}" =~ .*3a097b$ ]]; then # check if ends with ":\t{" ... so it's a code block function
 		{
@@ -570,12 +582,13 @@ parse_snippet()
 				# :: get from args.
 				# debug defining symbol [${code_line_elements[0]}]
 				# TODO this code is for RSP, we need add (n * 8) to it
-				symbol_name="$( echo -n "${code_line_elements[0]/:*/}" )"
+				local symbol_name="$( echo -n "${code_line_elements[0]/:*/}" )"
 				# create a new dynamic symbol called ${symbol_name}
 				# That should point to the rbp register first 8 bytes (int)
-				arg_number=${code_line_elements[1]};
+				local arg_number=${code_line_elements[1]};
 				# This is ok for the first round.
-				instr_bytes="$(echo -n "${ARCH_CONST_ARGUMENT_ADDRESS},${arg_number}" | base64 -w0)"
+				local instr_bytes="$(echo -n "${ARCH_CONST_ARGUMENT_ADDRESS},${arg_number}" | base64 -w0)"
+				local data_bytes="$(echo -ne '\x00\x00\x00\x00\x00\x00\x00\x00' | base64 -w0)"; # 8 bytes address size. it should be updated to the rsp pointer value at runtime.
 				if [ "$ROUND" == "$ROUND_FINAL" ]; then
 					# TODO code way to detect the code usages on previous rounds
 					symbol_usages="1";
@@ -584,10 +597,14 @@ parse_snippet()
 						# return no errors
 						return 0;
 					fi;
-					instr_bytes=$(get_args_bytecode ${arg_number})
+					local get_args=$(get_args_bytecode ${arg_number} "10250")
+					instr_bytes=$(echo -en "${get_args}" | cut -d, -f1);
+					data_bytes=$(echo -en "${get_args}" | cut -d, -f2);
 				fi;
 				instr_len=$(echo -n "${instr_bytes}" | base64 -d | wc -c )
-				data_bytes="";
+				# this address will receive the point to the arg variable set in rsp currently;
+				# a better solution would be not have this space in binary but in memory.
+				# but it is good enough for now. because we don't really have a dynamic memory now
 				data_len="$( echo -n "${data_bytes}" | base64 -d | wc -c )";
 				debug "adding symbol_name=[$symbol_name], data_len=$data_len"
 				struct_parsed_snippet \
@@ -603,7 +620,7 @@ parse_snippet()
 					"1";
 				return $?;
 			}
-			else 
+			else
 			{
 				# All variables, constants, macros are symbols and should be managed by a symbol table
 				# It should have name type, scope and memory address
@@ -624,6 +641,11 @@ parse_snippet()
 				instr_len=0;
 				data_bytes="$(set_symbol_value "${symbol_value}" "${SNIPPETS}")";
 				data_len="$( echo -n "${data_bytes}" | base64 -d | wc -c)";
+				debug "var data bytes [$data_bytes]";
+				if is_hard_coded_value "${data_bytes}"; then
+					debug '* * * static value. cleanup'
+					data_len=0; # hard-coded values does not use data space
+				fi;
 				struct_parsed_snippet \
 					"SYMBOL_TABLE" \
 					"${symbol_name}" \
@@ -701,13 +723,16 @@ parse_snippet()
 		symbol_name="$( echo -n "${code_line_elements[0]/:*/}" )"
 		# create a new dynamic symbol called ${symbol_name}
 		# That should point to the rbp register first 8 bytes (int)
-		instr_bytes="$(echo -n "${ARCH_CONST_ARGUMENT_COUNTER_POINTER}" |base64 -w0)"
+		# argc_addr: memory address to put the argc 
+		#   should i use the snippets data?
+		argc_pos=$data_offset;
+		instr_bytes="$(get_arg_count $argc_pos)"
 		instr_len=$(echo -n "${instr_bytes}" | base64 -d | wc -c )
 		data_bytes="";
 		data_len="$( echo -n "${data_bytes}" | base64 -d | wc -c )";
 		#debug "adding symbol_name=[$symbol_name], data_len=$data_len"
 		struct_parsed_snippet \
-			"PROCEDURE_TABLE" \
+			"SYMBOL_TABLE" \
 			"${symbol_name}" \
 			"${instr_offset}" \
 			"${instr_bytes}" \
@@ -735,6 +760,7 @@ parse_snippet()
 		local data_bytes_len="$(echo -n "${symbol_data}"| cut -d, -f2)";
 		local data_addr_v=$(echo "${symbol_data}" | cut -d, -f${B64_SYMBOL_VALUE_RETURN_ADDR});
 		debug data address [$(printf 0x%x $data_addr_v)]
+		debug "*write symbol_type=$symbol_type, [$data_addr_v]"
 		if [ "${symbol_type}" != "${SYMBOL_TYPE_STATIC}" ]; then
 			if [ "${symbol_type}" == "${SYMBOL_TYPE_PROCEDURE}" ]; then
 				data_bytes="";
@@ -744,12 +770,14 @@ parse_snippet()
 				data_bytes_len=0; # no data to append. just registers used.
 				data_addr_v="${procedure_addr}"; # point to the procedure address
 			else
-				data_bytes="";
-				data_bytes_len=0; # no data to append. just registers used.
-				data_addr_v="${symbol_value}";
+				:
+				#data_bytes="";
+				#data_bytes_len=0; # no data to append. just registers used.
+				#data_addr_v="${symbol_value}";
 			fi;
 		fi;
 		# TODO: detect if using dyn data addr and pass it 
+		debug "**write symbol_type=$symbol_type, [$data_addr_v]"
 		local instr_bytes="$(system_call_write "${symbol_type}" "${data_output}" "$data_addr_v" "$data_bytes_len" "${instr_offset}")";
 		local instr_size="$(echo -e "$instr_bytes" | base64 -d | wc -c)"
 		struct_parsed_snippet \
@@ -936,7 +964,7 @@ get_first_code_offset()
 	cut -d, -f${SNIPPET_COLUMN_TYPE},${SNIPPET_COLUMN_INSTR_LEN} |
 	while IFS=, read k s;
 	do
-		[ $k == INSTRUCTION -o $k == SNIPPET_CALL ] && break;
+		[[ $k =~ (INSTRUCTION|SNIPPET_CALL|SYMBOL_TABLE) ]] && break;
 		i=$(( i + s ));
 		echo "$i";
 	done | tail -1;

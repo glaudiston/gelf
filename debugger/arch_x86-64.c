@@ -233,14 +233,21 @@ int mov_al(pid_t child, unsigned long addr)
 
 void detect_friendly_instruction(pid_t child, unsigned long addr, char * friendly_instr)
 {
-	if ( regs.rax == 1L ){
+	if ( regs.rax == 1L ) {
 		char bytes[256];
 		copy_bytes(child, regs.rsi, (char *)&bytes, regs.rdx);
+		//unsigned long data = ptrace(PTRACE_PEEKTEXT, child,
+		//	(void*)addr+2, 0);
+		sprintf(friendly_instr, "# write\t%s\n", (char *)&bytes);
+	} else if ( regs.rax == 2L ) {
+		char bytes[256];
 		unsigned long data = ptrace(PTRACE_PEEKTEXT, child,
-			(void*)addr+2, 0);
-		sprintf(friendly_instr, "write\t%s\n", (char *)&bytes);
+			(void*)regs.rdi, 0);
+		fprintf(stdout, "\n** [%s] **\n", (char *)data);
+		copy_bytes(child, regs.rdi, (char *)&bytes, regs.rdx);
+		sprintf(friendly_instr, "# open\t%s\n", (char *)&bytes);
 	} else {
-		sprintf(friendly_instr, "rax: %lli", regs.rax );
+		sprintf(friendly_instr, "# rax: %lli", regs.rax);
 	}
 }
 

@@ -28,8 +28,19 @@ $33 = 0x1013e
 0x1013e:        "sample-code.gg"
 * argc is $rsp
 (gdb) print *((int*)$rsp)
+* when not in first backtrace, after a call like functions or procedures, argc is rsp+8+
 * argv is $rsp + 8
 (gdb) print *((char**)($rsp + 8))
+
+after copy to a mem address (mov %rsp, *0x000100b6; # 48892425b6000100)
+(gdb) p *(void**)(*(void**)0x0100b6+8)
+$43 = (void *) 0x3
+(gdb) p *(char**)(*(void**)0x0100b6+16)
+$44 = 0x7fffffffe6ff "/home/glaudiston/src/gelf/tests/test_arg_count.elf"
+(gdb) p *(char**)(*(void**)0x0100b6+24)
+$45 = 0x7fffffffe732 "abc"
+(gdb) p *(char**)(*(void**)0x0100b6+32)
+$46 = 0x7fffffffe736 "def"
 
 
 References
