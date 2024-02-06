@@ -27,7 +27,7 @@ expect(){
 	er=$2;
 	eo=$3;
 	if [ "$r" != "$er" ]; then
-		fail "expected no error but got $r at exit code";
+		fail "expected [${er}] but got [$r] at exit code";
 		return 1;
 	fi;
 
