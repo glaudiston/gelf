@@ -243,51 +243,44 @@ int mov_al(pid_t child, unsigned long addr)
 
 void detect_friendly_instruction(pid_t child, unsigned long addr, char * friendly_instr)
 {
-	char SYS_READ=0;
-	char SYS_WRITE=1;
-	char SYS_OPEN=2;
-	char SYS_STAT=4;
-	char SYS_FSTAT=5;
-	char SYS_MMAP=9;
-	char SYS_EXIT=60;
+#define SYS_READ 0
+#define SYS_WRITE 1
+#define SYS_OPEN 2
+#define SYS_STAT 4
+#define SYS_FSTAT 5
+#define SYS_MMAP 9
+#define SYS_EXIT 60
 	char syscall[512];
-	if ( regs.rax==SYS_OPEN ) {
-		char filename[256];
-		peek_string(child, (void*)regs.rdi, filename);
-		sprintf(friendly_instr, "open(%s)", filename);
-	} else if ( regs.rax == SYS_WRITE ){
-		char buff[256];
-		peek_string(child, (void*)regs.rsi, buff);
-		long unsigned v = ptrace(PTRACE_PEEKTEXT, child, (void*)regs.rsi, 0);
-		sprintf(friendly_instr, "write(%lli, \"%s\"(%lx), %lli)", regs.rdi, buff, v, regs.rdx);
-	} else if ( regs.rax == SYS_READ ){
-		char buff[256];
-		peek_string(child, (void*)regs.rsi, buff);
-		sprintf(friendly_instr, "read(%lli, %llx, %lli)", regs.rdi, regs.rsi, regs.rdx);
-	} else if ( regs.rax == SYS_MMAP ){
-		sprintf(friendly_instr, "mmap(0x%llx, 0x%llx, 0x%llx, 0x%llx, 0x%llx, 0x%llx); # alocates %lli bytes using fd %lli", 
-			regs.rdi, regs.rsi, regs.rdx, regs.r10, regs.r8, regs.r9, regs.rsi, regs.r8);
-	} else if ( regs.rax == SYS_STAT ){
-		sprintf(friendly_instr, "stat(%lli)",regs.rsi);
-	} else if ( regs.rax == SYS_FSTAT ){
-		sprintf(friendly_instr, "fstat(%lli, 0x%016llx)",regs.rdi,regs.rsi);
-	} else if ( regs.rax == SYS_EXIT ){
-		sprintf(friendly_instr, "exit(%lli)",regs.rdi);
-	} else if ( regs.rax == 1L ) {
-		char bytes[256];
-		copy_bytes(child, regs.rsi, (char *)&bytes, regs.rdx);
-		//unsigned long data = ptrace(PTRACE_PEEKTEXT, child,
-		//	(void*)addr+2, 0);
-		sprintf(friendly_instr, "# write\t%s\n", (char *)&bytes);
-	} else if ( regs.rax == 2L ) {
-		char bytes[256];
-		unsigned long data = ptrace(PTRACE_PEEKTEXT, child,
-			(void*)regs.rdi, 0);
-		fprintf(stdout, "\n** [%s] **\n", (char *)data);
-		copy_bytes(child, regs.rdi, (char *)&bytes, regs.rdx);
-		sprintf(friendly_instr, "# open\t%s\n", (char *)&bytes);
-	} else {
-		sprintf(friendly_instr, "# rax: %lli", regs.rax);
+	char buff[256];
+	switch (regs.rax) {
+		case SYS_OPEN:
+			peek_string(child, (void*)regs.rdi, buff); // filename
+			sprintf(friendly_instr, "open(%s)", buff);
+			break;
+		case SYS_WRITE:
+			peek_string(child, (void*)regs.rsi, buff);
+			long unsigned v = ptrace(PTRACE_PEEKTEXT, child, (void*)regs.rsi, 0);
+			sprintf(friendly_instr, "write(%lli, \"%s\"(%lx), %lli)", regs.rdi, buff, v, regs.rdx);
+			break;
+		case SYS_READ:
+			peek_string(child, (void*)regs.rsi, buff);
+			sprintf(friendly_instr, "read(%lli, %llx, %lli)", regs.rdi, regs.rsi, regs.rdx);
+			break;
+		case SYS_MMAP:
+			sprintf(friendly_instr, "mmap(0x%llx, 0x%llx, 0x%llx, 0x%llx, 0x%llx, 0x%llx); # alocates %lli bytes using fd %lli", 
+				regs.rdi, regs.rsi, regs.rdx, regs.r10, regs.r8, regs.r9, regs.rsi, regs.r8);
+			break;
+		case SYS_STAT:
+			sprintf(friendly_instr, "stat(%lli)",regs.rsi);
+			break;
+		case SYS_FSTAT:
+			sprintf(friendly_instr, "fstat(%lli, 0x%016llx)",regs.rdi,regs.rsi);
+			break;
+		case SYS_EXIT:
+			sprintf(friendly_instr, "exit(%lli)",regs.rdi);
+			break;
+		default:
+			sprintf(friendly_instr, "# rax: %lli", regs.rax);
 	}
 }
 
