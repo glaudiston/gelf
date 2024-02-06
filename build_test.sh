@@ -2,10 +2,10 @@ RED='\033[0;31m';
 GREEN='\033[0;32m';
 NC='\033[0m';
 
-msg(){ echo -en "$1${FUNCNAME[1]^^}$NC: "; shift; echo $@; }
+msg(){ echo -en "$1${FUNCNAME[1]^^}$NC "; shift; echo $@; }
 error(){ msg $RED $@; }
 fail(){ msg $RED $@; }
-pass(){ msg $GREEN ${FUNCNAME[1]} $@; }
+pass(){ msg $GREEN; }
 
 compile_test(){
 	mkdir -p tests
@@ -61,6 +61,21 @@ EOF
 	pass;
 }
 
+expect(){
+	r=$1;
+	er=$2;
+	eo=$3;
+	if [ "$r" != 0 ]; then
+		fail "expected no error but got $r at exit code";
+		return 1;
+	fi;
+
+	if [ "$o" != "hello world" ]; then
+		fail "expected [hello world] but got [$o]";
+		return 2;
+	fi;
+	pass;
+}
 
 test_hello_world(){
 	compile_test <<EOF
@@ -71,32 +86,7 @@ with no error:	0
 exit	with no error
 EOF
 	o=$(run_test);
-	if [ "$r" != 0 ]; then
-		fail "expected no error but got $r at exit code";
-	fi;
-
-	if [ "$o" != "hello world" ]; then
-		fail "expected [hello world] but got [$o]";
-	fi;
-	pass;
-}
-
-assert(){
-	testRet="$($1 | base64 -w0)";
-	r=$?;
-	expected_error="$2";
-	expected_output="$3";
-	if [ $r -ne $expected_error ]; then
-		echo -e "${RED}FAIL${NC}: $1: $r";
-		return $r;
-	fi;
-	expected_xxd=$(echo -n "${expected_output}" | xxd)
-	tested_xxd=$(echo -n "${testRet}" | base64 -d | xxd)
-	if [ "${tested_xxd}" != "${expected_xxd}" ]; then
-		echo -e "${RED}FAIL${NC}: $1:\n\texpected: "[${expected_xxd}]"\n\t     got: "[${tested_xxd}]"";
-		return 1;
-	fi;
-	echo -e "${GREEN}PASS${NC}: $1";
+	expect $? 0 "hello world";
 }
 
 cat $0 | grep -E "^test_[^(]*\(\)\{" | cut -d "(" -f1 | 
