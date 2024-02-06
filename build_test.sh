@@ -43,18 +43,8 @@ test_exit_code(){
 v:	42
 exit	v
 EOF
-	r=$?;
-	if [ $r -ne 0 ]; then
-		fail build error: $r;
-		return $r;
-	fi;
-	run_test;
-	r=$?
-	if [ $r -ne 42 ]; then
-		fail expected exit 42 but got $r;
-		return 1;
-	fi
-	pass;
+	run_test
+	expect $? 42
 }
 
 test_arg_count(){
