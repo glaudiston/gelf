@@ -13,6 +13,15 @@ int mov_v_rsi(pid_t child, unsigned long addr)
 	return 0;
 }
 
+int mov_addr_rsi(pid_t child, unsigned long addr)
+{
+	long unsigned v = ptrace(PTRACE_PEEKTEXT, child, (void*)addr, 0) >> 8 * 4;
+	long unsigned vv = ptrace(PTRACE_PEEKTEXT, child, (void*)v, 0);
+	long unsigned vvv = ptrace(PTRACE_PEEKTEXT, child, (void*)vv, 0);
+	printf("%016lx: mov 0x%08lx, %%rsi; # (*0x%016lx==%li)\n", addr, v, vv, vvv);fflush(stdout);
+	return 0;
+}
+
 int mov_rsi_rsi(pid_t child, unsigned long addr)
 {
 	printf("%016lx: mov %%rsi, %%rsi # (resolve address)\n", addr);fflush(stdout);
@@ -64,10 +73,11 @@ int mov_v_r10(pid_t child, unsigned long addr)
 	unsigned v = ptrace(PTRACE_PEEKTEXT, child, (void*)addr+2, 0);
 	printf("%016lx: mov %x, %%r10\n", addr, v);fflush(stdout);
 }
-int mov_v_rsp(pid_t child, unsigned long addr)
+int mov_rsp_addr(pid_t child, unsigned long addr)
 {
-	long unsigned v = ptrace(PTRACE_PEEKTEXT, child, (void*)addr+4, 0);
-	printf("%016lx: mov 0x%lx, %%rsp\n", addr, v);fflush(stdout);
+	long unsigned v = ptrace(PTRACE_PEEKTEXT, child, (void*)addr, 0) >> 8 * 4;
+	long unsigned vv = ptrace(PTRACE_PEEKTEXT, child, (void*)regs.rsp, 0);
+	printf("%016lx: mov %%rsp, 0x%08lx; # (*0x%016lx==%li)\n", addr, v, regs.rsp, vv);fflush(stdout);
 	return 0;
 }
 
@@ -233,7 +243,37 @@ int mov_al(pid_t child, unsigned long addr)
 
 void detect_friendly_instruction(pid_t child, unsigned long addr, char * friendly_instr)
 {
-	if ( regs.rax == 1L ) {
+	char SYS_READ=0;
+	char SYS_WRITE=1;
+	char SYS_OPEN=2;
+	char SYS_STAT=4;
+	char SYS_FSTAT=5;
+	char SYS_MMAP=9;
+	char SYS_EXIT=60;
+	char syscall[512];
+	if ( regs.rax==SYS_OPEN ) {
+		char filename[256];
+		peek_string(child, (void*)regs.rdi, filename);
+		sprintf(friendly_instr, "open(%s)", filename);
+	} else if ( regs.rax == SYS_WRITE ){
+		char buff[256];
+		peek_string(child, (void*)regs.rsi, buff);
+		long unsigned v = ptrace(PTRACE_PEEKTEXT, child, (void*)regs.rsi, 0);
+		sprintf(friendly_instr, "write(%lli, \"%s\"(%lx), %lli)", regs.rdi, buff, v, regs.rdx);
+	} else if ( regs.rax == SYS_READ ){
+		char buff[256];
+		peek_string(child, (void*)regs.rsi, buff);
+		sprintf(friendly_instr, "read(%lli, %llx, %lli)", regs.rdi, regs.rsi, regs.rdx);
+	} else if ( regs.rax == SYS_MMAP ){
+		sprintf(friendly_instr, "mmap(0x%llx, 0x%llx, 0x%llx, 0x%llx, 0x%llx, 0x%llx); # alocates %lli bytes using fd %lli", 
+			regs.rdi, regs.rsi, regs.rdx, regs.r10, regs.r8, regs.r9, regs.rsi, regs.r8);
+	} else if ( regs.rax == SYS_STAT ){
+		sprintf(friendly_instr, "stat(%lli)",regs.rsi);
+	} else if ( regs.rax == SYS_FSTAT ){
+		sprintf(friendly_instr, "fstat(%lli, 0x%016llx)",regs.rdi,regs.rsi);
+	} else if ( regs.rax == SYS_EXIT ){
+		sprintf(friendly_instr, "exit(%lli)",regs.rdi);
+	} else if ( regs.rax == 1L ) {
 		char bytes[256];
 		copy_bytes(child, regs.rsi, (char *)&bytes, regs.rdx);
 		//unsigned long data = ptrace(PTRACE_PEEKTEXT, child,
@@ -364,7 +404,7 @@ struct bytecode_entry
 	{
 		.k = {0x48,0x89,0x24,0x25},
 		.kl = 4,
-		.fn = mov_v_rsp
+		.fn = mov_rsp_addr
 	},
 	{
 		.k = {0x48,0x89,0xc6},
@@ -405,6 +445,11 @@ struct bytecode_entry
 		.k = {0x48,0x8b,0x12},
 		.kl = 3,
 		.fn = mov_rdx_rdx
+	},
+	{
+		.k = {0x48,0x8b,0x34,0x25},
+		.kl = 4,
+		.fn = mov_addr_rsi
 	},
 	{
 		.k = {0x48,0x8b,0x36},

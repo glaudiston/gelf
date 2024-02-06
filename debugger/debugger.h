@@ -32,5 +32,6 @@
 struct user_regs_struct regs;
 
 extern void copy_bytes(pid_t child, long unsigned addr, char * target, size_t size);
+extern void peek_string(pid_t child, void *addr, char* out);
 #include "arch_x86-64.c"
 #endif
