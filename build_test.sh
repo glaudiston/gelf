@@ -22,6 +22,22 @@ run_test(){
 	./tests/${FUNCNAME[1]}.elf $@
 }
 
+expect(){
+	r=$1;
+	er=$2;
+	eo=$3;
+	if [ "$r" != "$er" ]; then
+		fail "expected no error but got $r at exit code";
+		return 1;
+	fi;
+
+	if [ "$o" != "$eo" ]; then
+		fail "expected [$eo] but got [$o]";
+		return 2;
+	fi;
+	pass;
+}
+
 test_exit_code(){
 	compile_test <<EOF
 v:	42
@@ -50,31 +66,7 @@ with no error:	0
 exit	with no error
 EOF
 	o=$(run_test abc def|xxd --ps);
-	r=$?;
-	if [ "$r" != 0 ]; then
-		fail "expected no error but got $r at exit code";
-	fi;
-
-	if [ "$o" != "03" ]; then
-		fail "expected [03] but got [$o]";
-	fi;
-	pass;
-}
-
-expect(){
-	r=$1;
-	er=$2;
-	eo=$3;
-	if [ "$r" != 0 ]; then
-		fail "expected no error but got $r at exit code";
-		return 1;
-	fi;
-
-	if [ "$o" != "hello world" ]; then
-		fail "expected [hello world] but got [$o]";
-		return 2;
-	fi;
-	pass;
+	expect $? 0 03
 }
 
 test_hello_world(){
