@@ -11,32 +11,42 @@ unsigned print_current_address(pid_t child)
 }
 
 void peek_string(pid_t child, void *addr, char* out){
-	int pos=0;
+	if ( addr == 0 )
+		return;
 	int done=0;
+	int pos=0;
+	out[0]=0;
 	while(!done) {
-		unsigned data = ptrace(PTRACE_PEEKTEXT, child, addr+pos, 0);
-		sprintf(out+pos, "%c%c%c%c", 
-				data, 
-				data >> 8, 
-				data >> 16, 
-				data >> 24);
-		if ( ((char)(data)) == 0
-		|| ( ((char)(data >> 8)) == 0 )
-		|| ( ((char)(data >> 16)) == 0 )
-		|| ( ((char)(data >> 24)) == 0 )){
-			done=1;
-		} else {
-			pos+=4;
+		unsigned long data = ptrace(PTRACE_PEEKTEXT, child, addr+pos, 0);
+		if ( data == 0xffffffffffffffff )
+			break;
+		int i;
+		char c=1;
+		for (i=64-8; i>8 && c > 0; i=i-8){
+			c = data << i >> 56;
+			sprintf(out,"%s%c", out, c);
+			if (c == 0){
+				done=1;
+				break;
+			}
 		}
+		pos += 64 / 8;
 	}
 }
 
-void printRegValue(unsigned long r)
+void printRegValue(pid_t child, unsigned long r)
 {
-	if ( r < 0 ) {
-		printf(" = 0x%lx(%li|%lu)\n", r, r, r);
+	unsigned long v = ptrace(PTRACE_PEEKTEXT, child, (void*)r, 0);
+	char buff[256];
+	peek_string(child, (void*)r, buff); // str?
+	if (strlen(buff)>0){
+		printf(" = 0x%lx == &(0x%x) == &(%s)\n", r, v, buff);
 	} else {
-		printf(" = 0x%lx(%lu)\n", r, r);
+		if ( r < 0 ) {
+			printf(" = 0x%lx(%li|%lu) == &(0x%x)\n", r, r, r, v);
+		} else {
+			printf(" = 0x%lx(%lu) == &(0x%x)\n", r, r, v);
+		}
 	}
 }
 
@@ -81,6 +91,7 @@ void trace_watcher(pid_t child)
 	int status;
 	unsigned long addr = 0;
 	unsigned long straddr;
+	unsigned long v;
 	while ( 1 ) {
 		waitpid(child, &status, 0);
 		if (WIFEXITED(status)) {
@@ -91,34 +102,35 @@ void trace_watcher(pid_t child)
 		if ( printNextData ) {
 			switch (printNextData-1) {
 				case R15:
-					printRegValue(regs.r15); break;
+					v = regs.r15; break;
 				case R14:
-					printRegValue(regs.r14); break;
+					v = regs.r14; break;
 				case R13:
-					printRegValue(regs.r13); break;
+					v = regs.r13; break;
 				case R12:
-					printRegValue(regs.r12); break;
+					v = regs.r12; break;
 				case R11:
-					printRegValue(regs.r11); break;
+					v = regs.r11; break;
 				case R10:
-					printRegValue(regs.r10); break;
+					v = regs.r10; break;
 				case R9:
-					printRegValue(regs.r9); break;
+					v = regs.r9; break;
 				case R8:
-					printRegValue(regs.r8); break;
+					v = regs.r8; break;
 				case RSI:
-					printRegValue(regs.rsi); break;
+					v = regs.rsi; break;
 				case RSP:
-					printRegValue(regs.rsp); break;
+					v = regs.rsp; break;
 				case RBX:
-					printRegValue(regs.rbx); break;
+					v = regs.rbx; break;
 				case RDX:
-					printRegValue(regs.rdx); break;
+					v = regs.rdx; break;
 				case RCX:
-					printRegValue(regs.rcx); break;
+					v = regs.rcx; break;
 				default: // RAX
-					printRegValue(regs.rax); break;
+					v = regs.rax; break;
 			}
+			printRegValue(child, v);
 			printNextData=0;
 		}
 		unsigned data = ptrace(PTRACE_PEEKTEXT, child, (void*)addr, 0);
