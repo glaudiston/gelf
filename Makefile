@@ -24,3 +24,6 @@ all: prepare build/gelf samples build/debugger ## Build everithing, gelf compile
 
 clean: ## Remove the build directory
 	rm -fr elf build
+
+check:
+	./tests.sh

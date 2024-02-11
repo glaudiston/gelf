@@ -1,6 +1,8 @@
 #!/bin/bash
+#
 # tests should be functions prefixed with test_A
 #
+
 test_exit_code(){
 	compile_test <<EOF
 v:	42
@@ -32,6 +34,18 @@ exit	with no error
 EOF
 	o=$(run_test abc def|xxd --ps);
 	expect $? 0 03
+}
+
+test_write_out_arg(){
+	compile_test <<EOF
+stdout:	1
+a::	1
+write	stdout	a
+with no error:	0
+exit	with no error
+EOF
+	o=$(run_test abc);
+	expect $? 0 abc;
 }
 
 # this should be the last line on file:
