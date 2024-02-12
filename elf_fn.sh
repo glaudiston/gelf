@@ -704,13 +704,12 @@ parse_snippet()
 		#CODE="${CODE}$(sys_read $)"
 		#debug symbol_value=$symbol_value
 		#data_addr_v="${data_offset}"
-		bytecode_return="$(bytecode_ret "${ret_value}")"
-		instr_bytes="${open_code}${fstat_code}${mmap_code}${read_code}$(echo $bytecode_return | cut -d, -f1)"
+		instr_bytes="${open_code}${fstat_code}${mmap_code}${read_code}"
 		instr_len=$(echo -n "${instr_bytes}" | base64 -d | wc -c )
 		data_bytes="";
-		data_len="$( echo -n "${data_bytes}" | base64 -d | wc -c )";
+		data_len="0"; # Dynamic length, only at runtime we can know
 		struct_parsed_snippet \
-			"PROCEDURE_TABLE" \
+			"SYMBOL_TABLE" \
 			"${symbol_name}" \
 			"${instr_offset}" \
 			"${instr_bytes}" \
@@ -719,7 +718,9 @@ parse_snippet()
 			"${data_bytes}" \
 			"${data_len}" \
 			"${CODE_LINE_B64}" \
-			"1";
+			"1" \
+			"0" \
+			"RAX"; #TODO: this is not working, it should set the register where the write call should look at data address.
 		return $?;
 	}
 	fi;
@@ -754,11 +755,12 @@ parse_snippet()
 	{
 		local WRITE_OUTPUT_ELEM=1;
 		local WRITE_DATA_ELEM=2;
+		local input_symbol_name="${code_line_elements[$WRITE_DATA_ELEM]}";
 		local out=${code_line_elements[$WRITE_OUTPUT_ELEM]};
 		# expected: STDOUT, STDERR, FD...
 		local data_output=$(get_b64_symbol_value "${out}" "${SNIPPETS}" | cut -d, -f${B64_SYMBOL_VALUE_RETURN_OUT} | base64 -d | tr -d '\0' );
 		# I think we can remove the parse_data_bytes and force the symbol have the data always
-		local symbol_data=$(get_b64_symbol_value "${code_line_elements[$WRITE_DATA_ELEM]}" "${SNIPPETS}" )
+		local symbol_data=$(get_b64_symbol_value "${input_symbol_name}" "${SNIPPETS}" )
 		local symbol_type=$(echo "${symbol_data}" | cut -d, -f${B64_SYMBOL_VALUE_RETURN_TYPE});
 		local symbol_value=$(echo "$symbol_data" | cut -d, -f${B64_SYMBOL_VALUE_RETURN_OUT});
 		local data_bytes=$(echo -n "${symbol_value}"| cut -d, -f1);
@@ -779,6 +781,10 @@ parse_snippet()
 			fi;
 		fi;
 		# TODO: detect if using dyn data addr and pass it 
+		local input_symbol_return="$( echo "$SNIPPETS" | grep "SYMBOL_TABLE,${input_symbol_name}," | cut -d, -f${SNIPPET_COLUMN_RETURN} )";
+		if [ "$input_symbol_return" != "" ]; then
+			data_addr_v="${input_symbol_return}";
+		fi;
 		debug "**write symbol_type=$symbol_type, [$data_addr_v]; data_bytes_len=[${data_bytes_len}]"
 		local instr_bytes="$(system_call_write "${symbol_type}" "${data_output}" "$data_addr_v" "$data_bytes_len" "${instr_offset}")";
 		local instr_size="$(echo -e "$instr_bytes" | base64 -d | wc -c)"

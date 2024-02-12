@@ -23,6 +23,8 @@
 #    The number of lines envolved from the source bloc code.
 # 9 usage counts
 #    Useful to tip remove unused code for function and symbol table items(variables, constants).
+# 10 result target
+#    In dinamic values like functions it can be used to set the register to receive the return value
 #
 # useful constants:
 SNIPPET_COLUMN_TYPE=1;
@@ -36,6 +38,7 @@ SNIPPET_COLUMN_DATA_LEN=8;
 SNIPPET_COLUMN_SOURCE_CODE=9;
 SNIPPET_COLUMN_SOURCE_LINES_COUNT=10;
 SNIPPET_COLUMN_USAGE_COUNT=11;
+SNIPPET_COLUMN_RETURN=12;
 
 SNIPPET_PARSER_ERROR_INVALID_SNIPPET_TYPE=1
 SNIPPET_PARSER_ERROR_INVALID_SNIPPET_UNSUPPORTED_UNSTRUCTION=2
@@ -117,6 +120,8 @@ struct_parsed_snippet(){
 
 	local snippet_usages=0
 
+	local snippet_return="$(eval echo -n \${$SNIPPET_COLUMN_RETURN})";
+
 	local snippet_result="";
 	snippet_result="${snippet_result}${snippet_type}";
 	snippet_result="${snippet_result},${snippet_subname}";
@@ -129,6 +134,7 @@ struct_parsed_snippet(){
 	snippet_result="${snippet_result},${snippet_source_code}"
 	snippet_result="${snippet_result},${snippet_source_lines_count}"
 	snippet_result="${snippet_result},${snippet_usages}";
+	snippet_result="${snippet_result},${snippet_return}";
 
 	local snippet_output_lines=$(echo "${snippet_result}" | wc -l)
 	if ! [ "${snippet_output_lines}" -eq 1 ]; then

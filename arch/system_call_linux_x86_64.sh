@@ -961,7 +961,7 @@ function system_call_write_dyn_addr()
 	local DATA_ADDR_V="$2";
 	local DATA_LEN="$3";
 	local CODE="";
-	debug "write a dynamic address[$(printf 0x%x $DATA_ADDR_V)] to $OUT";
+	debug "write a dynamic address[$DATA_ADDR_V] to $OUT";
 	if [ "$(echo -n "${DATA_ADDR_V}" | cut -d, -f1 | base64 -w0)" == "$( echo -n ${ARCH_CONST_ARGUMENT_ADDRESS} | base64 -w0)" ]; then
 	{
 		local CODE="";
@@ -995,7 +995,11 @@ function system_call_write_dyn_addr()
 		debug "**** b **** [$DATA_ADDR_V]"
 		local code="";
 		local MOV_ADDR_RSI="\x48\x8b\x34\x25";
-		code="${code}${MOV_ADDR_RSI}$(printEndianValue ${DATA_ADDR_V} ${SIZE_32BITS_4BYTES})";
+		if [ "$DATA_ADDR_V" == "RAX" ]; then
+			code="${code}${MOV_RAX_RSI}";
+		else
+			code="${code}${MOV_ADDR_RSI}$(printEndianValue ${DATA_ADDR_V} ${SIZE_32BITS_4BYTES})";
+		fi
 		if [ "${DATA_LEN}" == "0" ]; then
 			code="${code}$(detect_string_length)";
 		else
