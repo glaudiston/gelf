@@ -41,6 +41,14 @@ SNIPPET_PARSER_ERROR_INVALID_SNIPPET_TYPE=1
 SNIPPET_PARSER_ERROR_INVALID_SNIPPET_UNSUPPORTED_UNSTRUCTION=2
 SNIPPET_PARSER_ERROR_INVALID_SNIPPET_UNSTRUCTION_OFFSET_INVALID=3
 
+# SYMBOL_TABLE can be
+# SYMBOL_TABLE_STATIC_BUILD: Static values, will be replaced in build time. No data section bytes will be added to the binary. Ex: STDIN, STDOUT, STDERR... Variables that can be replaced by the actual value at any bin usage.
+# SYMBOL_TABLE_DYN: Runtime variables; At runtime it will be mapped on a RW memory position. All usages will point to that position not known at build time.
+# SYMBOL_TABLE_STATIC_RUNTIME: The value will be in the binary, and when used it will point to that position.
+
+# TODO: Variables not covered
+# DYN_BUILD: useful to macros
+
 struct_parsed_snippet(){
 	local snippet_type="$(eval echo -n \${$SNIPPET_COLUMN_TYPE})";
 	if ! [[ ${snippet_type} =~ (EMPTY|INVALID|COMMENT|INSTRUCTION|SNIPPET|SNIPPET_CALL|SYMBOL_TABLE|PROCEDURE_TABLE) ]]; then
@@ -80,11 +88,13 @@ struct_parsed_snippet(){
 	local snippet_data_bytes="$(eval echo -n \"\${$SNIPPET_COLUMN_DATA_BYTES}\" | tr -d '\n' )";
 
 	local snippet_data_len="$(eval echo -n \${$SNIPPET_COLUMN_DATA_LEN})";
-	local expected_data_len=$( echo -n "$snippet_data_bytes" | base64 -d | wc -c || error);
-	if ! [ "${snippet_data_len}" -eq "${expected_data_len}" ]; then
-		error "at ${snippet_type}:${snippet_subname} the data len(${snippet_data_len}) and the data bytes(${expected_data_len}) does not match";
-		exit 6;
-	fi;
+	local expected_data_len=$(echo -n "$snippet_data_bytes" | base64 -d | wc -c || error);
+	# commenting this bloc because on dynamic values we don't have the real size before runtime
+	# TODO: think in a way to validate it only on static values known at build time
+	#if ! [ "${snippet_data_len}" -eq "${expected_data_len}" ]; then
+	#	error "at ${snippet_type}:${snippet_subname} the data len(${snippet_data_len}) and the data bytes(${expected_data_len}) does not match";
+	#	exit 6;
+	#fi;
 
 	# SNIPPET_COLUMN_SOURCE_CODE
 	local snippet_source_code="$(eval echo -n \"\${$SNIPPET_COLUMN_SOURCE_CODE}\")";
@@ -125,7 +135,6 @@ struct_parsed_snippet(){
 		error "snippet result was not 1 output line: [$snippet_result], output lines ${snippet_output_lines}";
 		exit 7;
 	fi;
-
 	echo "${snippet_result}";
 }
 

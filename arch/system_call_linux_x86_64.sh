@@ -44,7 +44,7 @@
 #  RSI(64): Points to source in stream operations
 #  EDI(32): Points to destination in streams operations
 #  RDI(64): Points to destination in streams operations
-# 6 segment registers: points to memory segment addresses ( but uses pagin instead segmentation)
+# 6 segment registers: points to memory segment addresses (but uses paging instead segmentation)
 # 1 flag register: used to support arithmetic functions and debugging.
 #  EFLAG(32)
 #  RFLAG(64)
@@ -137,7 +137,29 @@
 #
 . arch/system_call_linux_x86.sh
 
-M64="\x48"; # 01001000; set REX use addresses and registers with 64 bits (8 bytes)
+# THE REX PREFFIX:
+#  REX prefix determines the addressing size without it the default is 32bit
+#  REX Bits
+#  |7|6|5|4|3|2|1|0|
+#  |0|1|0|0|W|R|X|B|
+#  W bit = Operand size 1==64-bits, 0 == legacy, depends on opcode.
+#  R bit = Extends the ModR/M reg field to 4 bits. 0 selects RAX-RSI, 1 selects R8-R15
+#  X bit = extends SIB 'index' field, same as R but for the SIB byte (memory operand)
+#  B bit = extends the ModR/M r/m or 'base' field or the SIB field
+#
+REX(){
+	local W=0;
+	local R=0;
+	local X=0;
+	local B=0;
+	echo $(( (2#0100 << 4) + (W<<3) (R<<2) + (X<<1) + B ));
+}
+M64="\x48"; # 01001000; set REX use addresses and registers(operand) with 64 bits (8 bytes)
+# SIB byte
+#  SIB stands for: Scale Index Base
+#  The x64 the ModR/M can not handle all register/memory combinations
+#  for example when you try to move the RSP to an memory address, 
+#  the RSP(100) is set to require an additional field the SIB is this additional field
 #Register	Low 3 bits
 RAX=0; # 000
 RCX=1; # 001
@@ -156,58 +178,26 @@ R13=5; # 101
 R14=6; # 110
 R15=7; # 111
 
-MOV="$(( 2#10000000 ))";	# \x80 Move using memory as source
-MOVR="$(( 2#11000000 ))";	# \xc0 move between registers
-
-# SUB
-#    28H: SUB with two 8-bit operands.
-#    29H: SUB with 32-bit operands (or 64bit registers, depends on ModR/M.
-#    2AH: SUB with 8-bit or 16-bit operands.
-#    2BH: SUB with 16-bit or 64-bit operands.
-#    80H /n: SUB with immediate data and 8-bit operands.
-#    81H /n: SUB with immediate data and 16-bit or 32-bit operands.
-#    83H /n: SUB with immediate data and sign-extended 8-bit or 32-bit operands.
-SUB_R="\x29";
-SUB_64bit="\x2B";
-SUB_IMM32="\x81";
-SUB_IMMSE8="\x83" # This depends on ModR/M OpCode
-TEST="\x85"; # 10000101
-
-# Here's a table with the 3-bit ModR/M values and their corresponding descriptions, including the value 101 for MOV RAX, imm:
-# 3-bit	Description
-# 000	Register (Direct)
-# 001	Register (Indirect w/Disp8)
-# 010	Register (Indirect w/Disp32)
-# 011	Memory (SIB w/Disp32)
-# 100	Register (Direct)
-# 101	Immediate to register
-# 110	Memory (Direct w/Disp32)
-# 111	Register (Direct)
-IMM="$(( 2#00111000 ))";
-MOV_RAX="${M64}$( printEndianValue $(( MOV + IMM + RAX )) ${SIZE_8BITS_1BYTE} )"; # 48 b8
-MOV_RDX="${M64}$( printEndianValue $(( MOV + IMM + RDX )) ${SIZE_8BITS_1BYTE} )"; # 48 ba
-MOV_RSI="${M64}$( printEndianValue $(( MOV + IMM + RSI )) ${SIZE_8BITS_1BYTE} )"; # 48 be
-#debug MOV_RSI=$MOV_RSI
-MOV_RDI="${M64}$( printEndianValue $(( MOV + IMM + RDI )) ${SIZE_8BITS_1BYTE} )"; # 48 bf; #if not prepended with M64(x48) expect 32 bit register (edi: 4 bytes)
-MOV_R="\x89";
 #In the opcode "48 89 C6", the byte C6 is actually the ModR/M byte, which is divided into three fields:
 #
 #  The ModR/M's mod field indicates the addressing mode.
 #    The first 2 bits (11) indicate the addressing mode.  In this case, 11 represents the register addressing mode. It means the instruction operates on registers directly, rather than accessing memory.
+#       Check the constants MODRM_MOD_DISPLACEMENT_* below to see the domain
 #    The next 3 bits (110) specify the destination register (which in this case is RSI).
 #    The last 3 bits (000) specify the source register (which in this case is RAX).
 #
 # So, in summary, the ModR/M byte in the opcode "48 89 C6" indicates that we are using a register-to-register move instruction, with RSI as the destination register and RAX as the source register.
-#MOV_RSP_RSI="${M64}${MOV_R}\x$( printf %x $(( MOVR + (RSI << 3) + RSP )) )"; # move the RSP to RSI #11000110
+# MOV_RSP_RSI="${M64}${MOV_R}\x$( printf %x $(( MOVR + (RSI << 3) + RSP )) )"; # move the RSP to RSI #11000110
+# MOV__RSP__RSI="\x48\x8b\x34\x24"; # mov (%rsp), %rsp; # move value resolving pointer
 # show_bytecode "MOV %RSI, (%RSP)"
 #48893424
 # show_bytecode "MOV %RSI, %RSP"
 #4889f4
 
-MODRM_MOD_DISPLACEMENT_NONE=$(( 0 << 6 ));	# If mod is 00, no displacement follows the ModR/M byte, and the operand is IN a register (like a pointer). The operation will use the address in a register. This is used with SIB for 64bit displacements
+MODRM_MOD_DISPLACEMENT_REG_POINTER=$(( 0 << 6 ));	# If mod is 00, no displacement follows the ModR/M byte, and the operand is IN a register (like a pointer). The operation will use the address in a register. This is used with SIB for 64bit displacements
 MODRM_MOD_DISPLACEMENT_8=$((   1 << 6 ));	# If mod is 01, a displacement of 8 bits follows the ModR/M byte.
 MODRM_MOD_DISPLACEMENT_32=$((  2 << 6 ));	# If mod is 10, a displacement of 32 bits follows the ModR/M byte.
-MODRM_MOD_DISPLACEMENT_REG=$(( 3 << 6 ));	# If mod is 11, the operand is a register, and there is no displacement. The operation will use the register.
+MODRM_MOD_DISPLACEMENT_REG=$(( 3 << 6 ));	# If mod is 11, the operand is a register, and there is no displacement. The operation will use the register itself.
 
 MODRM_OPCODE_ADD=$(( 0 << 3 )) # 000
 MODRM_OPCODE_OR=$((  1 << 3 )) # 001
@@ -234,6 +224,42 @@ MODRM_REG_R12=$(( R12 << 3 )); # 100 4
 MODRM_REG_R13=$(( R13 << 3 )); # 101 5
 MODRM_REG_R14=$(( R14 << 3 )); # 110 6
 MODRM_REG_R15=$(( R15 << 3 )); # 111 7
+MOV="$(( MODRM_MOD_DISPLACEMENT_32 ))";	# \x80 Move using memory as source (32-bit)
+MOVR="$(( MODRM_MOD_DISPLACEMENT_REG ))";	# \xc0 move between registers
+
+# SUB
+#    28H: SUB with two 8-bit operands.
+#    29H: SUB with 32-bit operands (or 64bit registers, depends on ModR/M.
+#    2AH: SUB with 8-bit or 16-bit operands.
+#    2BH: SUB with 16-bit or 64-bit operands.
+#    80H /n: SUB with immediate data and 8-bit operands.
+#    81H /n: SUB with immediate data and 16-bit or 32-bit operands.
+#    83H /n: SUB with immediate data and sign-extended 8-bit or 32-bit operands.
+SUB_R="\x29";
+SUB_64bit="\x2B";
+SUB_IMM32="\x81";
+SUB_IMMSE8="\x83" # This depends on ModR/M OpCode
+SUB_RSP_SHORT="$M64\x83\xec"; # Subtract 1 byte(two complement) value from RSP
+TEST="\x85"; # 10000101
+
+# Here's a table with the 3-bit ModR/M values and their corresponding descriptions, including the value 101 for MOV RAX, imm:
+# 3-bit	Description
+# 000	Register (Direct)
+# 001	Register (Indirect w/Disp8)
+# 010	Register (Indirect w/Disp32)
+# 011	Memory (SIB w/Disp32)
+# 100	Register (Direct)
+# 101	Immediate to register
+# 110	Memory (Direct w/Disp32)
+# 111	Register (Direct)
+IMM="$(( 2#00111000 ))";
+MOV_RAX="${M64}$( printEndianValue $(( MOV + IMM + RAX )) ${SIZE_8BITS_1BYTE} )"; # 48 b8
+MOV_RDX="${M64}$( printEndianValue $(( MOV + IMM + RDX )) ${SIZE_8BITS_1BYTE} )"; # 48 ba
+#MOV_ADDR_RDX="\x48\x8b\x14\x25";
+MOV_RSI="${M64}$( printEndianValue $(( MOV + IMM + RSI )) ${SIZE_8BITS_1BYTE} )"; # 48 be
+#debug MOV_RSI=$MOV_RSI
+MOV_RDI="${M64}$( printEndianValue $(( MOV + IMM + RDI )) ${SIZE_8BITS_1BYTE} )"; # 48 bf; #if not prepended with M64(x48) expect 32 bit register (edi: 4 bytes)
+MOV_R="\x89";
 
 # show_bytecode "mov %rsp, %rsi"
 # 4889e6
@@ -243,17 +269,50 @@ MOV_RAX_RDI="${M64}${MOV_R}$(printEndianValue $(( MOVR + MOVRM_REG_RAX + RDI )) 
 MOV_RSP_RSI="${M64}${MOV_R}$( printEndianValue $(( MOVR + MODRM_REG_RSP + RSI )) ${SIZE_8BITS_1BYTE} )"; # move the RSP to RSI #11000110
 MOV_RSP_RDX="${M64}${MOV_R}$( printEndianValue $(( MOVR + MODRM_REG_RSP + RDX )) ${SIZE_8BITS_1BYTE} )"; # move the RSP to RDX #11000010
 MOV_RSI_RAX="${M64}${MOV_R}$( printEndianValue $(( MOVR + MODRM_REG_RSI + RAX )) ${SIZE_8BITS_1BYTE} )"; # move the RSI to RDX #11110010
+get_mov_rsp_addr()
+{
+	# MOV %RSP ADDR: 48892425 78100000 ? not tested
+	# 48: REX_64bit
+	# 89: MOV instruction
+	# 24: 00100100 MOD/R
+	# 25: 00100101 SBI
+	# 78100000: little endian 32bit addr
+	REX="\x48";
+	INSTR_MOV="\x89";
+	MOD_RM="$( printEndianValue $(( MODRM_MOD_DISPLACEMENT_REG_POINTER + MODRM_REG_RSP + RSP )) ${SIZE_8BITS_1BYTE} )";
+	SBI=$(printEndianValue $(( 2#00100101 )) ${SIZE_8BITS_1BYTE});
+	echo -n "${REX}${INSTR_MOV}${MOD_RM}${SBI}";
+}
+get_mov_rsi_addr()
+{
+	# MOV %RSP ADDR: 48892425 78100000 ? not tested
+	# 48: REX_64bit
+	# 89: MOV instruction
+	# 24: 00100100 MOD/R
+	# 25: 00100101 SBI
+	# 78100000: little endian 32bit addr
+	REX="\x48";
+	INSTR_MOV="\x89";
+	MOD_RM="$( printEndianValue $(( MODRM_MOD_DISPLACEMENT_REG_POINTER + MODRM_REG_RSI + RSI )) ${SIZE_8BITS_1BYTE} )";
+	SBI=$(printEndianValue $(( 2#00110101 )) ${SIZE_8BITS_1BYTE});
+	#echo -n "${REX}${INSTR_MOV}${MOD_RM}${SBI}";
+	echo -n "\x48\x89\x34\x25";
+}
+MOV_RSP_ADDR=$(get_mov_rsp_addr);
+MOV_RSI_ADDR=$(get_mov_rsi_addr);
 MOV_RSI_RDX="${M64}${MOV_R}$( printEndianValue $(( MOVR + MODRM_REG_RSI + RDX )) ${SIZE_8BITS_1BYTE} )"; # move the RSI to RDX #11110010
 ADD_SHORT="\x83"; # ADD 8 or 16 bit operand (depend on ModR/M opcode first bit(most significant (bit 7)) been zero) and the ModR/M opcode
 ADD_MODRM_RSI="$(printEndianValue $(( MODRM_MOD_DISPLACEMENT_REG + RSI )) $SIZE_8BITS_1BYTE)";
+ADD_MODRM_RSP="$(printEndianValue $(( MODRM_MOD_DISPLACEMENT_REG + RSP )) $SIZE_8BITS_1BYTE)";
 ADD_RSI="${M64}${ADD_SHORT}${ADD_MODRM_RSI}";
+ADD_RSP="${M64}${ADD_SHORT}${ADD_MODRM_RSP}";
 ADD_RDX_MODRM="$(printEndianValue $(( MODRM_MOD_DISPLACEMENT_REG + RDX )) $SIZE_8BITS_1BYTE)";
 ADD_RDX="${M64}${ADD_SHORT}${ADD_RDX_MODRM}";
 MOV_RESOLVE_ADDRESS="\x8b"; # Replace the address pointer with the value pointed from that address
 # MOV_RESOLVE_ADDRESS needs the ModR/M mod (first 2 bits) to be 00.
-MODRM="$(printEndianValue "$(( MODRM_MOD_DISPLACEMENT_NONE + MODRM_REG_RSI + RSI))" $SIZE_8BITS_1BYTE)";
+MODRM="$(printEndianValue "$(( MODRM_MOD_DISPLACEMENT_REG_POINTER + MODRM_REG_RSI + RSI))" $SIZE_8BITS_1BYTE)";
 MOV_RSI_RSI="${M64}${MOV_RESOLVE_ADDRESS}${MODRM}"; # mov (%rsi), %rsi
-MODRM="$(printEndianValue "$(( MODRM_MOD_DISPLACEMENT_NONE + MODRM_REG_RDX + RDX))" $SIZE_8BITS_1BYTE)";
+MODRM="$(printEndianValue "$(( MODRM_MOD_DISPLACEMENT_REG_POINTER + MODRM_REG_RDX + RDX))" $SIZE_8BITS_1BYTE)";
 MOV_RDX_RDX="${M64}${MOV_RESOLVE_ADDRESS}${MODRM}";
 
 # show_bytecode "movq (%rsp), %rsi"
@@ -290,6 +349,7 @@ MOV_R10="\x49\xBA";
 # R13	xor r13, r13	4D 31 ED
 # R14	xor r14, r14	4D 31 F6
 # R15	xor r15, r15	4D 31 FF
+XOR_RDX_RDX="\x48\x31\xD2";
 
 # JMP
 # We have some types of jump
@@ -657,7 +717,6 @@ function system_call_procedure()
 	fi;
 	error "call not implemented for this address size: CURRENT: $CURRENT, TARGET: $TARGET, RELATIVE: $RELATIVE";
 
-
 	FAR_CALL="\x9a";
 	MODRM="$(printEndianValue $(( MODRM_MOD_DISPLACEMENT_REG + MODRM_OPCODE_SUB + RSP )) $SIZE_8BITS_1BYTE)"
 	SUB_RSP="${M64}${SUB_IMMSE8}${MODRM}\x28" # sub rsp, x28
@@ -831,82 +890,138 @@ function system_call_write_addr()
 	echo -en "${CODE}" | base64 -w0;
 }
 
+function detect_argsize()
+{
+	local CODE="";
+	# figure out the data size dynamically.
+	# To do it we can get the next address - the current address
+	# the arg2 - arg1 address - 1(NULL) should be the data size
+	# The last argument need to check the size by using 16 bytes, not 8.
+	#   because 8 bytes lead to the NULL, 16 leads to the first env var.
+	#
+	# to find the arg size, use rdx as RSI
+	CODE="${CODE}${MOV_RSI_RDX}";
+	# increment RDX by 8
+	ARGUMENT_DISPLACEMENT=$(printEndianValue 8 ${SIZE_8BITS_1BYTE})
+	#ADD_RDX="${M64}${ADD_SHORT}\xC2"
+	CODE="${CODE}${ADD_RDX}${ARGUMENT_DISPLACEMENT}";
+	# mov to the real address (not pointer to address)
+	ModRM=$( printEndianValue $(( MODRM_MOD_DISPLACEMENT_REG + MODRM_REG_RSI + RDX )) ${SIZE_8BITS_1BYTE} )
+	SUB_RDX_RSI="${M64}${SUB_R}${ModRM}";
+	CODE="${CODE}${MOV_RSI_RSI}"; # resolve pointer to address
+	CODE="${CODE}${MOV_RDX_RDX}"; # resolve pointer to address
+	# and subtract RDX - RSI (resulting in the result(str len) at RDX)
+	CODE="${CODE}${SUB_RDX_RSI}";
+	echo -n "${CODE}";
+}
+
+# how dinamically discover the size?
+# one way is to increment the pointer, then subtract the previous pointer, this is fast but this is only garanteed to work in arrays of data, where the address are in same memory block. see detect_argsize
+# another way is to count the bytes until find \x00. but this will block the possibility of write out the \x00 byte. this is what bash does. despite slower and the side effect of not allowing \x00, it is safer.
+function detect_string_length()
+{
+	local code="";
+	#code="${code}${XOR_RDX_RDX}"; # ensure rdx = 0
+	code="${code}${MOV_RSI_RDX}"; # let's use rdx as rsi incrementing it each loop interaction
+	# save rip
+	# leaq (%rip), %rbx # 
+	LEAQ_RIP_RBX="\x48\x8d\x1d\x00\x00\x00\x00";
+	code=${code}${LEAQ_RIP_RBX};
+	# get the data byte at addr+rdx into rax
+	MOV__RDX__RAX="\x48\x0f\xb6\x02"; # movzbq (%rdx), %rax
+	code="${code}${MOV__RDX__RAX}"; # resolve current rdx pointer to rax
+	#MOV_DATA_RAX="\x48\x0f\xb6\x06"; # movzbq (%rsi), %rax
+	#code="${code}${MOV_DATA_RAX}";
+	TEST_RAX_RAX="\x48\x85\xc0";
+	# inc rdx
+	INC_RDX="\x48\xff\xc2";
+	code="${code}${INC_RDX}";
+	# test data byte
+	TEST_AL="\x84\xc0";
+	# loop back if not null
+	code="${code}${TEST_AL}";
+	# jz
+	# "ebfe" # jump back 0 bytes
+	JUMP_BACK_BYTES="\x7f\xf5"; # jg .-9; Jump back 9 bytes only if AL > 0
+	code="${code}${JUMP_BACK_BYTES}";
+	DEC_RDX="\x48\xff\xca";
+	code="${code}${DEC_RDX}";
+	# sub %rsi, %rdx
+	SUB_RSI_RDX="\x48\x29\xf2";
+	code="${code}${SUB_RSI_RDX}";
+	JMP_RBX="\xff\x23";
+	echo -n "$code";
+}
+
+# given a dynamic address, write it to OUT;
+# if len=0, autodetect by null char;
+function system_call_write_dyn_addr()
+{
+	local OUT="$1";
+	local DATA_ADDR_V="$2";
+	local DATA_LEN="$3";
+	local CODE="";
+	debug "write a dynamic address[$(printf 0x%x $DATA_ADDR_V)] to $OUT";
+	if [ "$(echo -n "${DATA_ADDR_V}" | cut -d, -f1 | base64 -w0)" == "$( echo -n ${ARCH_CONST_ARGUMENT_ADDRESS} | base64 -w0)" ]; then
+	{
+		local CODE="";
+		CODE="${CODE}${MOV_RAX}$(printEndianValue $SYS_WRITE $SIZE_64BITS_8BYTES)";
+		CODE="${CODE}${MOV_RDI}$(printEndianValue $OUT $SIZE_64BITS_8BYTES)";
+
+		CODE="${CODE}$(detect_argsize)";
+
+		local LAST_ARG_CODE="";
+		LAST_ARG_CODE="${LAST_ARG_CODE}${MOV_RSP_RDX}";
+		ARGUMENT_DISPLACEMENT=$(printEndianValue $(( 8 * argument_number + 16 )) ${SIZE_8BITS_1BYTE})
+		LAST_ARG_CODE="${LAST_ARG_CODE}${ADD_RDX}${ARGUMENT_DISPLACEMENT}";
+		LAST_ARG_CODE="${LAST_ARG_CODE}${MOV_RDX_RDX}";
+		LAST_ARG_CODE="${LAST_ARG_CODE}${SUB_RDX_RSI}";
+
+		local ModRM="$( printEndianValue $(( MODRM_MOD_DISPLACEMENT_REG + MODRM_OPCODE_CMP + RDX )) $SIZE_8BITS_1BYTE)";
+		CODE="${CODE}${CMP}${ModRM}\x00"; # 64bit cmp rdx, 00
+		BYTES_TO_JUMP="$(printEndianValue $(echo -en "${LAST_ARG_CODE}" | wc -c) $SIZE_32BITS_4BYTES)";
+		# If is not the last argument, we are good, jump over
+		CODE="${CODE}${JG}${BYTES_TO_JUMP}";
+		CODE="${CODE}${LAST_ARG_CODE}";
+		# so here we want to look at first env address to subtract it and find out the last argument size
+		MODRM=$( printEndianValue $(( MODRM_MOD_DISPLACEMENT_REG + MODRM_OPCODE_SUB + RDX)) $SIZE_8BITS_1BYTE );
+		SUB_RDX_1="${SUB_IMMSE8}${MODRM}\x01";
+		CODE="${CODE}${SUB_RDX_1}";
+		CODE="${CODE}${SYSCALL}";
+		echo -en "${CODE}" | base64 -w0;
+	}
+	else
+		# otherwise we expect all instruction already be in the data_addr_v as base64
+		debug "**** b **** [$DATA_ADDR_V]"
+		local code="";
+		local MOV_ADDR_RSI="\x48\x8b\x34\x25";
+		code="${code}${MOV_ADDR_RSI}$(printEndianValue ${DATA_ADDR_V} ${SIZE_32BITS_4BYTES})";
+		if [ "${DATA_LEN}" == "0" ]; then
+			code="${code}$(detect_string_length)";
+		else
+			local MOV_V_RDX="${MOV_RDX}$(printEndianValue "${DATA_LEN}" ${SIZE_64BITS_8BYTES})";
+			code="${code}${MOV_V_RDX}";
+		fi;
+		code="${code}${MOV_RDI}$(printEndianValue $OUT $SIZE_64BITS_8BYTES)";
+		code="${code}${MOV_RAX}$(printEndianValue $SYS_WRITE $SIZE_64BITS_8BYTES)";
+		code="${code}${SYSCALL}";
+		echo -ne "${code}" | base64 -w0;
+		return;
+	fi;
+}
+
 function system_call_write()
 {
-	local TYPE="$1"
+	local TYPE="$1";
 	local OUT="$2";
 	local DATA_ADDR_V="$3";
 	local DATA_LEN="$4";
 	local CURRENT_RIP="$5";
 	if [ "${TYPE}" == "${SYMBOL_TYPE_STATIC}" ]; then
 		echo -n "$(system_call_write_addr "${OUT}" "${DATA_ADDR_V}" "${DATA_LEN}")";
-	elif [ "${TYPE}" == ${SYMBOL_TYPE_REGISTER} -a "${DATA_ADDR_V}" == "$( echo -n ${ARCH_CONST_ARGUMENT_COUNTER_POINTER} | base64 -w0)" ]; then
+	elif [ "${TYPE}" == "${SYMBOL_TYPE_DYNAMIC}" ]; then
 	{
-		local DATA_LEN="${SIZE_64BITS_8BYTES}"; # The RSP is a 64bits so 8 bytes
-		local CODE="";
-		CODE="${CODE}${MOV_RAX}$(printEndianValue $SYS_WRITE $SIZE_64BITS_8BYTES)";
-		CODE="${CODE}${MOV_RDI}$(printEndianValue $OUT $SIZE_64BITS_8BYTES)";
-		CODE="${CODE}${MOV_RSP_RSI}";
-		CODE="${CODE}${MOV_RDX}$(printEndianValue ${DATA_LEN} $SIZE_64BITS_8BYTES)";
-		CODE="${CODE}${SYSCALL}";
-		echo -en "${CODE}" | base64 -w0;
-	}
-	elif [ "${TYPE}" == ${SYMBOL_TYPE_DYNAMIC} ]; then
-	{
-	       if [ "$(echo -n "${DATA_ADDR_V}" | base64 -d | cut -d, -f1 | base64 -w0)" == "$( echo -n ${ARCH_CONST_ARGUMENT_ADDRESS} | base64 -w0)" ]; then
-		{
-			local argument_number=$(echo -n "${DATA_ADDR_V}" | base64 -d | cut -d, -f2)
-			local CODE="";
-			CODE="${CODE}${MOV_RAX}$(printEndianValue $SYS_WRITE $SIZE_64BITS_8BYTES)";
-			CODE="${CODE}${MOV_RDI}$(printEndianValue $OUT $SIZE_64BITS_8BYTES)";
-			CODE="${CODE}${MOV_RSP_RSI}";
-			local ARGUMENT_DISPLACEMENT=$(printEndianValue $(( 8 * argument_number )) ${SIZE_8BITS_1BYTE})
-			CODE="${CODE}${ADD_RSI}${ARGUMENT_DISPLACEMENT}";
-			# figure out the data size dynamically.
-			# To do it we can get the next address - the current address
-			# the arg2 - arg1 address - 1(NULL) should be the data size
-			# The last argument need to check the size by using 16 bytes, not 8.
-			#   because 8 bytes lead to the NULL, 16 leads to the first env var.
-			#
- 			# to find the arg size, use rdx as RSI
-			CODE="${CODE}${MOV_RSI_RDX}";
-			# increment RDX by 8
-			ARGUMENT_DISPLACEMENT=$(printEndianValue 8 ${SIZE_8BITS_1BYTE})
-			#ADD_RDX="${M64}${ADD_SHORT}\xC2"
-			CODE="${CODE}${ADD_RDX}${ARGUMENT_DISPLACEMENT}";
-			# mov to the real address (not pointer to address)
-			ModRM=$( printEndianValue $(( MODRM_MOD_DISPLACEMENT_REG + MODRM_REG_RSI + RDX )) ${SIZE_8BITS_1BYTE} )
-			SUB_RDX_RSI="${M64}${SUB_R}${ModRM}";
-			CODE="${CODE}${MOV_RSI_RSI}"; # resolve pointer to address
-			CODE="${CODE}${MOV_RDX_RDX}"; # resolve pointer to address
-			# and subtract RDX - RSI (resulting in the result(str len) at RDX)
-			CODE="${CODE}${SUB_RDX_RSI}";
-
-			local LAST_ARG_CODE="";
-			LAST_ARG_CODE="${LAST_ARG_CODE}${MOV_RSP_RDX}";
-			ARGUMENT_DISPLACEMENT=$(printEndianValue $(( 8 * argument_number + 16 )) ${SIZE_8BITS_1BYTE})
-			LAST_ARG_CODE="${LAST_ARG_CODE}${ADD_RDX}${ARGUMENT_DISPLACEMENT}";
-			LAST_ARG_CODE="${LAST_ARG_CODE}${MOV_RDX_RDX}";
-			LAST_ARG_CODE="${LAST_ARG_CODE}${SUB_RDX_RSI}";
-
-			local ModRM="$( printEndianValue $(( MODRM_MOD_DISPLACEMENT_REG + MODRM_OPCODE_CMP + RDX )) $SIZE_8BITS_1BYTE)";
-			CODE="${CODE}${CMP}${ModRM}\x00"; # 64bit cmp rdx, 00
-			BYTES_TO_JUMP="$(printEndianValue $(echo -en "${LAST_ARG_CODE}" | wc -c) $SIZE_32BITS_4BYTES)";
-			# If is not the last argument, we are good, jump over
-			CODE="${CODE}${JG}${BYTES_TO_JUMP}";
-			CODE="${CODE}${LAST_ARG_CODE}";
-			# so here we want to look at first env address to subtract it and find out the last argument size
-			MODRM=$( printEndianValue $(( MODRM_MOD_DISPLACEMENT_REG + MODRM_OPCODE_SUB + RDX)) $SIZE_8BITS_1BYTE );
-			SUB_RDX_1="${SUB_IMMSE8}${MODRM}\x01";
-			CODE="${CODE}${SUB_RDX_1}";
-			CODE="${CODE}${SYSCALL}";
-			echo -en "${CODE}" | base64 -w0;
-		}
-		else
-			# otherwise we expect all instruction already be in the data_addr_v as base64
-			# so just throw it back
-			echo -n "$DATA_ADDR_V"
-		fi;
+		echo -n "$(system_call_write_dyn_addr "${OUT}" "${DATA_ADDR_V}" "${DATA_LEN}")";
 	}
 	elif [ "$TYPE" == "${SYMBOL_TYPE_PROCEDURE}" ]; then
 	{
@@ -1009,11 +1124,56 @@ function system_call_exec()
 # It can be recovered in gdb by using 
 # (gdb) print *((int*)($rsp))
 # 
-# The issue is that, in build time, we can not see that value, so we need to create a dynamic ref
-# so we can evaluate it at runtime.
+# But given it is a runtime only value, we don't have that value at build time, 
+# so we need to create a dynamic ref that can be evaluatet at runtime.
 # 
-# My strategy is to set the constat _ARG_COUNTER_ then I can figure out latter that is means "RSP Integer"
+# My strategy is to set the constant _ARG_CNT_ then I can figure out latter that is means "RSP Integer"
 # Probably should prefix it with the jump sort instruction to make sure those bytes will not affect
 # the program execution. But not a issue now.
-ARCH_CONST_ARGUMENT_COUNTER_POINTER="_ARG_CNT_";
+
+function get_arg_count()
+{
+	# I don't need the bytecode at this point
+	# I do need to store the value result form the bytecode to a memory address and set it to a var
+	# because in inner functions I will be able to recover it using a variable
+	#
+	# # TODO HOW TO ALLOCATE A DYNAMIC VARIABLE IN MEMORY?
+	# 	This function should receive the variable position (hex) to set 
+	# 	This function should copy the pointer value currently set at RSP and copy it to the address
+	local ADDR="$1"; # memory where to put the argc count
+	local CODE="";
+	CODE="${CODE}${MOV_RSP_ADDR}$(printEndianValue $ADDR $SIZE_32BITS_4BYTES)";
+	echo -en "${CODE}" | base64 -w0;
+}
+
+function get_arg()
+{
+	local ADDR="$1";
+	local ARGN="$2";
+	local CODE="";
+	# MOV %RSP %RSI
+	CODE="${CODE}${MOV_RSP_RSI}";
+	# ADD RSI 8
+	CODE="${CODE}${ADD_RSI}$(printEndianValue $(( 8 * (1 + ARGN) )) ${SIZE_8BITS_1BYTE})";
+	# RESOLVE RSI (Copy pointer address content to RSI)
+	CODE="${CODE}${MOV_RSI_RSI}";
+	# MOV RSI ADDR
+	CODE="${CODE}${MOV_RSI_ADDR}$(printEndianValue "$ADDR" $SIZE_32BITS_4BYTES)";
+
+	echo -en "${CODE}" | base64 -w0;
+}
+
 ARCH_CONST_ARGUMENT_ADDRESS="_ARG_ADDR_ARG_ADDR_";
+# address where we have the pointer to the address where is the get addr function
+GET_ARGS_ADDR=""
+get_args_bytecode(){
+	local CODE="";
+	if [ "${GET_ARGS_ADDR}" == "" ]; then
+		GET_ARGS_ADDR="$2";
+		local ADDR=$(printEndianValue ${GET_ARGS_ADDR} ${SIZE_32BITS_4BYTES})
+		CODE="${CODE}${M64}${MOV_R}\x24\x25${ADDR}";
+	fi;
+	echo -en "${CODE}" | base64 -w0;
+	echo -en ,
+	echo -en $GET_ARGS_ADDR;
+}

@@ -11,32 +11,42 @@ unsigned print_current_address(pid_t child)
 }
 
 void peek_string(pid_t child, void *addr, char* out){
-	int pos=0;
+	if ( addr == 0 )
+		return;
 	int done=0;
+	int pos=0;
+	out[0]=0;
 	while(!done) {
-		unsigned data = ptrace(PTRACE_PEEKTEXT, child, addr+pos, 0);
-		sprintf(out+pos, "%c%c%c%c", 
-				data, 
-				data >> 8, 
-				data >> 16, 
-				data >> 24);
-		if ( ((char)(data)) == 0
-		|| ( ((char)(data >> 8)) == 0 )
-		|| ( ((char)(data >> 16)) == 0 )
-		|| ( ((char)(data >> 24)) == 0 )){
-			done=1;
-		} else {
-			pos+=4;
+		unsigned long data = ptrace(PTRACE_PEEKTEXT, child, addr+pos, 0);
+		if ( data == 0xffffffffffffffff )
+			break;
+		int i;
+		char c=1;
+		for (i=64-8; i>8 && c > 0; i=i-8){
+			c = data << i >> 56;
+			sprintf(out,"%s%c", out, c);
+			if (c == 0){
+				done=1;
+				break;
+			}
 		}
+		pos += 64 / 8;
 	}
 }
 
-void printRegValue(unsigned long r)
+void printRegValue(pid_t child, unsigned long r)
 {
-	if ( r < 0 ) {
-		printf(" = 0x%lx(%li|%lu)\n", r, r, r);
+	unsigned long v = ptrace(PTRACE_PEEKTEXT, child, (void*)r, 0);
+	char buff[256];
+	peek_string(child, (void*)r, buff); // str?
+	if (strlen(buff)>0){
+		printf(" = 0x%lx == &(0x%x) == &(%s)\n", r, v, buff);
 	} else {
-		printf(" = 0x%lx(%lu)\n", r, r);
+		if ( r < 0 ) {
+			printf(" = 0x%lx(%li|%lu) == &(0x%x)\n", r, r, r, v);
+		} else {
+			printf(" = 0x%lx(%lu) == &(0x%x)\n", r, r, v);
+		}
 	}
 }
 
@@ -81,6 +91,7 @@ void trace_watcher(pid_t child)
 	int status;
 	unsigned long addr = 0;
 	unsigned long straddr;
+	unsigned long v;
 	while ( 1 ) {
 		waitpid(child, &status, 0);
 		if (WIFEXITED(status)) {
@@ -91,34 +102,35 @@ void trace_watcher(pid_t child)
 		if ( printNextData ) {
 			switch (printNextData-1) {
 				case R15:
-					printRegValue(regs.r15); break;
+					v = regs.r15; break;
 				case R14:
-					printRegValue(regs.r14); break;
+					v = regs.r14; break;
 				case R13:
-					printRegValue(regs.r13); break;
+					v = regs.r13; break;
 				case R12:
-					printRegValue(regs.r12); break;
+					v = regs.r12; break;
 				case R11:
-					printRegValue(regs.r11); break;
+					v = regs.r11; break;
 				case R10:
-					printRegValue(regs.r10); break;
+					v = regs.r10; break;
 				case R9:
-					printRegValue(regs.r9); break;
+					v = regs.r9; break;
 				case R8:
-					printRegValue(regs.r8); break;
+					v = regs.r8; break;
 				case RSI:
-					printRegValue(regs.rsi); break;
+					v = regs.rsi; break;
 				case RSP:
-					printRegValue(regs.rsp); break;
+					v = regs.rsp; break;
 				case RBX:
-					printRegValue(regs.rbx); break;
+					v = regs.rbx; break;
 				case RDX:
-					printRegValue(regs.rdx); break;
+					v = regs.rdx; break;
 				case RCX:
-					printRegValue(regs.rcx); break;
+					v = regs.rcx; break;
 				default: // RAX
-					printRegValue(regs.rax); break;
+					v = regs.rax; break;
 			}
+			printRegValue(child, v);
 			printNextData=0;
 		}
 		unsigned data = ptrace(PTRACE_PEEKTEXT, child, (void*)addr, 0);
@@ -191,10 +203,6 @@ void trace_watcher(pid_t child)
 						unsigned char instr_size=6;
 						printf("%016lx: jg, %llx # jump %i bytes ahead\n", addr, instr_size + regs.rip + d, d);fflush(stdout);
 					}
-					// CALL
-					else if ( first_byte == 0xe8 ) {
-						printf("%016lx: call\n", addr); fflush(stdout);
-					}
 					// RET
 					else if ( first_byte == 0xc3 ) {
 						printf("%016lx: ret\n", addr); fflush(stdout);
@@ -214,38 +222,6 @@ void trace_watcher(pid_t child)
 					// SYSCALL
 					else if ( ( data << 16 >> 16 ) == 0x050f )
 					{
-						char syscall[512];
-						syscall[0]=0;
-						char SYS_READ=0;
-						char SYS_WRITE=1;
-						char SYS_OPEN=2;
-						char SYS_STAT=4;
-						char SYS_FSTAT=5;
-						char SYS_MMAP=9;
-						char SYS_EXIT=60;
-						if ( regs.rax==SYS_OPEN ) {
-							peek_string(child, (void*)regs.rdi, filename);
-							sprintf((char*)&syscall, "open(%s)", filename);
-						} else if ( regs.rax == SYS_READ ){
-							char buff[256];
-							peek_string(child, (void*)regs.rsi, buff);
-							sprintf((char*)&syscall, "read(%lli, %llx, %lli)", regs.rdi, regs.rsi, regs.rdx);
-						} else if ( regs.rax == SYS_WRITE ){
-							char buff[256];
-							peek_string(child, (void*)regs.rsi, buff);
-							sprintf((char*)&syscall, "write(%lli, 0x%llx, %lli)", regs.rdi, regs.rsi, regs.rdx);
-						} else if ( regs.rax == SYS_MMAP ){
-							sprintf((char*)&syscall, "mmap(0x%llx, 0x%llx, 0x%llx, 0x%llx, 0x%llx, 0x%llx); # alocates %lli bytes using fd %lli", 
-									regs.rdi, regs.rsi, regs.rdx, regs.r10, regs.r8, regs.r9, regs.rsi, regs.r8);
-						} else if ( regs.rax == SYS_STAT ){
-							sprintf((char*)&syscall, "stat(%lli)",regs.rsi);
-						} else if ( regs.rax == SYS_FSTAT ){
-							sprintf((char*)&syscall, "fstat(%lli, 0x%016llx)",regs.rdi,regs.rsi);
-						} else if ( regs.rax == SYS_EXIT ){
-							sprintf((char*)&syscall, "exit(%lli)",regs.rdi);
-						} else {
-							printf("not implemented syscall for rax=%lli...\n",regs.rax);
-						}
 						printf("%016lx: syscall: %s", addr, syscall);fflush(stdout);
 						printNextData = 1;
 					}

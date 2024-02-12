@@ -1,0 +1,34 @@
+# abstraction:
+# 	io	Input and Output
+
+@	io
+
+:
+	input	
+		value		0
+		description
+			The system standard input.
+			Allows read user entry or previous process output when this process is part of a pipe.
+
+	output
+		value		1
+		description
+			The system standard output.
+			Allows write to the terminal, file, pipe or whatever are listening for the output.
+
+	error
+		value		2
+		description
+			The system standard error.
+			Allows write to a secondary output.
+			Normally useful for logs purposes.
+
+	write
+		arguments
+			target output
+			data
+			encoding
+		description
+			Do an instruction call using arguments
+
+	exit	generates the bytecode for the syscall that results on ends the process receiving a integer as error code
