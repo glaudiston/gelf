@@ -751,6 +751,54 @@ parse_snippet()
 		return $?;
 	}
 	fi;
+	if [[ "${code_line_elements[0]}" =~ [:][|]$ ]]; then # concat
+	{
+		# concat all symbols in a new one
+		local dyn_args=0;
+		local static_value="";
+		for (( i=1; i<${#code_line_elements[@]}; i++ ));
+		do
+			local symbol_name=$(echo -n "${code_line_elements[i]}");
+			local symbol_data=$(get_b64_symbol_value "${symbol_name}" "${SNIPPETS}" )
+			local symbol_type=$(echo "${symbol_data}" | cut -d, -f${B64_SYMBOL_VALUE_RETURN_TYPE});
+			local symbol_value=$(echo "$symbol_data" | cut -d, -f${B64_SYMBOL_VALUE_RETURN_OUT});
+			debug "symbol_value[$i]=[$symbol_value]"
+			if [ "${symbol_type}" != "${SYMBOL_TYPE_STATIC}" ]; then
+				dyn_args="$(( dyn_args + 1 ))";
+			else
+				static_value="$( echo "${static_value}${symbol_value}" | base64 -d | base64 -w0 )";
+			fi;
+			debug "concat symbol_name[$i]=[$symbol_name][$symbol_value]=[$static_value]";
+		done;
+		debug "dyn_args=[${dyn_args}]"
+		# if all arguments are static, we can merge them at build time
+		if [ "${dyn_args}" -eq 0 ]; then
+			local symbol_name=$(echo -n "${code_line_elements[0]}" | cut -d: -f1);
+			local instr_bytes="";
+			local instr_len=0;
+			local data_bytes="${static_value}";
+			local data_len=$(echo -n "$data_bytes" | base64 -d | wc -c);
+			debug "Concatenating static elements into symbol [$symbol_name] with value [$static_value]"
+			struct_parsed_snippet \
+				"SYMBOL_TABLE" \
+				"${symbol_name}" \
+				"${instr_offset}" \
+				"${instr_bytes}" \
+				"${instr_len}" \
+				"${data_offset}" \
+				"${data_bytes}" \
+				"${data_len}" \
+				"${CODE_LINE_B64}" \
+				"1";
+			return $?
+		fi;
+		# if at least one are dynamic we need to set instructions
+		local symbol_name_a="$(echo -n "${code_line_elements[1]}")"
+		local symbol_name_b="$(echo -n "${code_line_elements[2]}")"
+		debug "concat [${symbol_name_a}] and [${symbol_name_b}]";
+		return $?;
+	}
+	fi
 	if [[ "${code_line_elements[0]}" == write ]]; then
 	{
 		local WRITE_OUTPUT_ELEM=1;
@@ -761,6 +809,8 @@ parse_snippet()
 		local data_output=$(get_b64_symbol_value "${out}" "${SNIPPETS}" | cut -d, -f${B64_SYMBOL_VALUE_RETURN_OUT} | base64 -d | tr -d '\0' );
 		# I think we can remove the parse_data_bytes and force the symbol have the data always
 		local symbol_data=$(get_b64_symbol_value "${input_symbol_name}" "${SNIPPETS}" )
+		debug "write...input_symbol_name[$input_symbol_name]; symbol_data=[${symbol_data}]"
+		debug "write... sn [$(echo $SNIPPETS | grep $input_symbol_name,)]"
 		local symbol_type=$(echo "${symbol_data}" | cut -d, -f${B64_SYMBOL_VALUE_RETURN_TYPE});
 		local symbol_value=$(echo "$symbol_data" | cut -d, -f${B64_SYMBOL_VALUE_RETURN_OUT});
 		local data_bytes=$(echo -n "${symbol_value}"| cut -d, -f1);
