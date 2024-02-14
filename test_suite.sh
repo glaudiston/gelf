@@ -23,9 +23,10 @@ run_test(){
 }
 
 expect(){
-	r=$1;
-	er=$2;
-	eo=$3;
+	local r=$1;
+	local er=$2;
+	local eo=$3;
+	local o="$4";
 	if [ "$r" != "$er" ]; then
 		fail "expected [${er}] but got [$r] at exit code";
 		return 1;
