@@ -1,5 +1,6 @@
 #include "debugger.h"
 
+#define BUFF_SIZE 256
 unsigned print_current_address(pid_t child)
 {
 	unsigned data = ptrace(PTRACE_GETREGS, child, 0, &regs);
@@ -16,6 +17,8 @@ void peek_string(pid_t child, void *addr, char* out){
 	int done=0;
 	int pos=0;
 	out[0]=0;
+	size_t l=0;
+	size_t lastAllocSize=BUFF_SIZE;
 	while(!done) {
 		unsigned long data = ptrace(PTRACE_PEEKTEXT, child, addr+pos, 0);
 		if ( data == 0xffffffffffffffff )
@@ -24,6 +27,13 @@ void peek_string(pid_t child, void *addr, char* out){
 		char c=1;
 		for (i=64-8; i>8 && c > 0; i=i-8){
 			c = data << i >> 56;
+			if ( ++l > BUFF_SIZE ){
+				// we need to manage realloc if needed
+				if ( l > lastAllocSize ) {
+					lastAllocSize = lastAllocSize + BUFF_SIZE;
+					out=realloc(out, lastAllocSize);
+				}
+			}
 			sprintf(out,"%s%c", out, c);
 			if (c == 0){
 				done=1;
@@ -37,7 +47,7 @@ void peek_string(pid_t child, void *addr, char* out){
 void printRegValue(pid_t child, unsigned long r)
 {
 	unsigned long v = ptrace(PTRACE_PEEKTEXT, child, (void*)r, 0);
-	char buff[256];
+	char * buff = malloc(BUFF_SIZE);
 	peek_string(child, (void*)r, buff); // str?
 	if (strlen(buff)>0){
 		printf(" = 0x%lx == &(0x%x) == &(%s)\n", r, v, buff);
@@ -48,6 +58,7 @@ void printRegValue(pid_t child, unsigned long r)
 			printf(" = 0x%lx(%lu) == &(0x%x)\n", r, r, v);
 		}
 	}
+	free(buff);
 }
 
 // TODO this intent to print str on sys_write

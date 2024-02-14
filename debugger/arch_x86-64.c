@@ -101,13 +101,13 @@ int mov_rsp_addr(pid_t child, unsigned long addr)
 
 int mov_rax_rsi(pid_t child, unsigned long addr)
 {
-	printf("%016lx: mov %%rax, %%rsi;\n", addr); fflush(stdout);
+	printf("%016lx: mov %%rax, %%rsi;", addr); fflush(stdout);
 	return TRUE + RSI;
 }
 
 int mov_rax_rdi(pid_t child, unsigned long addr)
 {
-	printf("%016lx: mov %%rax, %%rdi;\n", addr); fflush(stdout);
+	printf("%016lx: mov %%rax, %%rdi;\t#", addr); fflush(stdout);
 	return TRUE + RDI;
 }
 int mov_rsp_rsi(pid_t child, unsigned long addr)
@@ -325,7 +325,14 @@ int p_syscall(pid_t child, unsigned long addr)
 	return 0;
 }
 
-int jg_short(pid_t child, unsigned long addr)
+int jg_int(pid_t child, unsigned long addr)
+{
+	unsigned data = ptrace(PTRACE_PEEKTEXT, child, (void*)addr+2, 0);
+	printf("%016lx: jq .%i\n", addr, data);
+	return 0;
+}
+
+int jg_byte(pid_t child, unsigned long addr)
 {
 	printf("%016lx: jg .-9;\t# if previous test > 0 jump back 9 bytes\n", addr);
 	return 0;
@@ -685,9 +692,14 @@ struct bytecode_entry
 		.fn = p_syscall,
 	},
 	{
+		.k = {0x0f, 0x8f},
+		.kl = 2,
+		.fn = jg_int,
+	},
+	{
 		.k = {0x7f, 0xf5},
 		.kl = 2,
-		.fn = jg_short,
+		.fn = jg_byte,
 	},
 	{
 		.k = {0xe8},
