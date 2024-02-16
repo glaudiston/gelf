@@ -19,12 +19,32 @@ int mov__rdx__rax(pid_t child, unsigned long addr)
 	printf("%016lx: movzbq (%rdx), %rax;\t# move to rax the resolved pointer value of RDX", addr);fflush(stdout);
 	return TRUE + RDX;
 }
+int mov_rax_addr(pid_t child, unsigned long addr)
+{
+	unsigned v = ptrace(PTRACE_PEEKTEXT, child, (void*)addr+4, 0);
+	printf("%016lx: mov %rax, 0x%lx;\t# ", addr, v);fflush(stdout);
+	return TRUE + RAX;
+}
 int mov_addr_rax(pid_t child, unsigned long addr)
 {
 	printf("%016lx: movzbq (%rsi), %rax;\t# move to rax the resolved pointer value of RSI", addr);fflush(stdout);
 	return TRUE + RSI;
 }
 
+int mov_addr_rdx(pid_t child, unsigned long addr)
+{
+	long unsigned v = ptrace(PTRACE_PEEKTEXT, child, (void*)addr, 0) >> 8 * 4;
+	long unsigned vv = ptrace(PTRACE_PEEKTEXT, child, (void*)v, 0);
+	char buff[256];
+	peek_string(child, (void*)vv, buff); // str?
+	if ( strlen(buff) > 0 ) {
+		printf("%016lx: mov 0x%08lx, %%rdx;\t# (0x%lx == &(%s))\n", addr, v, vv, buff);fflush(stdout);
+	} else {
+		long unsigned vvv = ptrace(PTRACE_PEEKTEXT, child, (void*)vv, 0);
+		printf("%016lx: mov 0x%08lx, %%rdx;\t# (0x%lx == &(%lx))\n", addr, v, vv, vvv);fflush(stdout);
+	}
+	return 0;
+}
 int mov_addr_rsi(pid_t child, unsigned long addr)
 {
 	long unsigned v = ptrace(PTRACE_PEEKTEXT, child, (void*)addr, 0) >> 8 * 4;
@@ -36,6 +56,20 @@ int mov_addr_rsi(pid_t child, unsigned long addr)
 	} else {
 		long unsigned vvv = ptrace(PTRACE_PEEKTEXT, child, (void*)vv, 0);
 		printf("%016lx: mov 0x%08lx, %%rsi;\t# (0x%lx == &(%lx))\n", addr, v, vv, vvv);fflush(stdout);
+	}
+	return 0;
+}
+int mov_addr_rdi(pid_t child, unsigned long addr)
+{
+	long unsigned v = ptrace(PTRACE_PEEKTEXT, child, (void*)addr, 0) >> 8 * 4;
+	long unsigned vv = ptrace(PTRACE_PEEKTEXT, child, (void*)v, 0);
+	char buff[256];
+	peek_string(child, (void*)vv, buff); // str?
+	if ( strlen(buff) > 0 ) {
+		printf("%016lx: mov 0x%08lx, %%rdi;\t# (0x%lx == &(%s))\n", addr, v, vv, buff);fflush(stdout);
+	} else {
+		long unsigned vvv = ptrace(PTRACE_PEEKTEXT, child, (void*)vv, 0);
+		printf("%016lx: mov 0x%08lx, %%rdi;\t# (0x%lx == &(%lx))\n", addr, v, vv, vvv);fflush(stdout);
 	}
 	return 0;
 }
@@ -55,8 +89,8 @@ int mov_rdx_rdx(pid_t child, unsigned long addr)
 int mov_v_rax(pid_t child, unsigned long addr)
 {
 	long unsigned rax = ptrace(PTRACE_PEEKTEXT, child, (void*)addr+2, 0);
-	printf("%016lx: mov 0x%lx, %%rax\n", addr, rax);fflush(stdout);
-	return 0;
+	printf("%016lx: mov 0x%lx, %%rax\t#", addr, rax);fflush(stdout);
+	return TRUE + RAX;
 }
 int mov_v_rax_3(pid_t child, unsigned long addr)
 {
@@ -79,17 +113,24 @@ int mov_v_rdi_3(pid_t child, unsigned long addr)
 int mov_v_r8(pid_t child, unsigned long addr)
 {
 	unsigned v = ptrace(PTRACE_PEEKTEXT, child, (void*)addr+2, 0);
-	printf("%016lx: mov %x, %%r8\n", addr, v);fflush(stdout);
+	printf("%016lx: mov 0x%x, %%r8\n", addr, v);fflush(stdout);
 }
 int mov_v_r9(pid_t child, unsigned long addr)
 {
 	unsigned v = ptrace(PTRACE_PEEKTEXT, child, (void*)addr+2, 0);
-	printf("%016lx: mov %x, %%r9\n", addr, v);fflush(stdout);
+	printf("%016lx: mov 0x%x, %%r9\n", addr, v);fflush(stdout);
 }
 int mov_v_r10(pid_t child, unsigned long addr)
 {
 	unsigned v = ptrace(PTRACE_PEEKTEXT, child, (void*)addr+2, 0);
-	printf("%016lx: mov %x, %%r10\n", addr, v);fflush(stdout);
+	printf("%016lx: mov 0x%x, %%r10\n", addr, v);fflush(stdout);
+}
+int mov_rdx_addr(pid_t child, unsigned long addr)
+{
+	long unsigned v = ptrace(PTRACE_PEEKTEXT, child, (void*)addr, 0) >> 8 * 4;
+	long unsigned vv = ptrace(PTRACE_PEEKTEXT, child, (void*)regs.rdx, 0);
+	printf("%016lx: mov %%rdx, 0x%08lx;\t# (*0x%016lx==%li)\n", addr, v, regs.rdx, vv);fflush(stdout);
+	return 0;
 }
 int mov_rsp_addr(pid_t child, unsigned long addr)
 {
@@ -122,8 +163,13 @@ int mov_rsi_rdx(pid_t child, unsigned long addr)
 }
 int mov_rsp_rdx(pid_t child, unsigned long addr)
 {
-	printf("%016lx: mov %%rsp, %%rdx;\n", addr); fflush(stdout);
+	printf("%016lx: mov %%rsp, %%rdx;\t#", addr); fflush(stdout);
 	return TRUE + RDX;
+}
+int mov_rdx_rcx(pid_t child, unsigned long addr)
+{
+	printf("%016lx: mov %%rdx, %%rcx;\t#", addr); fflush(stdout);
+	return TRUE + RCX;
 }
 int mov_rsi_rax(pid_t child, unsigned long addr)
 {
@@ -132,7 +178,12 @@ int mov_rsi_rax(pid_t child, unsigned long addr)
 }
 int xor_rax_rax(pid_t child, unsigned long addr)
 {
-	printf("%016lx: xor %%rax, %%rax;\t# zero\n", addr); fflush(stdout);
+	printf("%016lx: xor %%rax, %%rax;\t\t# zero\n", addr); fflush(stdout);
+	return 0;
+}
+int xor_r8_r8(pid_t child, unsigned long addr)
+{
+	printf("%016lx: xor %%r8, %%r8;\t\t# zero\n", addr); fflush(stdout);
 	return 0;
 }
 int xor_rdx_rdx(pid_t child, unsigned long addr)
@@ -187,20 +238,20 @@ int mov_rsi_addr(pid_t child, unsigned long addr)
 int mov_v_rsi_2(pid_t child, unsigned long addr)
 {
 	long unsigned v = ptrace(PTRACE_PEEKTEXT, child, (void*)addr+2,0);
-	printf("%016lx: MOV %lx, %%rsi; \n", addr, v);
-	return 0;
+	printf("%016lx: mov 0x%lx, %%rsi\t#", addr, v);
+	return TRUE + RSI;
 }
 int mov_v_rdi_2(pid_t child, unsigned long addr)
 {
 	long unsigned v = ptrace(PTRACE_PEEKTEXT, child, (void*)addr+2,0);
-	printf("%016lx: MOV %lx, %%rdi; \n", addr, v);
-	return 0;
+	printf("%016lx: mov 0x%lx, %%rdi\t#", addr, v);
+	return TRUE + RDI;
 }
 
 int mov_v_rbx(pid_t child, unsigned long addr)
 {
 	long unsigned v = ptrace(PTRACE_PEEKTEXT, child, (void*)addr+2,0);
-	printf("%016lx: MOV %%lx, %%rbx; # %lx\n", addr, v);
+	printf("%016lx: MOV 0x%%lx, %%rbx; # %lx\n", addr, v);
 	return 0;
 }
 
@@ -247,7 +298,7 @@ int pop_rdi(pid_t child, unsigned long addr)
 int movw_rsp(pid_t child, unsigned long addr)
 {
 	long unsigned v = ptrace(PTRACE_PEEKTEXT, child, (void*)addr+5,0);
-	printf("%016lx: MOVW %li, %%RSP;\n",addr, v);
+	printf("%016lx: movw %li, %%rsp;\n",addr, v);
 	return 0;
 }
 int pushq_v(pid_t child, unsigned long addr)
@@ -259,7 +310,7 @@ int pushq_v(pid_t child, unsigned long addr)
 }
 int test_al(pid_t child, unsigned long addr)
 {
-	printf("%016lx: test al; # AL = %i, RAX", addr, regs.rax << 56 >> 56);
+	printf("%016lx: test al;\t\t# AL = %i, RAX", addr, regs.rax << 56 >> 56);
 	return TRUE + RAX;
 }
 int jne(pid_t child, unsigned long addr)
@@ -328,24 +379,24 @@ int p_syscall(pid_t child, unsigned long addr)
 int jg_int(pid_t child, unsigned long addr)
 {
 	unsigned data = ptrace(PTRACE_PEEKTEXT, child, (void*)addr+2, 0);
-	printf("%016lx: jq .%i\n", addr, data);
+	printf("%016lx: jg .%i\t\t# jump if greater than zero(int)", addr, data);
 	return 0;
 }
 
 int jg_byte(pid_t child, unsigned long addr)
 {
-	printf("%016lx: jg .-9;\t# if previous test > 0 jump back 9 bytes\n", addr);
+	printf("%016lx: jg .-9;\t\t# if previous test > 0 jump back 9 bytes\n", addr);
 	return 0;
 }
 
 int inc_rdx(pid_t child, unsigned long addr)
 {
-	printf("%016lx: inc %%rdx;\t#", addr);
+	printf("%016lx: inc %%rdx;\t\t#", addr);
 	return TRUE + RDX;
 }
 int dec_rdx(pid_t child, unsigned long addr)
 {
-	printf("%016lx: dec %%rdx;\t#", addr);
+	printf("%016lx: dec %%rdx;\t\t#", addr);
 	return TRUE + RDX;
 }
 int inc_esi(pid_t child, unsigned long addr)
@@ -377,6 +428,16 @@ int xchg_rax_rdi(pid_t child, unsigned long addr)
 	return 0;
 }
 
+int add_rcx_r8(pid_t child, unsigned long addr)
+{
+	printf("%016lx: add %%rcx, %%r8;\t#", addr);fflush(stdout);
+	return TRUE + R8;
+}
+int add_r8_rdi(pid_t child, unsigned long addr)
+{
+	printf("%016lx: add %%r8, %%rdi;\t#", addr);fflush(stdout);
+	return TRUE + RDI;
+}
 int mov_rax_r8(pid_t child, unsigned long addr)
 {
 	unsigned long data = ptrace(PTRACE_PEEKTEXT, child, (void*)addr+3, 0);
@@ -402,6 +463,18 @@ int lea_rsp_rdi(pid_t child, unsigned long addr)
 	return 0;
 }
 
+int rep_movsb(pid_t child, unsigned long addr)
+{
+	printf("%016lx: rep movsb;\t\t# RCX(after)",addr);
+	return TRUE + RCX;
+}
+
+int rep(pid_t child, unsigned long addr)
+{
+	printf("%016lx: rep", addr);
+	return 0;
+}
+
 int call(pid_t child, unsigned long addr)
 {
 	int data = (int)ptrace(PTRACE_PEEKTEXT, child, (void*)addr+1, 0);
@@ -416,6 +489,11 @@ struct bytecode_entry
 	int kl;			// bytecode length
 	int (*fn)(pid_t child, unsigned long addr);		// bytecode function pointer
 } bytecodes_list[] = {
+	{
+		.k = {0x48,0x01,0x04,0x25},
+		.kl = 4,
+		.fn = mov_rax_addr
+	},
 	{
 		.k = {0x48,0x0f,0xb6, 0x02},
 		.kl = 4,
@@ -467,6 +545,11 @@ struct bytecode_entry
 		.fn = add_short_rsi
 	},
 	{
+		.k = {0x48,0x89,0x14,0x25},
+		.kl = 4,
+		.fn = mov_rdx_addr
+	},
+	{
 		.k = {0x48,0x89,0x24,0x25},
 		.kl = 4,
 		.fn = mov_rsp_addr
@@ -490,6 +573,11 @@ struct bytecode_entry
 		.k = {0x48,0x89,0x34, 0x25},
 		.kl = 3,
 		.fn = mov_rsi_addr
+	},
+	{
+		.k = {0x48,0x89,0xd1},
+		.kl = 3,
+		.fn = mov_rdx_rcx
 	},
 	{
 		.k = {0x48,0x89,0xe6},
@@ -517,6 +605,11 @@ struct bytecode_entry
 		.fn = mov_rdx_rdx
 	},
 	{
+		.k = {0x48,0x8b,0x14,0x25},
+		.kl = 4,
+		.fn = mov_addr_rdx
+	},
+	{
 		.k = {0x48,0x8b,0x34,0x25},
 		.kl = 4,
 		.fn = mov_addr_rsi
@@ -525,6 +618,11 @@ struct bytecode_entry
 		.k = {0x48,0x8b,0x36},
 		.kl = 3,
 		.fn = mov_rsi_rsi
+	},
+	{
+		.k = {0x48,0x8b,0x3c,0x25},
+		.kl = 4,
+		.fn = mov_addr_rdi
 	},
 	{
 		.k = {0x48,0x97},
@@ -594,6 +692,21 @@ struct bytecode_entry
 		.fn = dec_rdx
 	},
 	{
+		.k = {0x49,0x01,0xc8},
+		.kl = 3,
+		.fn = add_rcx_r8,
+	},
+	{
+		.k = {0x49,0x89,0xc0},
+		.kl = 3,
+		.fn = mov_rax_r8,
+	},
+	{
+		.k = {0x49,0x89,0xc1},
+		.kl = 3,
+		.fn = mov_rax_r9,
+	},
+	{
 		.k = {0x49,0xb8},
 		.kl = 2,
 		.fn = mov_v_r8,
@@ -609,14 +722,14 @@ struct bytecode_entry
 		.fn = mov_v_r10,
 	},
 	{
-		.k = {0x49,0x89,0xc0},
+		.k = {0x4c,0x01,0xc7},
 		.kl = 3,
-		.fn = mov_rax_r8,
+		.fn = add_r8_rdi,
 	},
 	{
-		.k = {0x49,0x89,0xc1},
+		.k = {0x4d,0x31,0xc0},
 		.kl = 3,
-		.fn = mov_rax_r9,
+		.fn = xor_r8_r8,
 	},
 	{
 		.k = {0x52},
@@ -707,14 +820,24 @@ struct bytecode_entry
 		.fn = call,
 	},
 	{
-		.k = {0xff,0xc6},
-		.kl = 2,
-		.fn = inc_esi,
+		.k = {0xf3, 0xa4, 0x48},
+		.kl = 3,
+		.fn = rep_movsb,
+	},
+	{
+		.k = {0xf3},
+		.kl = 1,
+		.fn = rep,
 	},
 	{
 		.k = {0xf7,0xe6},
 		.kl = 2,
 		.fn = mul_esi
+	},
+	{
+		.k = {0xff,0xc6},
+		.kl = 2,
+		.fn = inc_esi,
 	},
 	{
 		.k = {0xff,0xce},
