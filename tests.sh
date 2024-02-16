@@ -44,7 +44,7 @@ write	stdout	a
 with no error:	0
 exit	with no error
 EOF
-	o=$(run_test abc);
+	o=$(run_test abc def);
 	expect $? 0 abc "$o";
 }
 
@@ -79,6 +79,19 @@ EOF
 	expect $? 0 $chk "$o"
 }
 
+test_exec_with_args(){
+# this should be the last line on file:
+	compile_test <<EOF
+cmd:	/usr/bin/id	-u
+!	cmd
+success:	0
+exit	success
+EOF
+	chk=$(id -u)
+	o=$(run_test)
+	expect $? 0 $chk "$o"
+}
+
 test_concat_static_symbols(){
 	compile_test <<EOF
 a:	abc
@@ -90,6 +103,20 @@ d:	0
 exit	d
 EOF
 	o=$(run_test)
+	expect $? 0 "abcdef" "$o"
+}
+
+test_concat_dyn_symbols(){
+	compile_test <<EOF
+a::	1
+b::	2
+c:|	a	b
+out:	1
+write	out	c
+d:	0
+exit	d
+EOF
+	o=$(run_test "abc" "def")
 	expect $? 0 "abcdef" "$o"
 }
 
