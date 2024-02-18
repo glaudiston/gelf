@@ -95,7 +95,8 @@ int get_bytecode_fn(pid_t child, unsigned long addr, unsigned data)
 	return -1;
 }
 
-void trace_watcher(pid_t child)
+int running_forks = 1;
+void trace_watcher(pid_t pid)
 {
 	char filename[256];
 	int printNextData=0;
@@ -103,13 +104,41 @@ void trace_watcher(pid_t child)
 	unsigned long addr = 0;
 	unsigned long straddr;
 	unsigned long v;
-	while ( 1 ) {
-		waitpid(child, &status, 0);
-		if (WIFEXITED(status)) {
-		    printf("exited\n");
-		    exit(0);
+	int once_set=0;
+	while ( running_forks ) {
+		waitpid(pid, &status, 0);
+		if (!once_set){
+			once_set++;
+			long ptraceOptions = PTRACE_O_TRACEFORK | PTRACE_O_TRACECLONE | PTRACE_O_TRACEVFORK | PTRACE_O_TRACEEXEC;
+			ptrace(PTRACE_SETOPTIONS, pid, NULL, ptraceOptions); // allow trace forks and clones
 		}
-		addr = print_current_address(child);
+		if ( status>>8 == (SIGTRAP | (PTRACE_EVENT_EXEC<<8)) ){
+			printf("execve\n");fflush(stdout);
+			//ptrace(PTRACE_TRACEME, pid, 0, NULL); // this is the child thread, allow it to be traced.
+			ptrace(PTRACE_CONT, pid, 0, NULL); // this is the child thread, allow it to be traced.
+			//pid_t execve_pid;
+			//ptrace(PTRACE_GETEVENTMSG, pid, NULL, &execve_pid);
+			//printf("execve pid %u\n", execve_pid);fflush(stdout);
+			continue;
+		}
+		if ( status>>8 == (SIGTRAP | (PTRACE_EVENT_VFORK<<8)) ){
+			printf("vforked\n");fflush(stdout);
+		}
+		if ( status>>8 == (SIGTRAP | (PTRACE_EVENT_CLONE<<8)) ){
+			printf("cloned\n");fflush(stdout);
+		}
+		if ( status>>8 == (SIGTRAP | (PTRACE_EVENT_FORK<<8)) ){
+			pid_t forked_pid;
+			ptrace(PTRACE_GETEVENTMSG, pid, NULL, &forked_pid);
+			printf("forked %u\n", forked_pid);fflush(stdout);
+			trace_watcher(forked_pid);
+		}
+		if (WIFEXITED(status)) {
+		    printf("pid(%i) exited\n", pid);
+		    running_forks--;
+		    continue;
+		}
+		addr = print_current_address(pid);
 		if ( printNextData ) {
 			switch (printNextData-1) {
 				case R15:
@@ -141,11 +170,12 @@ void trace_watcher(pid_t child)
 				default: // RAX
 					v = regs.rax; break;
 			}
-			printRegValue(child, v);
+			printRegValue(pid, v);
 			printNextData=0;
 		}
-		unsigned data = ptrace(PTRACE_PEEKTEXT, child, (void*)addr, 0);
-		printNextData = get_bytecode_fn(child, addr, data);
+		printf("PID(%i)",pid);fflush(stdout);
+		uint32_t data = ptrace(PTRACE_PEEKTEXT, pid, (void*)addr, 0);
+		printNextData = get_bytecode_fn(pid, addr, data);
 		if ( printNextData == -1 ) {
 			// data is composed of 4 bytes in a little-endian, so:
 			unsigned char first_byte = data << 24 >> 24;
@@ -168,18 +198,18 @@ void trace_watcher(pid_t child)
 					}
 					break;
 				case 0xb8:
-					data = ptrace(PTRACE_PEEKTEXT, child, (void*)addr+1, 0);
+					data = ptrace(PTRACE_PEEKTEXT, pid, (void*)addr+1, 0);
 					printf("%08lx: mov %x, %%eax\n", addr, data);fflush(stdout);
 					break;
 				case 0xba: // MOV eDX SIZE
-					data = ptrace(PTRACE_PEEKTEXT, child,
+					data = ptrace(PTRACE_PEEKTEXT, pid,
 						(void*)addr+1, 0);
 					printf("%08lx: MOV %i, %%edx", addr, data); fflush(stdout);
 					int strsize = (int)data;
 					char* c = malloc(sizeof(char) * strsize + 4);
 					int i = 0;
 					for ( i = 0; (i * 4) < strsize; i++ ){
-						data = ptrace(PTRACE_PEEKTEXT, child,
+						data = ptrace(PTRACE_PEEKTEXT, pid,
 							(void*)straddr + i * 4, 0);
 						memcpy(&c[i * 4], &data, 4);
 					}
@@ -189,13 +219,13 @@ void trace_watcher(pid_t child)
 					free(c);
 					break;
 				case 0xbe: // 32 bit mov
-					data = ptrace(PTRACE_PEEKTEXT, child, (void*)addr+1, 0);
-					printf("%08lx: MOV %x, %%esi\n", addr, data);
+					data = ptrace(PTRACE_PEEKTEXT, pid, (void*)addr+1, 0);
+					printf("%08lx: mov %x, %%esi\n", addr, data);
 					straddr = data;
 					break;
 				case 0xbf:
-					data = ptrace(PTRACE_PEEKTEXT, child, (void*)addr+1, 0);
-					printf("%08lx: MOV 0x%08x, %%edi\n", addr, data); fflush(stdout);
+					data = ptrace(PTRACE_PEEKTEXT, pid, (void*)addr+1, 0);
+					printf("%08lx: mov 0x%08x, %%edi\n", addr, data); fflush(stdout);
 					break;
 				default:
 					// JNE
@@ -204,12 +234,12 @@ void trace_watcher(pid_t child)
 					}
 					// CMP RDX 00
 					if ( ( data << 16 >> 16 ) == 0x850f ) {
-						data = ptrace(PTRACE_PEEKTEXT, child, (void*)addr+3, 0) << 8;
-						printf("%016lx: cmp rdx %x\n", addr, data);fflush(stdout);
+						data = ptrace(PTRACE_PEEKTEXT, pid, (void*)addr+3, 0) << 8;
+						printf("%016lx: cmp rdx %x; #", addr, data);fflush(stdout);
 					}
 					// JG
 					else if ( ( data << 16 >> 16 ) == 0x8f0f ) {
-						data = ptrace(PTRACE_PEEKTEXT, child, (void*)addr+2, 0) << 8;
+						data = ptrace(PTRACE_PEEKTEXT, pid, (void*)addr+2, 0) << 8;
 						int d = (data >> 8 + ( data << 8 >> 8 ));
 						unsigned char instr_size=6;
 						printf("%016lx: jg, %llx # jump %i bytes ahead\n", addr, instr_size + regs.rip + d, d);fflush(stdout);
@@ -221,13 +251,13 @@ void trace_watcher(pid_t child)
 					// JMP SHORT
 					else if ( first_byte == 0xeb )
 					{
-						data = ptrace(PTRACE_PEEKTEXT, child, (void*)addr+1, 0);
+						data = ptrace(PTRACE_PEEKTEXT, pid, (void*)addr+1, 0);
 						printf("%08lx: jmp short (%i) %x\n", addr, first_byte, data);
 					}
 					// JMP NEAR
 					else if ( first_byte == 0xe9 )
 					{
-						data = ptrace(PTRACE_PEEKTEXT, child, (void*)addr+1, 0);
+						data = ptrace(PTRACE_PEEKTEXT, pid, (void*)addr+1, 0);
 						printf("%08lx: jmp near (%d) %x (%li)\n", addr, (signed int)data, data, sizeof(signed int) * 8);
 					}
 					// SYSCALL
@@ -243,7 +273,7 @@ void trace_watcher(pid_t child)
 				break;
 			}
 		}
-		data = ptrace(PTRACE_SINGLESTEP, child, 0, NULL);
+		data = ptrace(PTRACE_SINGLESTEP, pid, 0, NULL);
 		if ( data != 0 ) {
 			printf("SINGLE STEP EXPECTED 0 but was %08x\n", data);
 			perror("single step error");fflush(stderr);
@@ -260,12 +290,12 @@ int main(int argc, char *argv[])
         exit(1);
     }
 
-    child = fork(); fflush(stdout);
-    if (child == 0) {
-        ptrace(PTRACE_TRACEME, 0, 0, NULL);
-        execvp(argv[1], &argv[1]);
-    } else {
-		trace_watcher(child);
+    int child_pid = fork(); fflush(stdout);
+    if (child_pid == 0) { // child thread
+        ptrace(PTRACE_TRACEME, 0, 0, NULL); // this is the child thread, allow it to be traced.
+        execvp(argv[1], &argv[1]); // replace this child forked thread with the binary to trace
+    } else { // parent thread (pid has the child pid)
+	trace_watcher(child_pid);
     }
 
     return 0;

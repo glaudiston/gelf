@@ -389,7 +389,8 @@ SYS_CLOSE=3;
 SYS_STAT=4;
 SYS_FSTAT=5;
 SYS_MMAP=9;
-SYS_EXIT=60; #3c
+SYS_EXECVE=59;	# 0x3b
+SYS_EXIT=60;	# 0x3c
 
 sys_close()
 {
@@ -1107,7 +1108,6 @@ function system_call_exec()
 	# je child_process_only # only on the child, jump over next line to execute the execve code
 	# jmp end # if reach this (is parent) then jump over all sys_execve instructions to the end and do nothing
 	# child_process_only:
-	local SYS_EXECVE=$(( 16#3b ));
 	#								mem       elf     str
 	# 401000:       48 bf 00 20 40 00 00    movabs $0x402000,%rdi #        == 2000 == /bin/sh
 	# 401007:       00 00 00

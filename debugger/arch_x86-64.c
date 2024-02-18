@@ -210,14 +210,14 @@ int add_v_rdx(pid_t child, unsigned long addr)
 
 int cmp_rax_v(pid_t child, unsigned long addr)
 {
-	long unsigned v = ptrace(PTRACE_PEEKTEXT, child, (void*)addr+3,0);
-	printf("%016lx: CMP %%rax, %lx;\t# %s\n", addr, v, v == regs.rax ? "TRUE": "FALSE");
+	unsigned char v = ptrace(PTRACE_PEEKTEXT, child, (void*)addr+3,0);
+	printf("%016lx: cmp %%rax, %i;\t\t# %s, rax==%i\n", addr, v, v == regs.rax ? "TRUE": "FALSE", (char)regs.rax);
 	return 0;
 }
 int cmp_rsi_v(pid_t child, unsigned long addr)
 {
 	long unsigned v = ptrace(PTRACE_PEEKTEXT, child, (void*)addr+3,0);
-	printf("%016lx: CMP %%rsi, %lx;\t# %s\n", addr, v, v == regs.rsi ? "TRUE": "FALSE");
+	printf("%016lx: cmp %%rsi, %lx;\t# %s\n", addr, v, v == regs.rsi ? "TRUE": "FALSE");
 	return 0;
 }
 
@@ -238,13 +238,13 @@ int mov_rsi_addr(pid_t child, unsigned long addr)
 int mov_v_rsi_2(pid_t child, unsigned long addr)
 {
 	long unsigned v = ptrace(PTRACE_PEEKTEXT, child, (void*)addr+2,0);
-	printf("%016lx: mov 0x%lx, %%rsi\t#", addr, v);
+	printf("%016lx: mov 0x%lx, %%rsi;\t#", addr, v);
 	return TRUE + RSI;
 }
 int mov_v_rdi_2(pid_t child, unsigned long addr)
 {
 	long unsigned v = ptrace(PTRACE_PEEKTEXT, child, (void*)addr+2,0);
-	printf("%016lx: mov 0x%lx, %%rdi\t#", addr, v);
+	printf("%016lx: mov 0x%lx, %%rdi;\t#", addr, v);
 	return TRUE + RDI;
 }
 
@@ -332,6 +332,7 @@ void detect_friendly_instruction(pid_t child, unsigned long addr, char * friendl
 #define SYS_STAT 4
 #define SYS_FSTAT 5
 #define SYS_MMAP 9
+#define SYS_FORK 57
 #define SYS_EXIT 60
 	char syscall[512];
 	char buff[256];
@@ -359,6 +360,10 @@ void detect_friendly_instruction(pid_t child, unsigned long addr, char * friendl
 		case SYS_FSTAT:
 			sprintf(friendly_instr, "fstat(%lli, 0x%016llx)",regs.rdi,regs.rsi);
 			break;
+		case SYS_FORK:
+			sprintf(friendly_instr, "fork()");
+			running_forks++;
+			break;
 		case SYS_EXIT:
 			sprintf(friendly_instr, "exit(%lli)",regs.rdi);
 			break;
@@ -371,11 +376,17 @@ int p_syscall(pid_t child, unsigned long addr)
 {
 	char friendly_instr[255];
 	detect_friendly_instruction(child, addr, friendly_instr);
-	printf("%016lx: SYSCALL;", addr);
+	printf("%016lx: syscall;\t\t#", addr);
 	printf(" %s\n", friendly_instr);
 	return 0;
 }
 
+int jz(pid_t child, unsigned long addr)
+{
+	unsigned data = ptrace(PTRACE_PEEKTEXT, child, (void*)addr+2, 0);
+	printf("%016lx: jz .%i\t\t# jump if zero(int)\n", addr, data);
+	return 0;
+}
 int jg_int(pid_t child, unsigned long addr)
 {
 	unsigned data = ptrace(PTRACE_PEEKTEXT, child, (void*)addr+2, 0);
@@ -489,6 +500,21 @@ struct bytecode_entry
 	int kl;			// bytecode length
 	int (*fn)(pid_t child, unsigned long addr);		// bytecode function pointer
 } bytecodes_list[] = {
+	{
+		.k = {0x0f,0x05},
+		.kl = 2,
+		.fn = p_syscall,
+	},
+	{
+		.k = {0x0f, 0x85},
+		.kl = 2,
+		.fn = jz,
+	},
+	{
+		.k = {0x0f, 0x8f},
+		.kl = 2,
+		.fn = jg_int,
+	},
 	{
 		.k = {0x48,0x01,0x04,0x25},
 		.kl = 4,
@@ -785,6 +811,11 @@ struct bytecode_entry
 		.fn = jne,
 	},
 	{
+		.k = {0x7f, 0xf5},
+		.kl = 2,
+		.fn = jg_byte,
+	},
+	{
 		.k = {0x84,0xc0},
 		.kl = 2,
 		.fn = test_al,
@@ -799,21 +830,6 @@ struct bytecode_entry
 		.kl = 1,
 		.fn = mov_v_eax
 	}, 
-	{
-		.k = {0x0f,0x05},
-		.kl = 2,
-		.fn = p_syscall,
-	},
-	{
-		.k = {0x0f, 0x8f},
-		.kl = 2,
-		.fn = jg_int,
-	},
-	{
-		.k = {0x7f, 0xf5},
-		.kl = 2,
-		.fn = jg_byte,
-	},
 	{
 		.k = {0xe8},
 		.kl = 1,
