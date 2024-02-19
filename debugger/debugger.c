@@ -136,7 +136,7 @@ void trace_watcher(pid_t pid)
 		if (WIFEXITED(status)) {
 		    printf("pid(%i) exited\n", pid);
 		    running_forks--;
-		    continue;
+		    return;
 		}
 		addr = print_current_address(pid);
 		if ( printNextData ) {
