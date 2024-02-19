@@ -244,7 +244,7 @@ int mov_v_rsi_2(pid_t child, unsigned long addr)
 int mov_v_rdi(pid_t child, unsigned long addr)
 {
 	long unsigned v = ptrace(PTRACE_PEEKTEXT, child, (void*)addr+2,0);
-	printf("%016lx: mov 0x%lx, %%rdi;\t RDI#", addr, v);
+	printf("%016lx: mov 0x%lx, %%rdi;\t#", addr, v);
 	return TRUE + RDI;
 }
 
@@ -447,6 +447,11 @@ int add_rcx_r8(pid_t child, unsigned long addr)
 int add_r8_rdi(pid_t child, unsigned long addr)
 {
 	printf("%016lx: add %%r8, %%rdi;\t#", addr);fflush(stdout);
+	return TRUE + RDI;
+}
+int mov_r8_rdi(pid_t child, unsigned long addr)
+{
+	printf("%016lx: mov %%r8, %%rdi;\t#", addr);fflush(stdout);
 	return TRUE + RDI;
 }
 int mov_rax_r8(pid_t child, unsigned long addr)
@@ -751,6 +756,11 @@ struct bytecode_entry
 		.k = {0x4c,0x01,0xc7},
 		.kl = 3,
 		.fn = add_r8_rdi,
+	},
+	{
+		.k = {0x4c, 0x89,0xc7},
+		.kl = 3,
+		.fn = mov_r8_rdi,
 	},
 	{
 		.k = {0x4d,0x31,0xc0},

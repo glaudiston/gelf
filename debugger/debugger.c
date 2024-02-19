@@ -19,27 +19,14 @@ void peek_string(pid_t child, void *addr, char* out){
 	size_t l=0;
 	size_t lastAllocSize=BUFF_SIZE;
 	while(!done) {
-		unsigned long data = ptrace(PTRACE_PEEKTEXT, child, addr+pos, 0);
-		if ( data == 0xffffffffffffffff )
+		char** data = (char**) ptrace(PTRACE_PEEKTEXT, child, addr+pos, 0);
+		if ( data == (char**)0xffffffffffffffff )
 			break;
-		int i;
-		char c=1;
-		for (i=64-8; i>8 && c > 0; i=i-8){
-			c = data << i >> 56;
-			if ( ++l > BUFF_SIZE ){
-				// we need to manage realloc if needed
-				if ( l > lastAllocSize ) {
-					lastAllocSize = lastAllocSize + BUFF_SIZE;
-					out=realloc(out, lastAllocSize);
-				}
-			}
-			sprintf(out,"%s%c", out, c);
-			if (c == 0){
-				done=1;
-				break;
-			}
+		sprintf(out,"%s%s", out, &data);
+		if (strlen(&data) < 8){
+			break;
 		}
-		pos += 64 / 8;
+		pos+=8;
 	}
 }
 
@@ -94,6 +81,48 @@ int get_bytecode_fn(pid_t child, unsigned long addr, unsigned data)
 	return -1;
 }
 
+void printRelevantRegisters(pid_t pid, struct user_regs_struct regs, int printNextData)
+{
+	unsigned long v;
+	if ( printNextData ) {
+		switch (printNextData-1) {
+			case R15:
+				v = regs.r15; break;
+			case R14:
+				v = regs.r14; break;
+			case R13:
+				v = regs.r13; break;
+			case R12:
+				v = regs.r12; break;
+			case R11:
+				v = regs.r11; break;
+			case R10:
+				v = regs.r10; break;
+			case R9:
+				v = regs.r9; break;
+			case R8:
+				v = regs.r8; break;
+			case RDI:
+				v = regs.rdi; break;
+			case RSI:
+				v = regs.rsi; break;
+			case RBP:
+				v = regs.rbp; break;
+			case RSP:
+				v = regs.rsp; break;
+			case RBX:
+				v = regs.rbx; break;
+			case RDX:
+				v = regs.rdx; break;
+			case RCX:
+				v = regs.rcx; break;
+			default: // RAX
+				v = regs.rax; break;
+		}
+		printRegValue(pid, v);
+		printNextData=0;
+	}
+}
 int running_forks = 1;
 void trace_watcher(pid_t pid)
 {
@@ -102,7 +131,6 @@ void trace_watcher(pid_t pid)
 	int status;
 	unsigned long addr = 0;
 	unsigned long straddr;
-	unsigned long v;
 	int once_set=0;
 	while ( running_forks ) {
 		waitpid(pid, &status, 0);
@@ -139,44 +167,7 @@ void trace_watcher(pid_t pid)
 		}
 		print_current_address(pid, &regs);
 		addr = regs.rip;
-		if ( printNextData ) {
-			switch (printNextData-1) {
-				case R15:
-					v = regs.r15; break;
-				case R14:
-					v = regs.r14; break;
-				case R13:
-					v = regs.r13; break;
-				case R12:
-					v = regs.r12; break;
-				case R11:
-					v = regs.r11; break;
-				case R10:
-					v = regs.r10; break;
-				case R9:
-					v = regs.r9; break;
-				case R8:
-					v = regs.r8; break;
-				case RDI:
-					v = regs.rdi; break;
-				case RSI:
-					v = regs.rsi; break;
-				case RBP:
-					v = regs.rbp; break;
-				case RSP:
-					v = regs.rsp; break;
-				case RBX:
-					v = regs.rbx; break;
-				case RDX:
-					v = regs.rdx; break;
-				case RCX:
-					v = regs.rcx; break;
-				default: // RAX
-					v = regs.rax; break;
-			}
-			printRegValue(pid, v);
-			printNextData=0;
-		}
+		printRelevantRegisters(pid, regs, printNextData);
 		printf("PID(%i)",pid);fflush(stdout);
 		uint32_t data = ptrace(PTRACE_PEEKTEXT, pid, (void*)addr, 0);
 		printNextData = get_bytecode_fn(pid, addr, data);
@@ -189,10 +180,7 @@ void trace_watcher(pid_t pid)
 			switch (first_byte) {
 				case 0x4c:
 					if ( second_byte == 0x89 ) {
-						if ( thirdbyte == 0xc7 ) { // 0x4c89c7
-							printf("%016lx: mov %%r8, %%rdi # 0x%llx(%lli)\n", addr, regs.r8, regs.r8); fflush(stdout);
-						}
-						else if ( thirdbyte == 0xc2 ) { // 0x4c89c7
+						if ( thirdbyte == 0xc2 ) { // 0x4c89c7
 							printf("%016lx: mov %%r8, %%rdx # 0x%llx(%lli)\n", addr, regs.r8, regs.r8); fflush(stdout);
 						} else if (thirdbyte == 0xca ) {
 							printf("%016lx: MOV %%r9, %%rdx # 0x%llx\n", addr, regs.r9); fflush(stdout);
