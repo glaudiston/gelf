@@ -1,14 +1,13 @@
 #include "debugger.h"
 
 #define BUFF_SIZE 256
-unsigned print_current_address(pid_t child)
+void print_current_address(pid_t child, void* regs)
 {
-	unsigned data = ptrace(PTRACE_GETREGS, child, 0, &regs);
+	unsigned data = ptrace(PTRACE_GETREGS, child, NULL, regs);
 	if ( data != 0 ) {
 		perror("unexpected getregs");
 		printf("data: %016x", data);
 	}
-	return regs.rip;
 }
 
 void peek_string(pid_t child, void *addr, char* out){
@@ -138,7 +137,8 @@ void trace_watcher(pid_t pid)
 		    running_forks--;
 		    return;
 		}
-		addr = print_current_address(pid);
+		print_current_address(pid, &regs);
+		addr = regs.rip;
 		if ( printNextData ) {
 			switch (printNextData-1) {
 				case R15:
@@ -157,8 +157,12 @@ void trace_watcher(pid_t pid)
 					v = regs.r9; break;
 				case R8:
 					v = regs.r8; break;
+				case RDI:
+					v = regs.rdi; break;
 				case RSI:
 					v = regs.rsi; break;
+				case RBP:
+					v = regs.rbp; break;
 				case RSP:
 					v = regs.rsp; break;
 				case RBX:
