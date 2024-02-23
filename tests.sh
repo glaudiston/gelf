@@ -79,11 +79,30 @@ EOF
 	expect $? 0 $chk "$o"
 }
 
+test_exec_with_input_args(){
+	compile_test <<EOF
+cmd::	1
+arg a::	2
+arg b::	3
+!	cmd	arg a	arg b
+succeed:	0
+exit	succeed
+EOF
+	cmd="/usr/bin/ls";
+	arg_a="-l";
+        arg_b="/";
+	chk=$("$cmd" "$arg_a" "$arg_b"|md5sum | cut -d " " -f1);
+	expect_exit=$?
+	out_test=$(run_test "$cmd" "$arg_a" "$arg_b" | md5sum | cut -d " " -f1);
+	expect $? "$expect_exit" "$chk" "$out_test";
+}
+
 test_exec_with_args(){
 # this should be the last line on file:
 	compile_test <<EOF
-cmd:	/usr/bin/id	-u
-!	cmd
+cmd:	/usr/bin/id
+args:	-u
+!	cmd	args
 success:	0
 exit	success
 EOF
