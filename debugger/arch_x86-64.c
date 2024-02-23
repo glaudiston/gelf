@@ -333,6 +333,7 @@ void detect_friendly_instruction(pid_t child, unsigned long addr, char * friendl
 #define SYS_FSTAT 5
 #define SYS_MMAP 9
 #define SYS_FORK 57
+#define SYS_EXECVE 59
 #define SYS_EXIT 60
 	char syscall[512];
 	char buff[256];
@@ -363,6 +364,15 @@ void detect_friendly_instruction(pid_t child, unsigned long addr, char * friendl
 		case SYS_FORK:
 			sprintf(friendly_instr, "fork()");
 			running_forks++;
+			break;
+		case SYS_EXECVE:
+			char filename[4096];
+			char args[4096];
+			char env[4096];
+			peek_string(child, (void*)regs.rdi, filename);
+			peek_string(child, (void*)regs.rsi, args);
+			peek_string(child, (void*)regs.rdx, env);
+			sprintf(friendly_instr, "execve(file: \"%s\", args: [%s], env: [%s])", filename, args, env);
 			break;
 		case SYS_EXIT:
 			sprintf(friendly_instr, "exit(%lli)",regs.rdi);

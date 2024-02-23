@@ -18,32 +18,37 @@ void peek_string(pid_t child, void *addr, char* out){
 	out[0]=0;
 	size_t l=0;
 	size_t lastAllocSize=BUFF_SIZE;
+	char ** data;
 	while(!done) {
-		char** data = (char**) ptrace(PTRACE_PEEKTEXT, child, addr+pos, 0);
+		data = (char**) ptrace(PTRACE_PEEKTEXT, child, addr+pos, 0);
 		if ( data == (char**)0xffffffffffffffff )
 			break;
 		sprintf(out,"%s%s", out, &data);
-		if (strlen(&data) < 8){
+		if (strlen((const char *)&data) < 8){
 			break;
 		}
 		pos+=8;
 	}
 }
 
-void printRegValue(pid_t child, unsigned long r)
+void printRegValue(pid_t child, unsigned long r, int deep)
 {
-	unsigned long v = ptrace(PTRACE_PEEKTEXT, child, (void*)r, 0);
+	char lastbyte[10];
+	lastbyte[0]='\n';
+	lastbyte[1]=0;
+	if (deep){
+        	sprintf(lastbyte, "<%i|", deep);
+	}
+	unsigned long v = ptrace(PTRACE_PEEKTEXT, child, r, 0);
+	if ( v == 0xffffffffffffffff ) { // not a valid memory location
+		// numeric
+		printf(" <%i| 0x%lx == %i == \"%s...\" %s", deep+1, r, r, &r, lastbyte);
+		return;
+	}
+	printRegValue(child, v, deep+1);
 	char * buff = malloc(BUFF_SIZE);
 	peek_string(child, (void*)r, buff); // str?
-	if (strlen(buff)>0){
-		printf(" = 0x%lx == &(0x%x) == &(%s)\n", r, v, buff);
-	} else {
-		if ( r < 0 ) {
-			printf(" = 0x%lx(%li|%lu) == &(0x%x)\n", r, r, r, v);
-		} else {
-			printf(" = 0x%lx(%lu) == &(0x%x)\n", r, r, v);
-		}
-	}
+	printf(" 0x%lx == \"%s\" %s", r, buff, lastbyte);
 	free(buff);
 }
 
@@ -119,7 +124,7 @@ void printRelevantRegisters(pid_t pid, struct user_regs_struct regs, int printNe
 			default: // RAX
 				v = regs.rax; break;
 		}
-		printRegValue(pid, v);
+		printRegValue(pid, v, 0);
 		printNextData=0;
 	}
 }
@@ -196,19 +201,8 @@ void trace_watcher(pid_t pid)
 				case 0xba: // MOV eDX SIZE
 					data = ptrace(PTRACE_PEEKTEXT, pid,
 						(void*)addr+1, 0);
-					printf("%08lx: MOV %i, %%edx", addr, data); fflush(stdout);
-					int strsize = (int)data;
-					char* c = malloc(sizeof(char) * strsize + 4);
-					int i = 0;
-					for ( i = 0; (i * 4) < strsize; i++ ){
-						data = ptrace(PTRACE_PEEKTEXT, pid,
-							(void*)straddr + i * 4, 0);
-						memcpy(&c[i * 4], &data, 4);
-					}
-					c[strsize] = 0;
-					// string
-					printf("{%s}\n", c);fflush(stdout);
-					free(c);
+					printf("%08lx: MOV %i, %%edx\n", addr, data); fflush(stdout);
+					printNextData = TRUE + RDX;
 					break;
 				case 0xbe: // 32 bit mov
 					data = ptrace(PTRACE_PEEKTEXT, pid, (void*)addr+1, 0);
@@ -239,6 +233,7 @@ void trace_watcher(pid_t pid)
 					// RET
 					else if ( first_byte == 0xc3 ) {
 						printf("%016lx: ret\n", addr); fflush(stdout);
+						printNextData = 0;
 					}
 					// JMP SHORT
 					else if ( first_byte == 0xeb )
@@ -261,6 +256,7 @@ void trace_watcher(pid_t pid)
 					else
 					{
 						printf("%016lx: unknown data: %016x, %06x \n", addr, data, data << 8 >> 8);fflush(stdout);
+						printNextData = 0;
 					}
 				break;
 			}
