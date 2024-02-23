@@ -1090,8 +1090,8 @@ function system_call_sys_execve()
 function system_call_exec()
 {
 	local PTR_FILE="$1"
-	local PTR_ARGS="$3"
-	local PTR_ENV="$4"
+	local PTR_ARGS="$2"
+	local PTR_ENV="$3"
 	local CODE="";
 	CODE="${CODE}$(system_call_fork | cut -d, -f1 | base64 -d | toHexDump)";
 	# TODO: CMP ? then (0x3d) rAx, lz

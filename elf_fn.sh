@@ -252,13 +252,18 @@ print_elf_body()
 		cut -d, -f${SNIPPET_COLUMN_INSTR_BYTES}
 	);
 
+	local static_data_count=0;
 	local DATA_ALL="$( echo "${SNIPPETS}" | 
-		grep -v INSTRUCTION | 
 		while read d;
 		do
 			ds=$(echo -en "$d" | cut -d, -f$SNIPPET_COLUMN_DATA_LEN;);
 			if [ "$ds" -gt 0 ]; then # avoid hard coded values
+				if [ "${static_data_count}" -gt 0 ]; then
+					echo -en "\x00" | base64 -w0; # ensure a null byte to split data
+				fi;
 				echo -en "$d" | cut -d, -f$SNIPPET_COLUMN_DATA_BYTES;
+				let static_data_count++;
+				debug static_data_count=${static_data_count};
 			fi;
 		done; 
 	)"
@@ -377,7 +382,8 @@ get_b64_symbol_value()
 	# TODO, increment usage count in SNIPPETS SYMBOL_TABLE
 }
 
-set_symbol_value() {
+set_symbol_value()
+{
 	local symbol_value="$1";
 	local SNIPPETS="$2";
 	local data_bytes="${symbol_value}";
@@ -496,8 +502,12 @@ parse_snippet()
 	if [ "$previous_snip_type" == "INSTRUCTION" ]; then
 		previous_data_len=0;
 	fi;
-	previous_data_offset="${previous_data_offset:=$(( PH_VADDR_V + EH_SIZE + PH_SIZE + INSTR_TOTAL_SIZE ))}"
-	local data_offset="$(( previous_data_offset + previous_data_len ))";
+	local zero_data_offset=$(( PH_VADDR_V + EH_SIZE + PH_SIZE + INSTR_TOTAL_SIZE ));
+	previous_data_offset="${previous_data_offset:=$((zero_data_offset))}"
+	local data_offset="$(( previous_data_offset + previous_data_len))"; # always add 1 to set a null
+	if [ "${data_offset}" -gt "${zero_data_offset}" ]; then
+		data_offset=$((data_offset + 1));
+	fi
 	debug "elem:[${code_line_elements[0]}], data_offset=[0x$( printf %x "${data_offset}")]"
 	if [ "$CODE_LINE" == "" ]; then
 	{
@@ -959,15 +969,25 @@ parse_snippet()
 	fi;
 	if [[ "${code_line_elements[0]}" == ! ]]; then
 	{
-		local target="${code_line_elements[1]}"
-		# debug "EXEC [$target]"
-		local target_offset="$(echo "$SNIPPETS" | grep "SYMBOL_TABLE,${target}," | cut -d, -f${SNIPPET_COLUMN_DATA_OFFSET} )";
+		local target="${code_line_elements[1]}";
+		debug "EXEC [$target]"
+		local cmd_offset="$(echo "$SNIPPETS" | grep "SYMBOL_TABLE,${target}," | cut -d, -f${SNIPPET_COLUMN_DATA_OFFSET} )";
+		# TODO for now positional args are good enough, but the correct is to have args and env as an array each;
+		local args="${code_line_elements[2]}";
+		local args_addr="$(echo "$SNIPPETS" | grep "SYMBOL_TABLE,${args}," | cut -d, -f${SNIPPET_COLUMN_DATA_OFFSET} )";
 		local data_bytes="";
-		local data_len=0;
-		local args=""; # memory address to the args
+		if [ "${args_addr}" != "" ]; then
+			# The first argument is the script name
+			debug arg_addr=[${args_addr}]
+			data_bytes=$(echo -en "$(printEndianValue "${cmd_offset}" "${SIZE_64BITS_8BYTES}")$(printEndianValue "${args_addr}" ${SIZE_64BITS_8BYTES})" | base64 -w0); # it should set an array of pointers to the addr and an array of pointers to the envs
+			data_bytes="${data_bytes}$(echo -en "$(printEndianValue 0 ${SIZE_64BITS_8BYTES})" | base64 -w0)"
+		fi;
+		local data_len=$(echo -ne "${data_bytes}" | base64 -d | wc -c);
+		debug exec data_len=$data_len
 		local env=""; # memory address to the env
 		# debug "SNIPPETS=[${SNIPPETS}]"
-		exec_result="$(system_call_exec "${target_offset}" "${instr_offset}" "$args" "$env" )";
+		args_addr="${data_offset}"
+		exec_result="$(system_call_exec "${cmd_offset}" "$args_addr" "$env")";
 		instr_bytes="$(echo "${exec_result}" | cut -d, -f1)";
 		instr_len="$(echo "${exec_result}" | cut -d, -f2)";
 		struct_parsed_snippet \
@@ -984,7 +1004,7 @@ parse_snippet()
 		return $?;
 	}
 	fi;
-	error "invalid code line instruction: [$CODE_LINE_B64][${code_line_elements[0]}]"
+	error "invalid code line instruction: [$CODE_LINE_B64][${code_line_elements[0]}]";
 	struct_parsed_snippet \
 		"INVALID" \
 		"" \
