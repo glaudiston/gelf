@@ -747,7 +747,8 @@ parse_snippet()
 		if [ "${symbol_type}" != "${SYMBOL_TYPE_STATIC}" ]; then
 			data_bytes="";
 			data_bytes_len=0; # no data to append. just registers used.
-			data_addr_v="${symbol_value}";
+			sym_dyn_data_size=$(get_sym_dyn_data_size "${input_symbol_name}" "${SNIPPETS}")
+			data_addr_v="$((symbol_value + sym_dyn_data_size))";
 		fi;
 		# TODO use a better place this is an insecure way, because on this page
 		# we have all code, so we can rewrite it.
@@ -925,9 +926,11 @@ parse_snippet()
 		local input_symbol_return="$( echo "$SNIPPETS" | grep "SYMBOL_TABLE,${input_symbol_name}," | cut -d, -f${SNIPPET_COLUMN_RETURN} )";
 		if [ "$input_symbol_return" != "" ]; then
 			data_addr_v="${input_symbol_return}";
+		else
+			data_addr_v="$(( data_addr_v + sym_dyn_data_size ))";
 		fi;
-		debug "**write symbol_type=$symbol_type, [$data_addr_v]; data_bytes_len=[${data_bytes_len}]"
-		local instr_bytes="$(system_call_write "${symbol_type}" "${data_output}" "$(( data_addr_v + sym_dyn_data_size ))" "$data_bytes_len" "${instr_offset}")";
+		debug "**write symbol_type=$symbol_type, [$data_addr_v]; data_bytes_len=[${data_bytes_len}] data_addr_v[${data_addr_v}]"
+		local instr_bytes="$(system_call_write "${symbol_type}" "${data_output}" "$data_addr_v" "$data_bytes_len" "${instr_offset}")";
 		local instr_size="$(echo -e "$instr_bytes" | base64 -d | wc -c)"
 		struct_parsed_snippet \
 			"INSTRUCTION" \

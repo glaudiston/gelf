@@ -42,7 +42,9 @@ expect(){
 run_all(){
 	cat $0 | grep -E "^test_[^(]*\(\)\{" | cut -d "(" -f1 | 
 		while read f; 
-			do echo -ne "Test case: $f\t..."; $f; 
+		do echo -e " - $f\t...$($f)" & 
 		done
+		wait
+		echo
 }
 run_all

@@ -89,7 +89,7 @@ succeed:	0
 exit	succeed
 EOF
 	cmd="/usr/bin/ls";
-	arg_a="-l";
+	arg_a="-1";
         arg_b="/";
 	chk=$(LANG=C "$cmd" "$arg_a" "$arg_b"|md5sum | cut -d " " -f1);
 	expect_exit=$?
