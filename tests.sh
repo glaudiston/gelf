@@ -91,7 +91,7 @@ EOF
 	cmd="/usr/bin/ls";
 	arg_a="-l";
         arg_b="/";
-	chk=$("$cmd" "$arg_a" "$arg_b"|md5sum | cut -d " " -f1);
+	chk=$(LANG=C "$cmd" "$arg_a" "$arg_b"|md5sum | cut -d " " -f1);
 	expect_exit=$?
 	out_test=$(run_test "$cmd" "$arg_a" "$arg_b" | md5sum | cut -d " " -f1);
 	expect $? "$expect_exit" "$chk" "$out_test";

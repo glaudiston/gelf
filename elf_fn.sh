@@ -256,14 +256,15 @@ print_elf_body()
 	local DATA_ALL="$( echo "${SNIPPETS}" | 
 		while read d;
 		do
-			ds=$(echo -en "$d" | cut -d, -f$SNIPPET_COLUMN_DATA_LEN;);
-			if [ "$ds" -gt 0 ]; then # avoid hard coded values
+			ds=$(echo -en "$d" | cut -d, -f$SNIPPET_COLUMN_DATA_LEN);
+			dbl=$(echo -en "$d" | cut -d, -f$SNIPPET_COLUMN_DATA_BYTES | base64 -d | wc -c);
+			if [ "$ds" -gt 0 -a "$dbl" -gt 0 ]; then # avoid hard coded values
 				if [ "${static_data_count}" -gt 0 ]; then
 					echo -en "\x00" | base64 -w0; # ensure a null byte to split data
 				fi;
 				echo -en "$d" | cut -d, -f$SNIPPET_COLUMN_DATA_BYTES;
 				let static_data_count++;
-				debug static_data_count=${static_data_count};
+				debug "static_data_count=${static_data_count}, dbl=$dbl";
 			fi;
 		done; 
 	)"
@@ -475,6 +476,44 @@ is_hard_coded_value()
 	return $ERR;
 }
 
+get_symbol_type()
+{
+	local symbol_name="$1";
+	local SNIPPETS="$2";
+	local symbol_data=$(get_b64_symbol_value "${symbol_name}" "${SNIPPETS}" )
+	echo "${symbol_data}" | cut -d, -f${B64_SYMBOL_VALUE_RETURN_TYPE};
+}
+
+is_dynamic_snippet()
+{
+	local l="$1";
+	local snip_data_wc=$(echo "${l}" | cut -d, -f$SNIPPET_COLUMN_DATA_BYTES | base64 -d | wc -c);
+	debug [$l]
+	local snip_data_len=$(echo "${l}" | cut -d, -f$SNIPPET_COLUMN_DATA_LEN );
+	debug "[ snip_data=$snip_data_wc; snip_len = $snip_data_len ]"
+	if [ "$snip_data_wc" -lt "$snip_data_len" ]; then
+		return 0;
+	fi
+	return 1;
+}
+
+get_dynamic_data_size()
+{
+	local SNIPPETS="$1";
+	local dyn_data_size=0;
+	echo "$SNIPPETS" | while read l;
+	do
+		if [ "${l}" == "" ]; then
+			continue;
+		fi;
+		if is_dynamic_snippet "${l}"; then
+			local snip_data_len=$(echo "${l}" | cut -d, -f$SNIPPET_COLUMN_DATA_LEN);
+			echo $snip_data_len;
+			debug "found dyn $snip_data_len ****"
+		fi;
+	done | awk '{s+=$1}END{print s}';
+}
+
 # parse_snippet given a source code snippet echoes snippet struct to stdout
 # allowing a pipeline to read a full instruction or bloc at time;
 # it should return a code snippet
@@ -499,7 +538,10 @@ parse_snippet()
 	local previous_data_offset=$(echo "${previous_snippet}" | cut -d, -f$SNIPPET_COLUMN_DATA_OFFSET);
 	local previous_data_len=$(echo "${previous_snippet}" | cut -d, -f$SNIPPET_COLUMN_DATA_LEN);
 	local previous_snip_type=$(echo "${previous_snippet}" | cut -d, -f${SNIPPET_COLUMN_TYPE});
-	if [ "$previous_snip_type" == "INSTRUCTION" ]; then
+	local previous_data_wc=$(echo "${previous_snippet}" | cut -d, -f$SNIPPET_COLUMN_DATA_BYTES | base64 -d | wc -c)
+	local dyn_data_size=$(get_dynamic_data_size "$SNIPPETS");
+	debug dyn_data_size=$dyn_data_size;
+	if [ "$previous_data_wc" == 0 ]; then # dynamic data
 		previous_data_len=0;
 	fi;
 	local zero_data_offset=$(( PH_VADDR_V + EH_SIZE + PH_SIZE + INSTR_TOTAL_SIZE ));
@@ -614,7 +656,8 @@ parse_snippet()
 				local arg_number=${code_line_elements[1]};
 				# This is ok for the first round.
 				debug "arg here...."
-				local instr_bytes="$(get_arg $data_offset $arg_number)";
+				dyn_data_offset="$((data_offset + dyn_data_size))";
+				local instr_bytes="$(get_arg $dyn_data_offset $arg_number)";
 				instr_len=$(echo -n "${instr_bytes}" | base64 -d | wc -c )
 				# this address will receive the point to the arg variable set in rsp currently;
 				# a better solution would be not have this space in binary but in memory.
@@ -971,23 +1014,35 @@ parse_snippet()
 	{
 		local target="${code_line_elements[1]}";
 		debug "EXEC [$target]"
-		local cmd_offset="$(echo "$SNIPPETS" | grep "SYMBOL_TABLE,${target}," | cut -d, -f${SNIPPET_COLUMN_DATA_OFFSET} )";
+		local cmd_addr="$(echo "$SNIPPETS" | grep "SYMBOL_TABLE,${target}," | cut -d, -f${SNIPPET_COLUMN_DATA_OFFSET} )";
 		# TODO for now positional args are good enough, but the correct is to have args and env as an array each;
 		local args="${code_line_elements[2]}";
 		local args_addr="$(echo "$SNIPPETS" | grep "SYMBOL_TABLE,${args}," | cut -d, -f${SNIPPET_COLUMN_DATA_OFFSET} )";
 		local data_bytes="";
+		data_bytes=$(echo -en "$(printEndianValue "${cmd_addr}" "${SIZE_64BITS_8BYTES}")" | base64 -w0);
+		local cmd_address_type=$(get_symbol_type $target "${SNIPPETS}");
+		local args_address_type=$(get_symbol_type $args "${SNIPPETS}");
 		if [ "${args_addr}" != "" ]; then
 			# The first argument is the script name
 			debug arg_addr=[${args_addr}]
-			data_bytes=$(echo -en "$(printEndianValue "${cmd_offset}" "${SIZE_64BITS_8BYTES}")$(printEndianValue "${args_addr}" ${SIZE_64BITS_8BYTES})" | base64 -w0); # it should set an array of pointers to the addr and an array of pointers to the envs
-			data_bytes="${data_bytes}$(echo -en "$(printEndianValue 0 ${SIZE_64BITS_8BYTES})" | base64 -w0)"
+			data_bytes="${data_bytes}$(echo -en "$(printEndianValue "${args_addr}" ${SIZE_64BITS_8BYTES})" | base64 -w0)"; # it should set an array of pointers to the addr and an array of pointers to the envs
 		fi;
+		data_bytes="${data_bytes}$(echo -en "$(printEndianValue 0 ${SIZE_64BITS_8BYTES})" | base64 -w0)"
+		# TODO: for each address, we need to figure out if it is static (hardcoded at binary, known at build time) or dynamic (like input argument only known at runtime);
+		# For dynamic, we need to resolve the address;
+		#
 		local data_len=$(echo -ne "${data_bytes}" | base64 -d | wc -c);
-		debug exec data_len=$data_len
+		debug exec data_len=$data_len, data_offset=$data_offset
 		local env=""; # memory address to the env
 		# debug "SNIPPETS=[${SNIPPETS}]"
-		args_addr="${data_offset}"
-		exec_result="$(system_call_exec "${cmd_offset}" "$args_addr" "$env")";
+		args_addr="$((data_offset + dyn_data_size))";
+		if [ "${cmd_address_type}" == "$SYMBOL_TYPE_DYNAMIC" ]; then
+			args_addr=$((args_addr - 8));
+		fi;
+		if [ "${args_address_type}" == "$SYMBOL_TYPE_DYNAMIC" ]; then
+			args_addr=$((args_addr - 16));
+		fi;
+		exec_result="$(system_call_exec "${cmd_addr}" "${cmd_address_type}" "$args_addr" "$env")";
 		instr_bytes="$(echo "${exec_result}" | cut -d, -f1)";
 		instr_len="$(echo "${exec_result}" | cut -d, -f2)";
 		struct_parsed_snippet \
@@ -1025,8 +1080,8 @@ parse_snippets()
 	local ROUND="$1";
 	local PH_VADDR_V="$2";
 	local INSTR_TOTAL_SIZE="$3";
-	local SNIPPETS="$4"; # cummulative to allow cross reference between snippets
-	local deep="${5-0}";
+	local SNIPPETS="$5"; # cummulative to allow cross reference between snippets
+	local deep="${6-0}";
 	local CODE_INPUT=$(cat);
 	let deep++;
 	echo "${CODE_INPUT}" | while read CODE_LINE;
@@ -1107,14 +1162,15 @@ write_elf()
 		 (gdb) print *((char**)($rsp + 8))
 	";
 	debug first parse round
-	local parsed_snippets="$(echo "${INPUT_SOURCE_CODE}" | parse_snippets "${ROUND_FIRST}" "${PH_VADDR_V}" "${INSTR_TOTAL_SIZE-0}")";
+	local parsed_snippets="$(echo "${INPUT_SOURCE_CODE}" | parse_snippets "${ROUND_FIRST}" "${PH_VADDR_V}" "${INSTR_TOTAL_SIZE-0}" )";
 	# now we have the all information parsed
 	# but the addresses are just offsets
 	# we need to redo to replace the addresses references
 	debug second parse round
 	local INSTR_TOTAL_SIZE=$(echo -en "${parsed_snippets}" | detect_instruction_size_from_code);
+	debug INSTR_TOTAL_SIZE=${INSTR_TOTAL_SIZE}
 	# update snippets with new addr
-	parsed_snippets=$(echo "${INPUT_SOURCE_CODE}" | parse_snippets "${ROUND_FINAL}" "${PH_VADDR_V}" "${INSTR_TOTAL_SIZE}");
+	parsed_snippets=$(echo "${INPUT_SOURCE_CODE}" | parse_snippets "${ROUND_FINAL}" "${PH_VADDR_V}" "${INSTR_TOTAL_SIZE}" );
 	local ELF_BODY="$(echo "$parsed_snippets" |
 		print_elf_body \
 			"${PH_VADDR_V}" \

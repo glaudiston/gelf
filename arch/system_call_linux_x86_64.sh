@@ -323,6 +323,8 @@ MODRM="$(printEndianValue "$(( MODRM_MOD_DISPLACEMENT_REG_POINTER + MODRM_REG_RS
 MOV_RSI_RSI="${M64}${MOV_RESOLVE_ADDRESS}${MODRM}"; # mov (%rsi), %rsi
 MODRM="$(printEndianValue "$(( MODRM_MOD_DISPLACEMENT_REG_POINTER + MODRM_REG_RDX + RDX))" $SIZE_8BITS_1BYTE)";
 MOV_RDX_RDX="${M64}${MOV_RESOLVE_ADDRESS}${MODRM}";
+MODRM="$(printEndianValue "$(( MODRM_MOD_DISPLACEMENT_REG_POINTER + MODRM_REG_RDI + RDI))" $SIZE_8BITS_1BYTE)";
+MOV_RDI_RDI="${M64}${MOV_RESOLVE_ADDRESS}${MODRM}";
 
 # show_bytecode "movq (%rsp), %rsi"
 # 488b3424
@@ -1090,8 +1092,9 @@ function system_call_sys_execve()
 function system_call_exec()
 {
 	local PTR_FILE="$1"
-	local PTR_ARGS="$2"
-	local PTR_ENV="$3"
+	local PTR_FILE_ADDR_TYPE="$2";
+	local PTR_ARGS="$3"
+	local PTR_ENV="$4"
 	local CODE="";
 	CODE="${CODE}$(system_call_fork | cut -d, -f1 | base64 -d | toHexDump)";
 	# TODO: CMP ? then (0x3d) rAx, lz
@@ -1101,7 +1104,11 @@ function system_call_exec()
 	# rax will be zero on child, on parent will be the pid of the forked child
 	# so if non zero (on parent) we will jump over the sys_execve code to not run it twice,
 	# and because it will exit after run
-	CODE_TO_JUMP="$(printEndianValue 42 ${SIZE_32BITS_4BYTES})" # 42 is the number of byte instructions of the syscall sys_execve.
+	if [ "$PTR_FILE_ADDR_TYPE" == 1 ]; then
+		CODE_TO_JUMP="$(printEndianValue 45 ${SIZE_32BITS_4BYTES})" # 45 is the number of byte instructions of the syscall sys_execve (including the MOV (%rdi), %rdi.
+	else
+		CODE_TO_JUMP="$(printEndianValue 42 ${SIZE_32BITS_4BYTES})" # 42 is the number of byte instructions of the syscall sys_execve.
+	fi;
 	CODE="${CODE}${JNE}${CODE_TO_JUMP}"; # The second byte "85" is the opcode for the JNE instruction. The following four bytes "06 00 00 00" represent the signed 32-bit offset from the current instruction to the target label.
 	# TODO: JNE ?
 	#CODE=${CODE}${cmp}$(printEndianValue 0 ${SIZE_32BITS_4BYTES})$(printEndianValue $rax ${})) ; rax receives 0 for the child and the child pid on the parent
@@ -1113,7 +1120,10 @@ function system_call_exec()
 	# 401007:       00 00 00
 	#CODE="${CODE}${MOV_RDI}$(printEndianValue ${PTR_FILE:=0} ${SIZE_64BITS_8BYTES})"
 	#       :       48 bf c0 00 01 00 00 00 00 00"
-	CODE="${CODE}${MOV_RDI}$(printEndianValue ${PTR_FILE:=0} ${SIZE_64BITS_8BYTES})"
+	CODE="${CODE}${MOV_RDI}$(printEndianValue ${PTR_FILE:=0} ${SIZE_64BITS_8BYTES})";
+	if [ "$PTR_FILE_ADDR_TYPE" == $SYMBOL_TYPE_DYNAMIC ]; then
+		CODE="${CODE}${MOV_RDI_RDI}";
+	fi;
 
 	# LEA_RSP_RSI="\x48\x8d\x74\x24\x08";
 	# 40100a:       48 8d 74 24 08          lea    0x8(%rsp),%rsi
