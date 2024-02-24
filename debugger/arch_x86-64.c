@@ -82,8 +82,14 @@ int mov_rsi_rsi(pid_t child, unsigned long addr)
 
 int mov_rdx_rdx(pid_t child, unsigned long addr)
 {
-	printf("%016lx: mov %%rdx %%rdx;\t# (resolve address)\n", addr);fflush(stdout);
+	printf("%016lx: mov (%%rdx), %%rdx;\t# (resolve address)", addr);fflush(stdout);
 	return TRUE + RDX;
+}
+
+int mov_rdi_rdi(pid_t child, unsigned long addr)
+{
+	printf("%016lx: mov (%%rdi), %%rdi;\t# (resolve address)", addr);fflush(stdout);
+	return TRUE + RDI;
 }
 
 int mov_v_rax(pid_t child, unsigned long addr)
@@ -153,7 +159,7 @@ int mov_rax_rdi(pid_t child, unsigned long addr)
 }
 int mov_rsp_rsi(pid_t child, unsigned long addr)
 {
-	printf("%016lx: mov %%rsp, %%rsi;\t# ", addr); fflush(stdout);
+	printf(ANSI_COLOR_GRAY "%016lx: " ANSI_COLOR_RESET "mov %%rsp, %%rsi;" ANSI_COLOR_GRAY "\t#", addr); fflush(stdout);
 	return TRUE + RSP;
 }
 int mov_rsi_rdx(pid_t child, unsigned long addr)
@@ -370,9 +376,9 @@ void detect_friendly_instruction(pid_t child, unsigned long addr, char * friendl
 			char args[4096];
 			char env[4096];
 			peek_string(child, (void*)regs.rdi, filename);
-			peek_string(child, (void*)regs.rsi, args);
-			peek_string(child, (void*)regs.rdx, env);
-			sprintf(friendly_instr, "execve(file: \"%s\", args: [%s], env: [%s])", filename, args, env);
+			peek_array(child, (void*)regs.rsi, args);
+			peek_array(child, (void*)regs.rdx, env);
+			sprintf(friendly_instr, "execve(file: \"%s\", args: %s, env: %s)", filename, args, env);
 			break;
 		case SYS_EXIT:
 			sprintf(friendly_instr, "exit(%lli)",regs.rdi);
@@ -639,6 +645,11 @@ struct bytecode_entry
 		.k = {0x48,0x89},
 		.kl = 2,
 		.fn = mov_v_rsi
+	},
+	{
+		.k = {0x48,0x8b,0x3f},
+		.kl = 3,
+		.fn = mov_rdi_rdi
 	},
 	{
 		.k = {0x48,0x8b,0x12},

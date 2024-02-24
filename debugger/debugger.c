@@ -31,6 +31,28 @@ void peek_string(pid_t child, void *addr, char* out){
 	}
 }
 
+void peek_array(pid_t child, void *addr, char* out){
+	if ( addr == 0L ){
+		sprintf(out, "NULL");
+		return;
+	}
+	int pos = 0;
+	unsigned long int item;
+	sprintf(out, "[");
+	void* item_addr;
+        while (1) {
+		item_addr = addr+(pos * 8);
+		item = ptrace(PTRACE_PEEKTEXT, child, item_addr, 0);
+		if ( item == 0L )
+			break;
+		char item_text[BUFF_SIZE];
+		peek_string(child, (void*)item, item_text);
+		sprintf(out, "%s%s\"%s\"", out, pos == 0 ? "" : "," , item_text);
+		pos++;
+	}
+	sprintf(out, "%s]", out);
+}
+
 void printRegValue(pid_t child, unsigned long r, int deep)
 {
 	char lastbyte[10];
@@ -42,13 +64,13 @@ void printRegValue(pid_t child, unsigned long r, int deep)
 	unsigned long v = ptrace(PTRACE_PEEKTEXT, child, r, 0);
 	if ( v == 0xffffffffffffffff ) { // not a valid memory location
 		// numeric
-		printf(" <%i| 0x%lx == %i == \"%s...\" %s", deep+1, r, r, &r, lastbyte);
+		printf(" <%i| H(0x%lx) == I(%i) == S(\"%s...\") %s", deep+1, r, r, &r, lastbyte);
 		return;
 	}
 	printRegValue(child, v, deep+1);
 	char * buff = malloc(BUFF_SIZE);
 	peek_string(child, (void*)r, buff); // str?
-	printf(" 0x%lx == \"%s\" %s", r, buff, lastbyte);
+	printf(" H(0x%lx) == S(\"%s\") %s", r, buff, lastbyte);
 	free(buff);
 }
 
