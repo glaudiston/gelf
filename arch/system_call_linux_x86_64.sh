@@ -254,8 +254,16 @@ TEST="\x85"; # 10000101
 # 111	Register (Direct)
 IMM="$(( 2#00111000 ))";
 MOV_RAX="${M64}$( printEndianValue $(( MOV + IMM + RAX )) ${SIZE_8BITS_1BYTE} )"; # 48 b8
+MOV_V_RCX="\x48\x8b\x0c\x25";
 MOV_RDX="${M64}$( printEndianValue $(( MOV + IMM + RDX )) ${SIZE_8BITS_1BYTE} )"; # 48 ba
-#MOV_ADDR_RDX="\x48\x8b\x14\x25";
+MOV_ADDR_RDX="\x48\x8b\x14\x25"; # followed by 4 bytes le;
+MOV_ADDR_RSI="\x48\x8b\x34\x25";
+MOV_ADDR_RDI="\x48\x8b\x3c\x25";
+MOV_RAX_ADDR="\x48\x01\x04\x25";
+MOV_RDX_ADDR="\x48\x89\x14\x25"; # followed by 4 bytes le;
+REP="\xf3"; # repeat until rcx
+MOVSB="\xa4"; # move 64bits(8 bytes) from %rsi addr to %rdi addr
+MOVSQ="\x48\xa5"; # move 64bits(8 bytes) from %rsi addr to %rdi addr
 MOV_RSI="${M64}$( printEndianValue $(( MOV + IMM + RSI )) ${SIZE_8BITS_1BYTE} )"; # 48 be
 #debug MOV_RSI=$MOV_RSI
 MOV_RDI="${M64}$( printEndianValue $(( MOV + IMM + RDI )) ${SIZE_8BITS_1BYTE} )"; # 48 bf; #if not prepended with M64(x48) expect 32 bit register (edi: 4 bytes)
@@ -265,6 +273,7 @@ MOV_R="\x89";
 # 4889e6
 MOV_RAX_RSI="${M64}${MOV_R}$( printEndianValue $(( MOVR + MODRM_REG_RAX + RSI )) ${SIZE_8BITS_1BYTE})"; # xC6 move the rax to rsi #11000110
 MOV_RAX_RDI="${M64}${MOV_R}$(printEndianValue $(( MOVR + MOVRM_REG_RAX + RDI )) ${SIZE_8BITS_1BYTE} )";
+MOV_RDX_RCX="\x48\x89\xd1";
 #MOV_RSP_RSI="${M64}${MOV_R}\xe6"; # Copy the RSP(pointer address) to the RSP(as a pointer address).
 MOV_RSP_RSI="${M64}${MOV_R}$( printEndianValue $(( MOVR + MODRM_REG_RSP + RSI )) ${SIZE_8BITS_1BYTE} )"; # move the RSP to RSI #11000110
 MOV_RSP_RDX="${M64}${MOV_R}$( printEndianValue $(( MOVR + MODRM_REG_RSP + RDX )) ${SIZE_8BITS_1BYTE} )"; # move the RSP to RDX #11000010
@@ -314,6 +323,8 @@ MODRM="$(printEndianValue "$(( MODRM_MOD_DISPLACEMENT_REG_POINTER + MODRM_REG_RS
 MOV_RSI_RSI="${M64}${MOV_RESOLVE_ADDRESS}${MODRM}"; # mov (%rsi), %rsi
 MODRM="$(printEndianValue "$(( MODRM_MOD_DISPLACEMENT_REG_POINTER + MODRM_REG_RDX + RDX))" $SIZE_8BITS_1BYTE)";
 MOV_RDX_RDX="${M64}${MOV_RESOLVE_ADDRESS}${MODRM}";
+MODRM="$(printEndianValue "$(( MODRM_MOD_DISPLACEMENT_REG_POINTER + MODRM_REG_RDI + RDI))" $SIZE_8BITS_1BYTE)";
+MOV_RDI_RDI="${M64}${MOV_RESOLVE_ADDRESS}${MODRM}";
 
 # show_bytecode "movq (%rsp), %rsi"
 # 488b3424
@@ -350,6 +361,7 @@ MOV_R10="\x49\xBA";
 # R14	xor r14, r14	4D 31 F6
 # R15	xor r15, r15	4D 31 FF
 XOR_RDX_RDX="\x48\x31\xD2";
+XOR_R8_R8="\x4d\x31\xc0";
 
 # JMP
 # We have some types of jump
@@ -379,7 +391,8 @@ SYS_CLOSE=3;
 SYS_STAT=4;
 SYS_FSTAT=5;
 SYS_MMAP=9;
-SYS_EXIT=60; #3c
+SYS_EXECVE=59;	# 0x3b
+SYS_EXIT=60;	# 0x3c
 
 sys_close()
 {
@@ -584,7 +597,6 @@ function sys_mmap()
 	elif [ "$fd" != "" ]; then
 		CODE="${CODE}${MOV_R8}$(printEndianValue $fd ${SIZE_64BITS_8BYTES})";
 	fi;
-	#XOR_R8_R8="\x4d\x31\xc0";
 	#CODE="${CODE}${XOR_R8_R8}";
 	#    mov r9, 0     ; offset
 	CODE="${CODE}${MOV_R9}$(printEndianValue 0 ${SIZE_64BITS_8BYTES})"
@@ -925,8 +937,8 @@ function detect_string_length()
 	code="${code}${MOV_RSI_RDX}"; # let's use rdx as rsi incrementing it each loop interaction
 	# save rip
 	# leaq (%rip), %rbx # 
-	LEAQ_RIP_RBX="\x48\x8d\x1d\x00\x00\x00\x00";
-	code=${code}${LEAQ_RIP_RBX};
+	#LEAQ_RIP_RBX="\x48\x8d\x1d\x00\x00\x00\x00";
+	#code=${code}${LEAQ_RIP_RBX};
 	# get the data byte at addr+rdx into rax
 	MOV__RDX__RAX="\x48\x0f\xb6\x02"; # movzbq (%rdx), %rax
 	code="${code}${MOV__RDX__RAX}"; # resolve current rdx pointer to rax
@@ -949,7 +961,7 @@ function detect_string_length()
 	# sub %rsi, %rdx
 	SUB_RSI_RDX="\x48\x29\xf2";
 	code="${code}${SUB_RSI_RDX}";
-	JMP_RBX="\xff\x23";
+	#JMP_RBX="\xff\x23";
 	echo -n "$code";
 }
 
@@ -961,7 +973,7 @@ function system_call_write_dyn_addr()
 	local DATA_ADDR_V="$2";
 	local DATA_LEN="$3";
 	local CODE="";
-	debug "write a dynamic address[$(printf 0x%x $DATA_ADDR_V)] to $OUT";
+	debug "write a dynamic address[$(printf 0x%x $DATA_ADDR_V )] to $OUT";
 	if [ "$(echo -n "${DATA_ADDR_V}" | cut -d, -f1 | base64 -w0)" == "$( echo -n ${ARCH_CONST_ARGUMENT_ADDRESS} | base64 -w0)" ]; then
 	{
 		local CODE="";
@@ -991,11 +1003,15 @@ function system_call_write_dyn_addr()
 		echo -en "${CODE}" | base64 -w0;
 	}
 	else
+	{
 		# otherwise we expect all instruction already be in the data_addr_v as base64
 		debug "**** b **** [$DATA_ADDR_V]"
 		local code="";
-		local MOV_ADDR_RSI="\x48\x8b\x34\x25";
-		code="${code}${MOV_ADDR_RSI}$(printEndianValue ${DATA_ADDR_V} ${SIZE_32BITS_4BYTES})";
+		if [ "$DATA_ADDR_V" == "RAX" ]; then
+			code="${code}${MOV_RAX_RSI}";
+		else
+			code="${code}${MOV_ADDR_RSI}$(printEndianValue ${DATA_ADDR_V} ${SIZE_32BITS_4BYTES})";
+		fi
 		if [ "${DATA_LEN}" == "0" ]; then
 			code="${code}$(detect_string_length)";
 		else
@@ -1007,6 +1023,7 @@ function system_call_write_dyn_addr()
 		code="${code}${SYSCALL}";
 		echo -ne "${code}" | base64 -w0;
 		return;
+	}
 	fi;
 }
 
@@ -1075,6 +1092,7 @@ function system_call_sys_execve()
 function system_call_exec()
 {
 	local PTR_FILE="$1"
+	local PTR_FILE_ADDR_TYPE="$2";
 	local PTR_ARGS="$3"
 	local PTR_ENV="$4"
 	local CODE="";
@@ -1086,20 +1104,26 @@ function system_call_exec()
 	# rax will be zero on child, on parent will be the pid of the forked child
 	# so if non zero (on parent) we will jump over the sys_execve code to not run it twice,
 	# and because it will exit after run
-	CODE_TO_JUMP="$(printEndianValue 42 ${SIZE_32BITS_4BYTES})" # 42 is the number of byte instructions of the syscall sys_execve.
+	if [ "$PTR_FILE_ADDR_TYPE" == 1 ]; then
+		CODE_TO_JUMP="$(printEndianValue 45 ${SIZE_32BITS_4BYTES})" # 45 is the number of byte instructions of the syscall sys_execve (including the MOV (%rdi), %rdi.
+	else
+		CODE_TO_JUMP="$(printEndianValue 42 ${SIZE_32BITS_4BYTES})" # 42 is the number of byte instructions of the syscall sys_execve.
+	fi;
 	CODE="${CODE}${JNE}${CODE_TO_JUMP}"; # The second byte "85" is the opcode for the JNE instruction. The following four bytes "06 00 00 00" represent the signed 32-bit offset from the current instruction to the target label.
 	# TODO: JNE ?
 	#CODE=${CODE}${cmp}$(printEndianValue 0 ${SIZE_32BITS_4BYTES})$(printEndianValue $rax ${})) ; rax receives 0 for the child and the child pid on the parent
 	# je child_process_only # only on the child, jump over next line to execute the execve code
 	# jmp end # if reach this (is parent) then jump over all sys_execve instructions to the end and do nothing
 	# child_process_only:
-	local SYS_EXECVE=$(( 16#3b ));
 	#								mem       elf     str
 	# 401000:       48 bf 00 20 40 00 00    movabs $0x402000,%rdi #        == 2000 == /bin/sh
 	# 401007:       00 00 00
 	#CODE="${CODE}${MOV_RDI}$(printEndianValue ${PTR_FILE:=0} ${SIZE_64BITS_8BYTES})"
 	#       :       48 bf c0 00 01 00 00 00 00 00"
-	CODE="${CODE}${MOV_RDI}$(printEndianValue ${PTR_FILE:=0} ${SIZE_64BITS_8BYTES})"
+	CODE="${CODE}${MOV_RDI}$(printEndianValue ${PTR_FILE:=0} ${SIZE_64BITS_8BYTES})";
+	if [ "$PTR_FILE_ADDR_TYPE" == $SYMBOL_TYPE_DYNAMIC ]; then
+		CODE="${CODE}${MOV_RDI_RDI}";
+	fi;
 
 	# LEA_RSP_RSI="\x48\x8d\x74\x24\x08";
 	# 40100a:       48 8d 74 24 08          lea    0x8(%rsp),%rsi
@@ -1164,16 +1188,46 @@ function get_arg()
 }
 
 ARCH_CONST_ARGUMENT_ADDRESS="_ARG_ADDR_ARG_ADDR_";
-# address where we have the pointer to the address where is the get addr function
-GET_ARGS_ADDR=""
-get_args_bytecode(){
-	local CODE="";
-	if [ "${GET_ARGS_ADDR}" == "" ]; then
-		GET_ARGS_ADDR="$2";
-		local ADDR=$(printEndianValue ${GET_ARGS_ADDR} ${SIZE_32BITS_4BYTES})
-		CODE="${CODE}${M64}${MOV_R}\x24\x25${ADDR}";
+
+# concat_symbol_instr set addr to dyn_addr or static
+# in the first item(idx=1) r8 will be cleared and the appended size will be add in r8 for each call
+concat_symbol_instr(){
+	#TODO can be improved to use MOVSQ
+	local addr="$1";
+	local dyn_addr="$2";
+	local size="$3";
+	local idx="$4";
+	local code="";
+	# unable to move addr to addr;
+	# so let's mov addr to a reg,
+	# then reg to addr;
+	if [ "$idx" == 1 ]; then # on first item zero r8 to accum the size
+		code="${code}${XOR_R8_R8}";
+		# We need a memory position to store the concatenated value;
+		#TODO I will do something ugly and wrong here. fix it later
+		# I will get the next address(+8 bytes) as target address,
+		# so I don't have to manage the memory now.
+		code="${code}${MOV_RAX}$(printEndianValue "$(( addr + 8 ))" ${SIZE_64BITS_8BYTES})";
+		code="${code}${MOV_RAX_ADDR}$(printEndianValue "$addr" ${SIZE_32BITS_4BYTES})";
 	fi;
-	echo -en "${CODE}" | base64 -w0;
-	echo -en ,
-	echo -en $GET_ARGS_ADDR;
+	code="${code}${MOV_ADDR_RSI}$(printEndianValue "$dyn_addr" "${SIZE_32BITS_4BYTES}")"; # source addr
+	if [ "$size" -eq 0 ]; then
+		code="${code}$(detect_string_length)"; # the return is set at rdx
+		code="${code}${MOV_RDX_RCX}"; # but we need it on rcx because REP decrements it
+	else
+		code="${code}${MOV_V_RCX}$(printEndianValue "$size" ${SIZE_32BITS_4BYTES})"
+	fi;
+	#ADD_RDX_R8="\x49\x01\xd0";
+	ADD_RCX_R8="\x49\x01\xc8";
+	code="${code}${MOV_RDI}$(printEndianValue "$(( addr + 8 ))" "${SIZE_64BITS_8BYTES}")"; # target addr
+	ADD_R8_RDI="\x4c\x01\xc7";
+	code="${code}${ADD_R8_RDI}";
+	code="${code}${ADD_RCX_R8}";
+
+	# if addr is 0 allocate some address to it.
+	# cmp rdi
+	# jg .(alloc mem instr len)
+	# alloc mem
+	code="${code}${REP}${MOVSB}";
+	echo -en "${code}" | base64 -w0;
 }
