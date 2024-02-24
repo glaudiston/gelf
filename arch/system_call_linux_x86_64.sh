@@ -1203,13 +1203,12 @@ concat_symbol_instr(){
 	# then reg to addr;
 	if [ "$idx" == 1 ]; then # on first item zero r8 to accum the size
 		code="${code}${XOR_R8_R8}";
+		# We need a memory position to store the concatenated value;
 		#TODO I will do something ugly and wrong here. fix it later
-		#I will add 8 bytes, so I don't have to manage the memory now.
-		#then i will set the next 8 byte addr on the provided addr var position
-		#so it will not break at write call because it expect a pointer to the data
+		# I will get the next address(+8 bytes) as target address,
+		# so I don't have to manage the memory now.
 		code="${code}${MOV_RAX}$(printEndianValue "$(( addr + 8 ))" ${SIZE_64BITS_8BYTES})";
 		code="${code}${MOV_RAX_ADDR}$(printEndianValue "$addr" ${SIZE_32BITS_4BYTES})";
-
 	fi;
 	code="${code}${MOV_ADDR_RSI}$(printEndianValue "$dyn_addr" "${SIZE_32BITS_4BYTES}")"; # source addr
 	if [ "$size" -eq 0 ]; then

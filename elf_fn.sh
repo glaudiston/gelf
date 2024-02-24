@@ -367,8 +367,6 @@ get_b64_symbol_value()
 	fi;
 	local symbol_value="$( echo "$symbol_data" | cut -d, -f${SNIPPET_COLUMN_DATA_BYTES})";
 	local symbol_addr="$( echo "$symbol_data" | cut -d, -f${SNIPPET_COLUMN_DATA_OFFSET})";
-	debug "got symbol_value=[$symbol_value]"
-	debug "got symbol_addr=[$( printf 0x%x $symbol_addr )]"
 	if [ "${symbol_value}" == "" ];then { # Empty values will be only accessible at runtime, eg: args, arg count...
 		out=$(echo -n "${symbol_addr}" | base64 -w0)
 		outsize=8; # memory_addr_size; TODO: this is platform specific, in x64 is 8 bytes
@@ -488,9 +486,7 @@ is_dynamic_snippet()
 {
 	local l="$1";
 	local snip_data_wc=$(echo "${l}" | cut -d, -f$SNIPPET_COLUMN_DATA_BYTES | base64 -d | wc -c);
-	debug [$l]
 	local snip_data_len=$(echo "${l}" | cut -d, -f$SNIPPET_COLUMN_DATA_LEN );
-	debug "[ snip_data=$snip_data_wc; snip_len = $snip_data_len ]"
 	if [ "$snip_data_wc" -lt "$snip_data_len" ]; then
 		return 0;
 	fi
@@ -500,18 +496,39 @@ is_dynamic_snippet()
 get_dynamic_data_size()
 {
 	local SNIPPETS="$1";
-	local dyn_data_size=0;
+	local dyn_data_size=$(
+		echo "$SNIPPETS" | while read l;
+		do
+			if [ "${l}" == "" ]; then
+				continue;
+			fi;
+			if is_dynamic_snippet "${l}"; then
+				local snip_data_len=$(echo "${l}" | cut -d, -f$SNIPPET_COLUMN_DATA_LEN);
+				echo $snip_data_len;
+			fi;
+		done | awk '{s+=$1}END{print s}';
+	)
+	echo ${dyn_data_size:=0}
+}
+
+get_snippets_until_symbol()
+{
+	local symbol_name="$1";
+	local SNIPPETS="$2";
 	echo "$SNIPPETS" | while read l;
-	do
-		if [ "${l}" == "" ]; then
-			continue;
+	do 
+		item=$(echo "$l" | cut -d, -f$SNIPPET_COLUMN_SUBNAME);
+		if [ "$item" == "$symbol_name" ]; then
+			break;
 		fi;
-		if is_dynamic_snippet "${l}"; then
-			local snip_data_len=$(echo "${l}" | cut -d, -f$SNIPPET_COLUMN_DATA_LEN);
-			echo $snip_data_len;
-			debug "found dyn $snip_data_len ****"
-		fi;
-	done | awk '{s+=$1}END{print s}';
+		echo "$l";
+	done;
+}
+get_sym_dyn_data_size()
+{
+	local symbol_name="$1";
+	local SNIPPETS="$(get_snippets_until_symbol "$symbol_name" "$2")";
+	get_dynamic_data_size "$SNIPPETS"
 }
 
 # parse_snippet given a source code snippet echoes snippet struct to stdout
@@ -550,7 +567,7 @@ parse_snippet()
 	if [ "${data_offset}" -gt "${zero_data_offset}" ]; then
 		data_offset=$((data_offset + 1));
 	fi
-	debug "elem:[${code_line_elements[0]}], data_offset=[0x$( printf %x "${data_offset}")]"
+	debug "elem:[${code_line_elements[0]}], data_offset=[0x$( printf %x "${data_offset}")], dyn_data_offset=[0x$( printf %x $(( data_offset + dyn_data_size)) )]"
 	if [ "$CODE_LINE" == "" ]; then
 	{
 		struct_parsed_snippet \
@@ -655,7 +672,6 @@ parse_snippet()
 				# That should point to the rbp register first 8 bytes (int)
 				local arg_number=${code_line_elements[1]};
 				# This is ok for the first round.
-				debug "arg here...."
 				dyn_data_offset="$((data_offset + dyn_data_size))";
 				local instr_bytes="$(get_arg $dyn_data_offset $arg_number)";
 				instr_len=$(echo -n "${instr_bytes}" | base64 -d | wc -c )
@@ -664,7 +680,6 @@ parse_snippet()
 				# but it is good enough for now. because we don't really have a dynamic memory now
 				local data_bytes="";
 				data_len="8"; # pointer size
-				debug "adding symbol_name=[$symbol_name], data_len=$data_len"
 				struct_parsed_snippet \
 					"SYMBOL_TABLE" \
 					"${symbol_name}" \
@@ -819,13 +834,15 @@ parse_snippet()
 			local symbol_value=$(echo "$symbol_data" | cut -d, -f${B64_SYMBOL_VALUE_RETURN_OUT});
 			local symbol_addr="$(echo "${symbol_data}" | cut -d, -f${B64_SYMBOL_VALUE_RETURN_ADDR})";
 			local symbol_len="$(echo "${symbol_data}" | cut -d, -f${B64_SYMBOL_VALUE_RETURN_SIZE})";
-			debug "symbol_value[$i]=[$symbol_value] at [$(printf 0x%x $symbol_addr)]";
-			if [ "${symbol_type}" != "${SYMBOL_TYPE_STATIC}" ]; then
-				dyn_args="$(( dyn_args + 1 ))";
-				instr_bytes="${instr_bytes}$(concat_symbol_instr "${data_offset}" "${symbol_addr}" "0" "$i")";
-			else
+			if [ "${symbol_type}" == "${SYMBOL_TYPE_STATIC}" ]; then
+				debug "stat symbol_value[$i]=[$symbol_value] at [$(printf 0x%x $((symbol_addr + dyn_data_size)) )]";
 				static_value="$( echo "${static_value}${symbol_value}" | base64 -d | base64 -w0 )";
-				instr_bytes="${instr_bytes}$(concat_symbol_instr "${data_offset}" "${symbol_addr}" "${symbol_len}" "$i")";
+				instr_bytes="${instr_bytes}$(concat_symbol_instr "${data_offset}" "$(( symbol_addr ))" "${symbol_len}" "$i")";
+			else
+				debug "dyn symbol_value[$i]=[$symbol_value] at [$(printf 0x%x $symbol_addr)]";
+				dyn_args="$(( dyn_args + 1 ))";
+				sym_dyn_data_size=$(get_sym_dyn_data_size "${symbol_name}" "${SNIPPETS}")
+				instr_bytes="${instr_bytes}$(concat_symbol_instr "$(( data_offset + dyn_data_size ))" "$(( symbol_addr + sym_dyn_data_size ))" "0" "$i")";
 			fi;
 			debug "concat symbol_name[$i]=[$symbol_name][$symbol_value]=[$static_value]";
 		done;
@@ -838,7 +855,7 @@ parse_snippet()
 			local instr_len=0;
 			local data_bytes="${static_value}";
 			local data_len=$(echo -n "$data_bytes" | base64 -d | wc -c);
-			debug "Concatenating static elements into symbol [$symbol_name] with value [$static_value]"
+			debug "Concatenating static elements into symbol [$symbol_name] with value [$static_value]";
 			struct_parsed_snippet \
 				"SYMBOL_TABLE" \
 				"${symbol_name}" \
@@ -891,6 +908,7 @@ parse_snippet()
 		local data_addr_v=$(echo "${symbol_data}" | cut -d, -f${B64_SYMBOL_VALUE_RETURN_ADDR});
 		debug data address [$(printf 0x%x $data_addr_v)]
 		debug "*write symbol_type=$symbol_type, [$(printf 0x%x $data_addr_v)]"
+		local sym_dyn_data_size=$(get_sym_dyn_data_size "${input_symbol_name}" "${SNIPPETS}")
 		if [ "${symbol_type}" != "${SYMBOL_TYPE_STATIC}" ]; then
 			data_bytes_len=0; # no data to append. just registers used.
 			if [ "${symbol_type}" == "${SYMBOL_TYPE_PROCEDURE}" ]; then
@@ -909,7 +927,7 @@ parse_snippet()
 			data_addr_v="${input_symbol_return}";
 		fi;
 		debug "**write symbol_type=$symbol_type, [$data_addr_v]; data_bytes_len=[${data_bytes_len}]"
-		local instr_bytes="$(system_call_write "${symbol_type}" "${data_output}" "$data_addr_v" "$data_bytes_len" "${instr_offset}")";
+		local instr_bytes="$(system_call_write "${symbol_type}" "${data_output}" "$(( data_addr_v + sym_dyn_data_size ))" "$data_bytes_len" "${instr_offset}")";
 		local instr_size="$(echo -e "$instr_bytes" | base64 -d | wc -c)"
 		struct_parsed_snippet \
 			"INSTRUCTION" \
