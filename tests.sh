@@ -139,4 +139,19 @@ EOF
 	expect $? 0 "abcdef" "$o"
 }
 
+test_concat_stat_dyn_symbols(){
+	compile_test <<EOF
+s:	xpto
+a::	1
+b::	2
+c:|	s	a	b
+out:	1
+write	out	c
+d:	0
+exit	d
+EOF
+	o=$(run_test "abc" "def")
+	expect $? 0 "xptoabcdef" "$o"
+}
+
 . ./test_suite.sh

@@ -348,15 +348,18 @@ get_b64_symbol_value()
 		return 1;
 	fi
 	local symbol_data="$(echo "$SNIPPETS" | grep "SYMBOL_TABLE,${symbol_name}," | tail -1)";
-	if [ "${symbol_data}" == "" ]; then {
+	if [ "${symbol_data}" == "" ]; then
+	{
 		# return default values for known internal words
 		if [ "${symbol_name}" == "input" ]; then
+		{
 			local symbol_instr="$( echo "$symbol_data" | cut -d, -f${SNIPPET_COLUMN_INSTR_BYTES})";
 			out=$(echo -n "${symbol_instr}")
 			outsize=$(echo -n "${out}" | base64 -d | wc -c)
 			outsize=$(echo -n "${out}" | base64 -d | wc -c)
 			echo -n ${out},${outsize},${SYMBOL_TYPE_STATIC}
 			return;
+		}
 		fi;
 		error "Expected a integer or a valid variable/constant. But got [$symbol_name]"
 		backtrace
@@ -367,7 +370,9 @@ get_b64_symbol_value()
 	fi;
 	local symbol_value="$( echo "$symbol_data" | cut -d, -f${SNIPPET_COLUMN_DATA_BYTES})";
 	local symbol_addr="$( echo "$symbol_data" | cut -d, -f${SNIPPET_COLUMN_DATA_OFFSET})";
-	if [ "${symbol_value}" == "" ];then { # Empty values will be only accessible at runtime, eg: args, arg count...
+	debug "symbol_value=[$symbol_value]";
+	if [ "${symbol_value}" == "" ];then
+	{ # Empty values will be only accessible at runtime, eg: args, arg count...
 		out=$(echo -n "${symbol_addr}" | base64 -w0)
 		outsize=8; # memory_addr_size; TODO: this is platform specific, in x64 is 8 bytes
 		echo -n ${out},${outsize},${SYMBOL_TYPE_DYNAMIC},${symbol_addr}
@@ -568,6 +573,7 @@ parse_snippet()
 		data_offset=$((data_offset + 1));
 	fi
 	debug "elem:[${code_line_elements[0]}], data_offset=[0x$( printf %x "${data_offset}")], dyn_data_offset=[0x$( printf %x $(( data_offset + dyn_data_size)) )]"
+	local dyn_data_offset="$((data_offset + dyn_data_size))";
 	if [ "$CODE_LINE" == "" ]; then
 	{
 		struct_parsed_snippet \
@@ -672,7 +678,6 @@ parse_snippet()
 				# That should point to the rbp register first 8 bytes (int)
 				local arg_number=${code_line_elements[1]};
 				# This is ok for the first round.
-				dyn_data_offset="$((data_offset + dyn_data_size))";
 				local instr_bytes="$(get_arg $dyn_data_offset $arg_number)";
 				instr_len=$(echo -n "${instr_bytes}" | base64 -d | wc -c )
 				# this address will receive the point to the arg variable set in rsp currently;
@@ -835,15 +840,16 @@ parse_snippet()
 			local symbol_value=$(echo "$symbol_data" | cut -d, -f${B64_SYMBOL_VALUE_RETURN_OUT});
 			local symbol_addr="$(echo "${symbol_data}" | cut -d, -f${B64_SYMBOL_VALUE_RETURN_ADDR})";
 			local symbol_len="$(echo "${symbol_data}" | cut -d, -f${B64_SYMBOL_VALUE_RETURN_SIZE})";
+			debug symbol_type=${symbol_type}
 			if [ "${symbol_type}" == "${SYMBOL_TYPE_STATIC}" ]; then
-				debug "stat symbol_value[$i]=[$symbol_value] at [$(printf 0x%x $((symbol_addr + dyn_data_size)) )]";
+				debug "static symbol_value[$i]=[$symbol_value] at [$(printf 0x%x $symbol_addr)]";
 				static_value="$( echo "${static_value}${symbol_value}" | base64 -d | base64 -w0 )";
-				instr_bytes="${instr_bytes}$(concat_symbol_instr "${data_offset}" "$(( symbol_addr ))" "${symbol_len}" "$i")";
+				instr_bytes="${instr_bytes}$(concat_symbol_instr "${symbol_addr}" "${dyn_data_offset}" "${symbol_len}" "$i")";
 			else
-				debug "dyn symbol_value[$i]=[$symbol_value] at [$(printf 0x%x $symbol_addr)]";
+				debug "dynamic symbol_value[$i]=[$symbol_value] at [$(printf 0x%x $((symbol_addr + dyn_data_size)) )]";
 				dyn_args="$(( dyn_args + 1 ))";
 				sym_dyn_data_size=$(get_sym_dyn_data_size "${symbol_name}" "${SNIPPETS}")
-				instr_bytes="${instr_bytes}$(concat_symbol_instr "$(( data_offset + dyn_data_size ))" "$(( symbol_addr + sym_dyn_data_size ))" "0" "$i")";
+				instr_bytes="${instr_bytes}$(concat_symbol_instr "$(( symbol_addr + sym_dyn_data_size ))" "${dyn_data_offset}" "-1" "$i")";
 			fi;
 			debug "concat symbol_name[$i]=[$symbol_name][$symbol_value]=[$static_value]";
 		done;
@@ -1187,7 +1193,7 @@ write_elf()
 	# now we have the all information parsed
 	# but the addresses are just offsets
 	# we need to redo to replace the addresses references
-	debug second parse round
+	debug ==== second parse round ====
 	local INSTR_TOTAL_SIZE=$(echo -en "${parsed_snippets}" | detect_instruction_size_from_code);
 	debug INSTR_TOTAL_SIZE=${INSTR_TOTAL_SIZE}
 	# update snippets with new addr
