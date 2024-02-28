@@ -608,6 +608,11 @@ struct bytecode_entry
 		.fn = mov_rsp_addr
 	},
 	{
+		.k = {0x48,0x89,0x34, 0x25},
+		.kl = 3,
+		.fn = mov_rsi_addr
+	},
+	{
 		.k = {0x48,0x89,0xc6},
 		.kl = 3,
 		.fn = mov_rax_rsi
@@ -618,19 +623,14 @@ struct bytecode_entry
 		.fn = mov_rax_rdi
 	},
 	{
-		.k = {0x48,0x89,0xe2},
-		.kl = 3,
-		.fn = mov_rsp_rdx
-	},
-	{
-		.k = {0x48,0x89,0x34, 0x25},
-		.kl = 3,
-		.fn = mov_rsi_addr
-	},
-	{
 		.k = {0x48,0x89,0xd1},
 		.kl = 3,
 		.fn = mov_rdx_rcx
+	},
+	{
+		.k = {0x48,0x89,0xe2},
+		.kl = 3,
+		.fn = mov_rsp_rdx
 	},
 	{
 		.k = {0x48,0x89,0xe6},
@@ -878,8 +878,8 @@ struct bytecode_entry
 		.fn = call,
 	},
 	{
-		.k = {0xf3, 0xa4, 0x48},
-		.kl = 3,
+		.k = {0xf3, 0xa4},
+		.kl = 2,
 		.fn = rep_movsb,
 	},
 	{

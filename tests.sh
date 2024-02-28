@@ -97,7 +97,7 @@ EOF
 	expect $? "$expect_exit" "$chk" "$out_test";
 }
 
-test_exec_with_args(){
+test_exec_with_static_args(){
 # this should be the last line on file:
 	compile_test <<EOF
 cmd:	/usr/bin/id

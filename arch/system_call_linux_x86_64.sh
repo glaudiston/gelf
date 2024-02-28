@@ -259,7 +259,7 @@ MOV_RDX="${M64}$( printEndianValue $(( MOV + IMM + RDX )) ${SIZE_8BITS_1BYTE} )"
 MOV_ADDR_RDX="\x48\x8b\x14\x25"; # followed by 4 bytes le;
 MOV_ADDR_RSI="\x48\x8b\x34\x25";
 MOV_ADDR_RDI="\x48\x8b\x3c\x25";
-MOV_RAX_ADDR="\x48\x01\x04\x25";
+MOV_RAX_ADDR4="\x48\x01\x04\x25";
 MOV_RDX_ADDR="\x48\x89\x14\x25"; # followed by 4 bytes le;
 REP="\xf3"; # repeat until rcx
 MOVSB="\xa4"; # move 64bits(8 bytes) from %rsi addr to %rdi addr
@@ -320,6 +320,9 @@ ADD_RDX_MODRM="$(printEndianValue $(( MODRM_MOD_DISPLACEMENT_REG + RDX )) $SIZE_
 ADD_RDX="${M64}${ADD_SHORT}${ADD_RDX_MODRM}";
 MOV_RESOLVE_ADDRESS="\x8b"; # Replace the address pointer with the value pointed from that address
 # MOV_RESOLVE_ADDRESS needs the ModR/M mod (first 2 bits) to be 00.
+MODRM="$(printEndianValue "$(( MODRM_MOD_DISPLACEMENT_REG_POINTER + MODRM_REG_RDI + RAX))" $SIZE_8BITS_1BYTE)";
+#MOV_RAX_RAX="${M64}${MOV_RESOLVE_ADDRESS}${MODRM}";
+MOV_RAX_RAX="\x48\x8b\x00";
 MODRM="$(printEndianValue "$(( MODRM_MOD_DISPLACEMENT_REG_POINTER + MODRM_REG_RSI + RSI))" $SIZE_8BITS_1BYTE)";
 MOV_RSI_RSI="${M64}${MOV_RESOLVE_ADDRESS}${MODRM}"; # mov (%rsi), %rsi
 MODRM="$(printEndianValue "$(( MODRM_MOD_DISPLACEMENT_REG_POINTER + MODRM_REG_RDX + RDX))" $SIZE_8BITS_1BYTE)";
@@ -361,6 +364,7 @@ MOV_R10="\x49\xBA";
 # R13	xor r13, r13	4D 31 ED
 # R14	xor r14, r14	4D 31 F6
 # R15	xor r15, r15	4D 31 FF
+XOR_RAX_RAX="\x48\x31\xc0";
 XOR_RDX_RDX="\x48\x31\xD2";
 XOR_R8_R8="\x4d\x31\xc0";
 
@@ -1092,25 +1096,14 @@ function system_call_sys_execve()
 
 function system_call_exec()
 {
-	local PTR_FILE="$1"
-	local PTR_FILE_ADDR_TYPE="$2";
-	local PTR_ARGS="$3"
+	#TODO we need to map some memory, or use a mapped memory space to store the arrays bytes;
+	local PTR_ARGS="$1";
+	local args=()
+	eval "args=( $2 )"
+	local static_map=( );
+	eval "static_map=( $3 )";
 	local PTR_ENV="$4"
-	local CODE="";
-	CODE="${CODE}$(system_call_fork | cut -d, -f1 | base64 -d | toHexDump)";
-	# TODO: CMP ? then (0x3d) rAx, lz
-	local TWOBYTE_INSTRUCTION_PREFIX="\0f"; # The first byte "0F" is the opcode for the two-byte instruction prefix that indicates the following instruction is a conditional jump.
-	local ModRM="$( printEndianValue $(( MODRM_MOD_DISPLACEMENT_REG + MODRM_OPCODE_CMP + RAX )) $SIZE_8BITS_1BYTE)";
-	CODE="${CODE}${CMP}${ModRM}\x00"; # 64bit cmp rax, 00
-	# rax will be zero on child, on parent will be the pid of the forked child
-	# so if non zero (on parent) we will jump over the sys_execve code to not run it twice,
-	# and because it will exit after run
-	if [ "$PTR_FILE_ADDR_TYPE" == 1 ]; then
-		CODE_TO_JUMP="$(printEndianValue 45 ${SIZE_32BITS_4BYTES})" # 45 is the number of byte instructions of the syscall sys_execve (including the MOV (%rdi), %rdi.
-	else
-		CODE_TO_JUMP="$(printEndianValue 42 ${SIZE_32BITS_4BYTES})" # 42 is the number of byte instructions of the syscall sys_execve.
-	fi;
-	CODE="${CODE}${JNE}${CODE_TO_JUMP}"; # The second byte "85" is the opcode for the JNE instruction. The following four bytes "06 00 00 00" represent the signed 32-bit offset from the current instruction to the target label.
+	local code="";
 	# TODO: JNE ?
 	#CODE=${CODE}${cmp}$(printEndianValue 0 ${SIZE_32BITS_4BYTES})$(printEndianValue $rax ${})) ; rax receives 0 for the child and the child pid on the parent
 	# je child_process_only # only on the child, jump over next line to execute the execve code
@@ -1121,27 +1114,59 @@ function system_call_exec()
 	# 401007:       00 00 00
 	#CODE="${CODE}${MOV_V8_RDI}$(printEndianValue ${PTR_FILE:=0} ${SIZE_64BITS_8BYTES})"
 	#       :       48 bf c0 00 01 00 00 00 00 00"
-	CODE="${CODE}${MOV_V8_RDI}$(printEndianValue ${PTR_FILE:=0} ${SIZE_64BITS_8BYTES})";
-	if [ "$PTR_FILE_ADDR_TYPE" == $SYMBOL_TYPE_DYNAMIC ]; then
-		CODE="${CODE}${MOV_RDI_RDI}";
+
+	# start exec code
+	local exec_code="";
+	# set the args array in memory
+	local argc=${#args[@]}
+	debug "exec args=$argc = [${args[@]}] == [$2]"
+	for (( i=0; i<${argc}; i++ ));
+	do {
+		exec_code="${exec_code}${MOV_V8_RAX}$(printEndianValue "${args[$i]}" "${SIZE_64BITS_8BYTES}")";
+		if [ "${static_map[$i]}" == 0 ]; then # it's a dynamic command, resolve it
+			exec_code="${exec_code}${MOV_RAX_RAX}";
+		fi;
+		exec_code="${exec_code}${MOV_RAX_ADDR4}$(printEndianValue "$(( PTR_ARGS + i*8 ))" "${SIZE_32BITS_4BYTES}")";
+	}; done
+	exec_code="${exec_code}${XOR_RAX_RAX}";
+	exec_code="${exec_code}${MOV_RAX_ADDR4}$(printEndianValue $(( PTR_ARGS + ${#args[@]} * 8 )) ${SIZE_32BITS_4BYTES})";
+	exec_code="${exec_code}${MOV_V8_RDI}$(printEndianValue ${args[0]} ${SIZE_64BITS_8BYTES})";
+	if [ "${static_map[0]}" == 0 ]; then # it's a dynamic command, resolve it
+		exec_code="${exec_code}${MOV_RDI_RDI}";
 	fi;
 
 	# LEA_RSP_RSI="\x48\x8d\x74\x24\x08";
 	# 40100a:       48 8d 74 24 08          lea    0x8(%rsp),%rsi
 	# CODE="${CODE}${LEA_RSP_RSI}"
-	CODE="${CODE}${MOV_RSI}$(printEndianValue ${PTR_ARGS:=0} ${SIZE_64BITS_8BYTES})"
+	exec_code="${exec_code}${MOV_RSI}$(printEndianValue ${PTR_ARGS:=0} ${SIZE_64BITS_8BYTES})"
 
 	# 40100f:       ba 00 00 00 00          mov    $0x0,%edx
-	CODE="${CODE}${MOV_RDX}$(printEndianValue ${PTR_ENV:=0} ${SIZE_64BITS_8BYTES})" # const char *const envp[]
+	exec_code="${exec_code}${MOV_RDX}$(printEndianValue ${PTR_ENV:=0} ${SIZE_64BITS_8BYTES})" # const char *const envp[]
 
 	# 401014:       b8 3b 00 00 00          mov    $0x3b,%eax
-	CODE="${CODE}${MOV_V8_RAX}$(printEndianValue ${SYS_EXECVE} ${SIZE_64BITS_8BYTES})" # sys_execve (3b)
+	exec_code="${exec_code}${MOV_V8_RAX}$(printEndianValue ${SYS_EXECVE} ${SIZE_64BITS_8BYTES})" # sys_execve (3b)
 
 	# 401019:       0f 05                   syscall
-	CODE="${CODE}${SYSCALL}"
-	# end:
-	echo -en "${CODE}" | base64 -w0;
-	echo -en ",$(echo -en "${CODE}" | wc -c )";
+	exec_code="${exec_code}${SYSCALL}";
+	# end exec code:
+	
+	# start fork code
+	local fork_code="";
+	fork_code="${fork_code}$(system_call_fork | cut -d, -f1 | base64 -d | toHexDump)";
+	# TODO: CMP ? then (0x3d) rAx, lz
+	local TWOBYTE_INSTRUCTION_PREFIX="\0f"; # The first byte "0F" is the opcode for the two-byte instruction prefix that indicates the following instruction is a conditional jump.
+	local ModRM="$( printEndianValue $(( MODRM_MOD_DISPLACEMENT_REG + MODRM_OPCODE_CMP + RAX )) $SIZE_8BITS_1BYTE)";
+	fork_code="${fork_code}${CMP}${ModRM}\x00"; # 64bit cmp rax, 00
+	# rax will be zero on child, on parent will be the pid of the forked child
+	# so if non zero (on parent) we will jump over the sys_execve code to not run it twice,
+	# and because it will exit after run
+	CODE_TO_JUMP="$(printEndianValue "$(echo -en "${exec_code}" | wc -c)" ${SIZE_32BITS_4BYTES})" # 45 is the number of byte instructions of the syscall sys_execve (including the MOV (%rdi), %rdi.
+	fork_code="${fork_code}${JNE}${CODE_TO_JUMP}"; # The second byte "85" is the opcode for the JNE instruction. The following four bytes "06 00 00 00" represent the signed 32-bit offset from the current instruction to the target label.
+	# end fork code
+
+	code="${fork_code}${exec_code}";
+	echo -en "${code}" | base64 -w0;
+	echo -en ",$(echo -en "${code}" | wc -c )";
 }
 
 # The base pointer integer value is by convention the argc(argument count)
@@ -1209,7 +1234,7 @@ concat_symbol_instr(){
 		# I will get the next address(+8 bytes) as target address,
 		# so I don't have to manage the memory now.
 		code="${code}${MOV_V8_RAX}$(printEndianValue "$(( dyn_addr + 8 ))" ${SIZE_64BITS_8BYTES})";
-		code="${code}${MOV_RAX_ADDR}$(printEndianValue "$dyn_addr" ${SIZE_32BITS_4BYTES})";
+		code="${code}${MOV_RAX_ADDR4}$(printEndianValue "$dyn_addr" ${SIZE_32BITS_4BYTES})";
 	fi;
 	if [ "$size" -eq -1 ]; then
 		code="${code}${MOV_ADDR_RSI}$(printEndianValue "$addr" "${SIZE_32BITS_4BYTES}")"; # source addr
