@@ -366,6 +366,7 @@ MOV_R10="\x49\xBA";
 # R15	xor r15, r15	4D 31 FF
 XOR_RAX_RAX="\x48\x31\xc0";
 XOR_RDX_RDX="\x48\x31\xD2";
+XOR_RDI_RDI="\x48\x31\xff";
 XOR_R8_R8="\x4d\x31\xc0";
 
 # JMP
@@ -552,7 +553,7 @@ function sys_mmap()
 	local CODE="";
 	# ; Map the memory region
 	# mov rdi, 0     ; addr (let kernel choose)
-	CODE="${CODE}${MOV_V8_RDI}$(printEndianValue 0 ${SIZE_64BITS_8BYTES})";
+	CODE="${CODE}${XOR_RDI_RDI}";
 	# TODO use fstat to detect the size and implement a logic to align it to page memory
 	# When using mmap, the size parameter specified in rsi should be aligned to the page size. 
 	# This is because the kernel allocates memory in units of pages, 
@@ -837,7 +838,6 @@ function read_file()
 		echo -en "${CODE}" | base64 -w0;
 		return
 	elif [ "${TYPE}" == ${SYMBOL_TYPE_DYNAMIC} ]; then
-		#debug dynamic
 		if [ "$(echo -n "${DATA_ADDR_V}" | base64 -d | cut -d, -f1 | base64 -w0)" == "$( echo -n ${ARCH_CONST_ARGUMENT_ADDRESS} | base64 -w0)" ]; then
 			# now we create a buffer with mmap using this fd in RAX.
 			CODE="${CODE}$(sys_mmap | base64 -d | toHexDump)"
@@ -1228,13 +1228,16 @@ concat_symbol_instr(){
 	#TODO I will do something ugly and wrong here. fix it later
 	# I will get the next address(+8 bytes) as target address,
 	# so I don't have to manage the memory now.
-	local target_addr=$(( dyn_addr + 8 * 10 ))
+	local target_addr=$(( dyn_addr + 1024 )); # it seems to be required to be bellow the page size (4096)
+	local mmap_size_code="$( echo -en "${MOV_V4_RSI}$(printEndianValue $(( 4 * 1024 )) ${SIZE_32BITS_4BYTES})" | base64 -w0)";
+	local mmap_code="$(sys_mmap "${mmap_size_code}" | base64 -d | toHexDump)"
 	# unable to move addr to addr;
 	# so let's mov addr to a reg,
 	# then reg to addr;
 	if [ "$idx" == 1 ]; then # on first item zero r8 to accum the size
 		code="${code}${XOR_R8_R8}";
 		code="${code}${MOV_V8_RAX}$(printEndianValue "${target_addr}" ${SIZE_64BITS_8BYTES})";
+		#code="${code}${mmap_code}";
 		code="${code}${MOV_RAX_ADDR4}$(printEndianValue "$dyn_addr" ${SIZE_32BITS_4BYTES})";
 	fi;
 	if [ "$size" -eq -1 ]; then
@@ -1248,6 +1251,7 @@ concat_symbol_instr(){
 	#ADD_RDX_R8="\x49\x01\xd0";
 	ADD_RCX_R8="\x49\x01\xc8";
 	code="${code}${MOV_V8_RDI}$(printEndianValue "${target_addr}" "${SIZE_64BITS_8BYTES}")"; # target addr
+	#code="${code}${MOV_RAX_RDI}";
 	ADD_R8_RDI="\x4c\x01\xc7";
 	code="${code}${ADD_R8_RDI}";
 	code="${code}${ADD_RCX_R8}";
