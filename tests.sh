@@ -154,4 +154,34 @@ EOF
 	expect $? 0 "xptoabcdef" "$o"
 }
 
+test_concat_dyn_stat_symbols(){
+	compile_test <<EOF
+s:	xpto
+a::	1
+b::	2
+c:|	b	s	a
+out:	1
+write	out	c
+d:	0
+exit	d
+EOF
+	o=$(run_test "abc" "def")
+	expect $? 0 "defxptoabc" "$o"
+}
+
+test_exec_concat(){
+	compile_test <<EOF
+a:	/usr/bin/
+b::	1
+c:|	a	b
+!	c	c
+succeed:	0
+exit	succeed
+EOF
+	o=$(run_test ls)
+	# known bug space inside arguments are trimed
+	eo=$(/usr/bin/ls /usr/bin/ls)
+	expect $? 0 "$eo" "$o"
+}
+
 . ./test_suite.sh

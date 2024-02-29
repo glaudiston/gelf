@@ -86,6 +86,11 @@ int mov_rdx_rdx(pid_t child, unsigned long addr)
 	return TRUE + RDX;
 }
 
+int mov_rax_rax(pid_t child, unsigned long addr)
+{
+	printf("%016lx: mov (%%rax), %%rax;" ANSI_COLOR_GRAY "\t# (resolve address)", addr);fflush(stdout);
+	return TRUE + RAX;
+}
 int mov_rdi_rdi(pid_t child, unsigned long addr)
 {
 	printf("%016lx: mov (%%rdi), %%rdi;" ANSI_COLOR_GRAY "\t# (resolve address)", addr);fflush(stdout);
@@ -115,6 +120,12 @@ int mov_v_rdx(pid_t child, unsigned long addr)
 	long unsigned v = ptrace(PTRACE_PEEKTEXT, child, (void*)addr+3, 0);
 	printf("%016lx: mov 0x%lx, %%rdx\n", addr, v);fflush(stdout);
 	return 0;
+}
+int mov_v8_rdi(pid_t child, unsigned long addr)
+{
+	long unsigned v = ptrace(PTRACE_PEEKTEXT, child, (void*)addr+2,0);
+	printf("%016lx: mov 0x%08lx, %%rdi;" ANSI_COLOR_GRAY "\t#", addr, v);
+	return TRUE + RDI;
 }
 int mov_v_rdi_3(pid_t child, unsigned long addr)
 {
@@ -208,6 +219,11 @@ int xor_rsi_rsi(pid_t child, unsigned long addr)
 	printf("%016lx: xor %%rsi, %%rsi;" ANSI_COLOR_GRAY "\t# zero\n", addr); fflush(stdout);
 	return 0;
 }
+int xor_rdi_rdi(pid_t child, unsigned long addr)
+{
+	printf("%016lx: xor %%rdi, %%rdi;" ANSI_COLOR_GRAY "\t# zero\n", addr); fflush(stdout);
+	return 0;
+}
 int sub_rdx_rsi(pid_t child, unsigned long addr)
 {
 	printf("%016lx: sub %rsi, %rdx;" ANSI_COLOR_GRAY "\t# (result in RDX) # rdx: %llx, rsi: %llx", addr, regs.rdx, regs.rsi);fflush(stdout);
@@ -252,12 +268,6 @@ int mov_v_rsi_2(pid_t child, unsigned long addr)
 	long unsigned v = ptrace(PTRACE_PEEKTEXT, child, (void*)addr+2,0);
 	printf("%016lx: mov 0x%lx, %%rsi;" ANSI_COLOR_GRAY "\t#", addr, v);
 	return TRUE + RSI;
-}
-int mov_v_rdi(pid_t child, unsigned long addr)
-{
-	long unsigned v = ptrace(PTRACE_PEEKTEXT, child, (void*)addr+2,0);
-	printf("%016lx: mov 0x%lx, %%rdi;" ANSI_COLOR_GRAY "\t#", addr, v);
-	return TRUE + RDI;
 }
 
 int mov_v_rbx(pid_t child, unsigned long addr)
@@ -578,6 +588,11 @@ struct bytecode_entry
 		.fn = xor_rsi_rsi
 	},
 	{
+		.k = {0x48,0x31,0xff},
+		.kl = 3,
+		.fn = xor_rdi_rdi
+	},
+	{
 		.k = {0x48,0x83,0xc2},
 		.kl = 3,
 		.fn = add_v_rdx
@@ -648,6 +663,11 @@ struct bytecode_entry
 		.fn = mov_rsi_rdx
 	},
 	{
+		.k = {0x48,0x8b,0x00},
+		.kl = 3,
+		.fn = mov_rax_rax
+	},
+	{
 		.k = {0x48,0x8b,0x3f},
 		.kl = 3,
 		.fn = mov_rdi_rdi
@@ -678,11 +698,6 @@ struct bytecode_entry
 		.fn = mov_addr_rdi
 	},
 	{
-		.k = {0x48,0x97},
-		.kl = 2,
-		.fn = xchg_rax_rdi,
-  	},
-	{
 		.k = {0x48,0x8d,0x1d},
 		.kl = 3,
 		.fn = lea_rip_rbx,
@@ -692,6 +707,11 @@ struct bytecode_entry
 		.kl = 4,
 		.fn = lea_rsp_rdi,
 	},
+	{
+		.k = {0x48,0x97},
+		.kl = 2,
+		.fn = xchg_rax_rdi,
+  	},
 	{
 		.k = {0x48,0xb8},
 		.kl = 2,
@@ -717,7 +737,7 @@ struct bytecode_entry
 	{
 		.k = {0x48,0xbf},
 		.kl = 2,
-		.fn = mov_v_rdi
+		.fn = mov_v8_rdi
 	},
 	{
 		.k = {0x48,0xc7,0xc0},

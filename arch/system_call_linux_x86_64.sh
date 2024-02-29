@@ -1224,16 +1224,17 @@ concat_symbol_instr(){
 	local size="$3";
 	local idx="$4";
 	local code="";
+	# We need a memory position to store the concatenated value;
+	#TODO I will do something ugly and wrong here. fix it later
+	# I will get the next address(+8 bytes) as target address,
+	# so I don't have to manage the memory now.
+	local target_addr=$(( dyn_addr + 8 * 10 ))
 	# unable to move addr to addr;
 	# so let's mov addr to a reg,
 	# then reg to addr;
 	if [ "$idx" == 1 ]; then # on first item zero r8 to accum the size
 		code="${code}${XOR_R8_R8}";
-		# We need a memory position to store the concatenated value;
-		#TODO I will do something ugly and wrong here. fix it later
-		# I will get the next address(+8 bytes) as target address,
-		# so I don't have to manage the memory now.
-		code="${code}${MOV_V8_RAX}$(printEndianValue "$(( dyn_addr + 8 ))" ${SIZE_64BITS_8BYTES})";
+		code="${code}${MOV_V8_RAX}$(printEndianValue "${target_addr}" ${SIZE_64BITS_8BYTES})";
 		code="${code}${MOV_RAX_ADDR4}$(printEndianValue "$dyn_addr" ${SIZE_32BITS_4BYTES})";
 	fi;
 	if [ "$size" -eq -1 ]; then
@@ -1246,7 +1247,7 @@ concat_symbol_instr(){
 	fi;
 	#ADD_RDX_R8="\x49\x01\xd0";
 	ADD_RCX_R8="\x49\x01\xc8";
-	code="${code}${MOV_V8_RDI}$(printEndianValue "$(( dyn_addr + 8 ))" "${SIZE_64BITS_8BYTES}")"; # target addr
+	code="${code}${MOV_V8_RDI}$(printEndianValue "${target_addr}" "${SIZE_64BITS_8BYTES}")"; # target addr
 	ADD_R8_RDI="\x4c\x01\xc7";
 	code="${code}${ADD_R8_RDI}";
 	code="${code}${ADD_RCX_R8}";

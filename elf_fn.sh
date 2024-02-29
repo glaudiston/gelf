@@ -625,7 +625,6 @@ get_sym_dyn_data_size()
 # it should return a code snippet
 parse_snippet()
 {
-	local IFS=$'\t'
 	local ROUND="$1";
 	local PH_VADDR_V="$2"
 	local INSTR_TOTAL_SIZE="$3";
@@ -634,7 +633,8 @@ parse_snippet()
 	local SNIPPETS="$6";
 	local deep="$7";
 
-	local code_line_elements=( ${CODE_LINE} )
+	local IFS=$'\t'
+	local code_line_elements=( ${CODE_LINE} );
 	local CODE_LINE_XXD="$( echo -n "${CODE_LINE}" | xxd --ps)";
 	local CODE_LINE_B64=$( echo -n "${CODE_LINE}" | base64 -w0);
 	local previous_snippet=$( echo "${SNIPPETS}" | tail -1 );
