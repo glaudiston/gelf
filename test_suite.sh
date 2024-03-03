@@ -9,7 +9,7 @@ pass(){ msg $GREEN; }
 
 compile_test(){
 	mkdir -p tests
-	./make-elf.sh <(cat) tests/${FUNCNAME[1]}.elf 2>tests/${FUNCNAME[1]}.build-stderr;
+	./gelf <(cat) tests/${FUNCNAME[1]}.elf 2>tests/${FUNCNAME[1]}.build-stderr;
 	r=$?;
 	if [ $r -ne 0 ]; then
 		error	compilation failed. See tests/${FUNCNAME[1]}.build-stderr;

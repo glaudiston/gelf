@@ -11,14 +11,15 @@
 
 # init bloc
 ARCH=$(uname -m)
-
+# I have no idea why, but when using execve without env, a bash call can not resolve the "uname -m" call above.
+ARCH=${ARCH:=x86_64}
 # include bloc
 . elf_constants.sh
 . types.sh
 . utils.sh
 . logger.sh
 . endianness.sh
-. ./arch/system_call_linux_$ARCH.sh
+. ./arch/system_call_linux_${ARCH}.sh
 . snippet_parser.sh
 
 get_program_headers_count()
@@ -123,7 +124,7 @@ get_program_segment_headers()
 	# offset, vaddr and p_align are stringly related.
 	PH_OFFSET="$(printEndianValue 0 $Elf64_Off)"		# Elf64_Off p_offset 8;
 	PH_VADDR="$(printEndianValue $PH_VADDR_V $Elf64_Addr)"	# VADDR where to load program
-       								# must be after the current program size. Elf64_Addr p_vaddr 8;
+								# must be after the current program size. Elf64_Addr p_vaddr 8;
 	PH_PADDR="$(printEndianValue 0 $Elf64_Addr)"		# Elf64_Addr p_paddr 8;
 								# Physical address is deprecated and ignored for executables, libs and shared obj files.
 	# PH_FILESZ and PH_MEMSZ should point to the first code position in elf
@@ -633,8 +634,14 @@ parse_snippet()
 	local SNIPPETS="$6";
 	local deep="$7";
 
-	local IFS=$'\t'
-	local code_line_elements=( ${CODE_LINE} );
+	# Bash imposes a threat here. The array parse syntax ( ${CODE_LINE} ) loses spaces.
+	# to overcome that I need to write a hack
+	local code_line_elements;# =( ${CODE_LINE} );
+	# array hack start
+	debug "CODE_LINE=[$CODE_LINE]"
+	eval "code_line_elements=( $(echo "${CODE_LINE}" | tr '\t' '\n' | sed 's/^\(.*\)$/"\1"/g') )";
+	# array hack end
+	debug "code_line_elements[${#code_line_elements[@]}]=( ${code_line_elements[@]} )"
 	local CODE_LINE_XXD="$( echo -n "${CODE_LINE}" | xxd --ps)";
 	local CODE_LINE_B64=$( echo -n "${CODE_LINE}" | base64 -w0);
 	local previous_snippet=$( echo "${SNIPPETS}" | tail -1 );
@@ -1179,8 +1186,10 @@ parse_snippets()
 	local deep="${6-0}";
 	local CODE_INPUT=$(cat);
 	let deep++;
+	IFS='';
 	echo "${CODE_INPUT}" | while read CODE_LINE;
 	do
+		debug "CODE_LINE=[$CODE_LINE]!"
 		RESULT=$(parse_snippet "${ROUND}" "${PH_VADDR_V}" "${INSTR_TOTAL_SIZE}" "${static_data_size}" "${CODE_LINE}" "${SNIPPETS}" "${deep}");
 		if [ ${#SNIPPETS} -gt 0 ]; then
 			SNIPPETS="$(echo -e "${SNIPPETS}\n$RESULT")"

@@ -3,9 +3,10 @@ help: ## This message listing all useful make targets
 prepare: *.sh
 	mkdir -pv build
 
-build/gelf: prepare ## Build the gelf compiler to the build folder
-	bash make-elf.sh gelf.gg build/gelf
+gelf: prepare ## Build the gelf compiler to the build folder
+	./gelf gelf.gg build/gelf
 	chmod +x build/gelf
+	cp build/gelf ./gelf
 
 samples: prepare build/sample-elf build/readfile ## Compile all samples in sample folder. Currently sample-elf and readfile
 
