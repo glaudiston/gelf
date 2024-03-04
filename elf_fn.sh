@@ -621,6 +621,15 @@ get_sym_dyn_data_size()
 	get_dynamic_data_size "$SNIPPETS"
 }
 
+is_valid_hex()
+{
+	local v="$1";
+	if [[ "$v" =~ ^[a-fA-F0-9]+$ ]]; then
+		return 0;
+	fi
+	return 1;
+}
+
 # parse_snippet given a source code snippet echoes snippet struct to stdout
 # allowing a pipeline to read a full instruction or bloc at time;
 # it should return a code snippet
@@ -827,7 +836,7 @@ parse_snippet()
 		fi;
 	}
 	fi;
-	if [[ "${code_line_elements[0]}" =~ :\<=$ ]]; then
+	if [[ "${code_line_elements[0]}" =~ :\<=$ ]]; then # read from file into var
 	{
 		local symbol_name="$(echo -n "${CODE_LINE/:*/}")"
 		local symbol_data=$(get_b64_symbol_value "${code_line_elements[1]}" "${SNIPPETS}")
@@ -1159,6 +1168,29 @@ parse_snippet()
 			"1";
 		return $?;
 	}
+	fi;
+	if [[ "${code_line_elements[0]}" =~ [\<][!]$ ]]; then # Execute command and receive output into variable
+	{
+		:
+	}
+	fi;
+	if is_valid_hex "${CODE_LINE}"; then
+		local instr_bytes="$(echo ${CODE_LINE} | xxd --ps -r | base64 -w0)";
+		instr_len="$(echo "${instr_bytes}" | base64 -d | wc -c)";
+		local data_bytes="";
+		local data_len="";
+		struct_parsed_snippet \
+			"INSTRUCTION" \
+			"bytecode" \
+			"${instr_offset}" \
+			"${instr_bytes}" \
+			"${instr_len}" \
+			"${static_data_offset}" \
+			"${data_bytes}" \
+			"${data_len}" \
+			"${CODE_LINE_B64}" \
+			"1";
+		return $?
 	fi;
 	error "invalid code line instruction: [$CODE_LINE_B64][${code_line_elements[0]}]";
 	struct_parsed_snippet \

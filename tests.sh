@@ -184,4 +184,19 @@ EOF
 	expect $? 0 "$eo" "$o"
 }
 
+test_custom_bytecode(){
+	compile_test <<EOF
+# mov 60, %rax
+# 48b83c00000000000000
+48c7c03c000000
+# mov 42, %rdi
+# 64bit: 48bf2a00000000000000
+48c7c72a000000
+# syscall
+0f05
+EOF
+	o=$(run_test)
+	expect $? 42 "" "$o"
+}
+
 . ./test_suite.sh
