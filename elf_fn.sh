@@ -602,7 +602,6 @@ get_current_static_data_displacement()
 	local current_line="$2";
 	local SNIPPETS="$(get_snippets_until_line "$current_line" "$snippets")";
 	local static_data_offset=$(get_static_data_size "$SNIPPETS");
-	debug static data displacement == $static_data_offset
 	echo -n "$static_data_offset";
 }
 
@@ -636,7 +635,7 @@ is_valid_hex()
 parse_snippet()
 {
 	local ROUND="$1";
-	local PH_VADDR_V="$2"
+	local PH_VADDR_V="$2";
 	local INSTR_TOTAL_SIZE="$3";
 	local static_data_size="$4"; # full static data length
 	local CODE_LINE="$5";
@@ -646,11 +645,10 @@ parse_snippet()
 	# Bash imposes a threat here. The array parse syntax ( ${CODE_LINE} ) loses spaces.
 	# to overcome that I need to write a hack
 	local code_line_elements;# =( ${CODE_LINE} );
-	# array hack start
-	debug "CODE_LINE=[$CODE_LINE]"
+	debug "CODE_LINE=[$CODE_LINE] deep=$deep"
+	# array hack: because ( ${CODE_LINE} ) will trim spaces.
 	eval "code_line_elements=( $(echo "${CODE_LINE}" | tr '\t' '\n' | sed 's/^\(.*\)$/"\1"/g') )";
-	# array hack end
-	debug "code_line_elements[${#code_line_elements[@]}]=( ${code_line_elements[@]} )"
+	debug code_line_elements[${#code_line_elements[@]}]=${code_line_elements[@]}
 	local CODE_LINE_XXD="$( echo -n "${CODE_LINE}" | xxd --ps)";
 	local CODE_LINE_B64=$( echo -n "${CODE_LINE}" | base64 -w0);
 	local previous_snippet=$( echo "${SNIPPETS}" | tail -1 );
@@ -665,10 +663,8 @@ parse_snippet()
 	local static_data_displacement=$(get_current_static_data_displacement "${SNIPPETS}" "${CODE_LINE_B64}")
 	local current_static_data_address=$((zero_data_offset + static_data_displacement))
 	local static_data_offset=$current_static_data_address
-	debug "elem:[${code_line_elements[0]}], static_data_offset=$(printf 0x%x "${static_data_offset}") dynamic_data_offset=[0x$( printf %x $(( dynamic_data_offset )) )]"
+	debug "elem:[${code_line_elements[$(( 0 + deep-1 ))]}], static_data_offset=$(printf 0x%x "${static_data_offset}") dynamic_data_offset=[0x$( printf %x $(( dynamic_data_offset )) )]"
 	local dyn_data_offset="$(( zero_data_offset + static_data_size + dynamic_data_offset))";
-	debug static_data_size=${static_data_size}
-	debug dyn_data_offset=0x$(printf %x $dyn_data_offset)
 	if [ "$CODE_LINE" == "" ]; then
 	{
 		struct_parsed_snippet \
@@ -685,7 +681,7 @@ parse_snippet()
 		return $?;
 	}
 	fi;
-	if [[ "${code_line_elements[0]}" =~ ^[#] ]]; then # ignoring tabs, starts with pound symbol(#)
+	if [[ "${code_line_elements[$(( 0 + deep-1 ))]}" =~ ^[#] ]]; then # ignoring tabs, starts with pound symbol(#)
 	{
 		struct_parsed_snippet \
 			"COMMENT" \
@@ -701,11 +697,12 @@ parse_snippet()
 		return $?;
 	}
 	fi;
-	if [[ "${code_line_elements[0]}" =~ :$ ]]; then
+	if [[ "${code_line_elements[$(( 0 + deep-1 ))]}" =~ :$ ]]; then
 	{
 		if [[ "${CODE_LINE_XXD}" =~ .*3a097b$ ]]; then # check if ends with ":\t{" ... so it's a code block function
 		{
 			# TODO add identation validation
+			debug parsing code block...
 			new_bloc="$(
 				SNIPPET_NAME="$(echo "$CODE_LINE" |cut -d: -f1 | tr -d '\t')";
 				code_bloc="$(echo "${CODE_LINE}"; read_code_bloc "${deep}")";
@@ -716,9 +713,14 @@ parse_snippet()
 					base64 -w0
 				)";
 				recursive_parse="$(
+					local insideSnips="";
 					echo "$bloc_inner_code" |
-					base64 -d |
-					parse_snippets "${ROUND}" "${PH_VADDR_V}" "${INSTR_TOTAL_SIZE}" "${static_data_size}" "$SNIPPETS" "$deep"
+					base64 -d | while read l; do
+						debug parsing inside fn line [$l]...
+						local parsedLine=$(echo -n "$l" | parse_snippets "${ROUND}" "${PH_VADDR_V}" "${INSTR_TOTAL_SIZE}" "${static_data_size}" "$(echo -e "$SNIPPETS\n${insideSnips}")" "$deep")
+						insideSnips=$(echo -en "${insideSnips}\n${parsedLine}")
+						echo "${parsedLine}"
+					done;
 				)";
 				innerlines="$(echo "$recursive_parse"  |
 					cut -d, -f$SNIPPET_COLUMN_SOURCE_LINES_COUNT |
@@ -754,23 +756,24 @@ parse_snippet()
 			)";
 			local bloc_name=$(echo "$new_bloc" | cut -d, -f${SNIPPET_COLUMN_SUBNAME})
 			if [ "$SNIPPETS" == "" ]; then
-				SNIPPETS="$( echo "$new_bloc" | base64 -w0)";
+				SNIPPETS="$( echo "$new_bloc")";
 			else
-				SNIPPETS="$( echo -e "$SNIPPETS\n$new_bloc"| base64 -w0)";
+				SNIPPETS="$( echo -e "$SNIPPETS\n$new_bloc")";
 			fi;
+			debug new_bloc=[$new_bloc]
 			echo "$new_bloc";
 			return $?;
 		};
 		else # maybe it is just a variable or constant
 		{
-			if [[ "${code_line_elements[0]}" =~ ::$ ]]; then
+			if [[ "${code_line_elements[$(( 0 + deep-1 ))]}" =~ ::$ ]]; then
 			{
 				# :: get from args.
 				# TODO this code is for RSP, we need add (n * 8) to it
-				local symbol_name="$( echo -n "${code_line_elements[0]/:*/}" )"
+				local symbol_name="$( echo -n "${code_line_elements[$(( 0 + deep-1 ))]/:*/}" )"
 				# create a new dynamic symbol called ${symbol_name}
 				# That should point to the rbp register first 8 bytes (int)
-				local arg_number=${code_line_elements[1]};
+				local arg_number=${code_line_elements[$(( 1 + deep-1 ))]};
 				# This is ok for the first round.
 				local instr_bytes="$(get_arg $dyn_data_offset $arg_number)";
 				instr_len=$(echo -n "${instr_bytes}" | base64 -d | wc -c )
@@ -807,7 +810,7 @@ parse_snippet()
 				# A variable and constant are defined at the same way. The compiler should consider everything as constant.
 				# Once the code changes the variable value, it will be converted to variable.
 				# So if a variable is never changed, it will be always a constant hardcoded at the bytecode;
-				symbol_name="$( echo -n "${CODE_LINE/:*/}" )"
+				local symbol_name="$( echo -n "${code_line_elements[$(( 0 + deep-1 ))]/:*/}" )"
 				symbol_value="$( echo -n "${CODE_LINE/*:	/}" )"
 				instr_bytes="";
 				instr_len=0;
@@ -836,11 +839,11 @@ parse_snippet()
 		fi;
 	}
 	fi;
-	if [[ "${code_line_elements[0]}" =~ :\<=$ ]]; then # read from file into var
+	if [[ "${code_line_elements[$(( 0 + deep-1 ))]}" =~ :\<=$ ]]; then # read from file into var
 	{
 		local symbol_name="$(echo -n "${CODE_LINE/:*/}")"
-		local symbol_data=$(get_b64_symbol_value "${code_line_elements[1]}" "${SNIPPETS}")
-		local filename_addr=$(get_symbol_addr "${code_line_elements[1]}" "$SNIPPETS")
+		local symbol_data=$(get_b64_symbol_value "${code_line_elements[$(( 1 + deep-1 ))]}" "${SNIPPETS}")
+		local filename_addr=$(get_symbol_addr "${code_line_elements[$(( 1 + deep-1 ))]}" "$SNIPPETS")
 		# sys_open will create a new file descriptor.
 		local symbol_type=$(echo "${symbol_data}" | cut -d, -f${B64_SYMBOL_VALUE_RETURN_TYPE});
 		if [ "${symbol_type}" != "${SYMBOL_TYPE_STATIC}" ]; then
@@ -890,7 +893,7 @@ parse_snippet()
 		return $?;
 	}
 	fi;
-	if [[ "${code_line_elements[0]}" =~ ::\$$ ]]; then
+	if [[ "${code_line_elements[$(( 0 + deep-1 ))]}" =~ ::\$$ ]]; then
 	{
 		symbol_name="$( echo -n "${code_line_elements[0]/:*/}" )"
 		# create a new dynamic symbol called ${symbol_name}
@@ -916,7 +919,7 @@ parse_snippet()
 		return $?;
 	}
 	fi;
-	if [[ "${code_line_elements[0]}" =~ [:][|]$ ]]; then # concat
+	if [[ "${code_line_elements[$(( 0 + deep-1 ))]}" =~ [:][|]$ ]]; then # concat
 	{
 		# concat all symbols in a new one
 		local dyn_args=0;
@@ -925,7 +928,7 @@ parse_snippet()
 		local data_addr=""; # target concatenated data_addr
 		for (( i=1; i<${#code_line_elements[@]}; i++ ));
 		do
-			local symbol_name=$(echo -n "${code_line_elements[i]}");
+			local symbol_name=$(echo -n "${code_line_elements[$(( i - deep+1 ))]}");
 			local symbol_data=$(get_b64_symbol_value "${symbol_name}" "${SNIPPETS}" )
 			local symbol_type=$(echo "${symbol_data}" | cut -d, -f${B64_SYMBOL_VALUE_RETURN_TYPE});
 			local symbol_value=$(echo "$symbol_data" | cut -d, -f${B64_SYMBOL_VALUE_RETURN_OUT});
@@ -933,19 +936,16 @@ parse_snippet()
 			local symbol_len="$(echo "${symbol_data}" | cut -d, -f${B64_SYMBOL_VALUE_RETURN_SIZE})";
 			local sym_dyn_data_size=$(get_sym_dyn_data_size "${symbol_name}" "${SNIPPETS}")
 			if [ "${symbol_type}" == "${SYMBOL_TYPE_STATIC}" ]; then
-				debug "static symbol_value[$i]=[$symbol_value] at [$(printf 0x%x $symbol_addr)]";
 				static_value="$( echo "${static_value}${symbol_value}" | base64 -d | base64 -w0 )";
 				instr_bytes="${instr_bytes}$(concat_symbol_instr "${symbol_addr}" "${dyn_data_offset}" "${symbol_len}" "$i")";
 			else
-				debug "dynamic symbol_value[$i]=[$symbol_value] at [$(printf 0x%x $((symbol_addr)) )] dyn_data_size=[${sym_dyn_data_size}]";
 				dyn_args="$(( dyn_args + 1 ))";
 				sym_dyn_data_size=$(get_sym_dyn_data_size "${symbol_name}" "${SNIPPETS}")
 				instr_bytes="${instr_bytes}$(concat_symbol_instr "$(( symbol_addr ))" "${dyn_data_offset}" "-1" "$i")";
 			fi;
-			debug "concat symbol_name[$i]=[$symbol_name][$symbol_value]=[$static_value]";
 		done;
 		# if all arguments are static, we can merge them at build time
-		local symbol_name=$(echo -n "${code_line_elements[0]}" | cut -d: -f1);
+		local symbol_name=$(echo -n "${code_line_elements[$(( 0 + deep-1 ))]}" | cut -d: -f1);
 		if [ "${dyn_args}" -eq 0 ]; then
 		{
 			local instr_bytes="";
@@ -986,7 +986,7 @@ parse_snippet()
 		return $?;
 	}
 	fi
-	if [[ "${code_line_elements[0]}" == write ]]; then
+	if [[ "${code_line_elements[$(( 0 + deep-1 ))]}" == write ]]; then
 	{
 		local WRITE_OUTPUT_ELEM=1;
 		local WRITE_DATA_ELEM=2;
@@ -1019,7 +1019,6 @@ parse_snippet()
 		else
 			data_addr_v="$(( data_addr_v ))";
 		fi;
-		debug data_addr_v=0x$( printf %x $data_addr_v)
 		local instr_bytes="$(system_call_write "${symbol_type}" "${data_output}" "$data_addr_v" "$data_bytes_len" "${instr_offset}")";
 		data_bytes="";
 		data_bytes_len=0;
@@ -1038,9 +1037,9 @@ parse_snippet()
 		return $?;
 	}
 	fi;
-	if [[ "${code_line_elements[0]}" == ret ]]; then
+	if [[ "${code_line_elements[$(( 0 + deep-1 ))]}" == ret ]]; then
 	{
-		ret_value="${code_line_elements[1]}"
+		ret_value="${code_line_elements[$(( 1 + deep-1 ))]}"
 		bytecode_return="$(bytecode_ret "${ret_value}")"
 		instr_bytes="$(echo $bytecode_return | cut -d, -f1)"
 		instr_size="$(echo $bytecode_return | cut -d, -f2)"
@@ -1058,9 +1057,9 @@ parse_snippet()
 		return $?;
 	}
 	fi;
-	if [[ "${code_line_elements[0]}" == exit ]]; then
+	if [[ "${code_line_elements[$(( 0 + deep-1 ))]}" == exit ]]; then
 	{
-		local exit_value=$(get_b64_symbol_value "${code_line_elements[1]}" "${SNIPPETS}" | cut -d, -f${B64_SYMBOL_VALUE_RETURN_OUT} | base64 -d | tr -d '\00' )
+		local exit_value=$(get_b64_symbol_value "${code_line_elements[$(( 1 + deep-1 ))]}" "${SNIPPETS}" | cut -d, -f${B64_SYMBOL_VALUE_RETURN_OUT} | base64 -d | tr -d '\00' )
 
 		instr_bytes="$(system_call_exit ${exit_value})"
 		struct_parsed_snippet \
@@ -1077,9 +1076,9 @@ parse_snippet()
 		return $?;
 	}
 	fi;
-	if [[ "${code_line_elements[0]}" == goto ]]; then
+	if [[ "${code_line_elements[$(( 0 + deep-1 ))]}" == goto ]]; then
 	{
-		target="${code_line_elements[1]}"
+		target="${code_line_elements[$(( 1 + deep-1 ))]}"
 		target_offset="$( echo "$SNIPPETS" | grep "SNIPPET,${target}," | cut -d, -f${SNIPPET_COLUMN_INSTR_OFFSET} )";
 		jmp_result="$(system_call_jump "${target_offset}" "${instr_offset}" )";
 		jmp_bytes="$(echo "${jmp_result}" | cut -d, -f1)";
@@ -1098,9 +1097,10 @@ parse_snippet()
 		return $?;
 	}
 	fi;
-	if echo "$SNIPPETS" | grep -q "${code_line_elements[0]}"; then
+	if echo "$SNIPPETS" | grep -q "${code_line_elements[$(( 0 + deep-1 ))]}"; then # function calling
 	{
-		target="${code_line_elements[0]}"
+		debug "function calling: [${code_line_elements[$(( 0 + deep-1 ))]}], deep=$deep"
+		target="${code_line_elements[$(( 0 + deep-1 ))]}"
 		target_offset="$( echo "$SNIPPETS" | grep "SNIPPET,${target}," | cut -d, -f${SNIPPET_COLUMN_INSTR_OFFSET} )";
 		local call_bytes="$(system_call_procedure "${target_offset}" "${instr_offset}" )";
 		local call_len="$(echo "${call_bytes}" | base64 -d | wc -c)";
@@ -1118,7 +1118,7 @@ parse_snippet()
 		return $?;
 	}
 	fi;
-	if [[ "${code_line_elements[0]}" == ! ]]; then
+	if [[ "${code_line_elements[$(( 0 + deep-1 ))]}" == ! ]]; then
 	{
 		# TODO for now positional args are good enough, but the correct is to have args and env as an array each;
 		local args=( );
@@ -1140,7 +1140,6 @@ parse_snippet()
 			static_map[$((i-1))]=$arg_is_static;
 		};
 		done;
-		debug "args[${#args[@]}]=[${args[@]}]; static_map=[${static_map[@]}]";
 		local data_bytes="";
 		local env=(); # memory address to the env
 		local args_addr="$(( dyn_data_offset ))"; # the array address
@@ -1169,7 +1168,7 @@ parse_snippet()
 		return $?;
 	}
 	fi;
-	if [[ "${code_line_elements[0]}" =~ [\<][!]$ ]]; then # Execute command and receive output into variable
+	if [[ "${code_line_elements[$(( 0 + deep-1 ))]}" =~ [\<][!]$ ]]; then # Execute command and receive output into variable
 	{
 		:
 	}
@@ -1192,7 +1191,7 @@ parse_snippet()
 			"1";
 		return $?
 	fi;
-	error "invalid code line instruction: [$CODE_LINE_B64][${code_line_elements[0]}]";
+	error "invalid code line instruction: [$CODE_LINE_B64][${code_line_elements[$(( 0 + deep-1 ))]}]";
 	struct_parsed_snippet \
 		"INVALID" \
 		"" \
@@ -1221,7 +1220,6 @@ parse_snippets()
 	IFS='';
 	echo "${CODE_INPUT}" | while read CODE_LINE;
 	do
-		debug "CODE_LINE=[$CODE_LINE]!"
 		RESULT=$(parse_snippet "${ROUND}" "${PH_VADDR_V}" "${INSTR_TOTAL_SIZE}" "${static_data_size}" "${CODE_LINE}" "${SNIPPETS}" "${deep}");
 		if [ ${#SNIPPETS} -gt 0 ]; then
 			SNIPPETS="$(echo -e "${SNIPPETS}\n$RESULT")"

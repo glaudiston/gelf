@@ -199,4 +199,34 @@ EOF
 	expect $? 42 "" "$o"
 }
 
+test_fn(){
+	compile_test <<EOF
+fn:	{
+	r1:	1
+	exit	r1
+}
+fn
+r2:	2
+exit	r2
+EOF
+	o=$(run_test)
+	expect $? 1
+}
+
+
+test_if(){
+	compile_test <<EOF
+r0:	0
+r1:	1
+fn:	{
+	exit	r1
+	ret
+}
+fn
+exit	r0;
+EOF
+	o=$(run_test)
+	expect $? 1
+}
+
 . ./test_suite.sh
