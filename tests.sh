@@ -216,17 +216,18 @@ EOF
 
 test_if(){
 	compile_test <<EOF
-r0:	0
-r1:	1
-fn:	{
-	exit	r1
-	ret
+success:	{
+	r0:	0
+	exit	r0
 }
-fn
-exit	r0;
+r1:	1
+r2:	1
+test:?	r1	r2
+#test	?=	success
+exit	r1
 EOF
 	o=$(run_test)
-	expect $? 1
+	expect $? 0
 }
 
 . ./test_suite.sh

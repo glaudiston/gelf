@@ -1263,3 +1263,55 @@ concat_symbol_instr(){
 	code="${code}${REP}${MOVSB}";
 	echo -en "${code}" | base64 -w0;
 }
+
+compare_addr(){
+	local field_a_addr="$1";
+	local field_b_addr="$2";
+	local code="";
+	LEA_V4_RAX="\x48\x8d\x04\x25";
+	code="${code}${LEA_V4_RAX}$(printEndianValue "$field_a_addr" "${SIZE_32BITS_4BYTES}")";
+	LEA_V4_RCX="\x48\x8d\x0c\x25";
+	code="${code}${LEA_V4_RCX}$(printEndianValue "$field_b_addr" "${SIZE_32BITS_4BYTES}")";
+	CMP_RAX_RCX="\x48\x39\xc1";
+	code="${code}${CMP_RAX_RCX}";
+	echo -en "${code}" | base64 -w0;
+}
+
+compare_v(){
+	local field_a_v="$1";
+	local field_b_v="$2";
+	local code="";
+	MOV_V4_RAX="\x48\xc7\xc0";
+	code="${code}${MOV_V4_RAX}$(printEndianValue "$field_a_v" "${SIZE_32BITS_4BYTES}")";
+	MOV_V4_RCX="\x48\xc7\xc1";
+	code="${code}${MOV_V4_RCX}$(printEndianValue "$field_b_v" "${SIZE_32BITS_4BYTES}")";
+	CMP_RAX_RCX="\x48\x39\xc1";
+	code="${code}${CMP_RAX_RCX}";
+	echo -en "${code}" | base64 -w0;
+}
+
+compare_v_addr(){
+	local field_a_v="$1";
+	local field_b_addr="$2";
+	local code="";
+	MOV_V4_RAX="\x48\xc7\xc0";
+	code="${code}${MOV_V4_RAX}$(printEndianValue "$field_a_v" "${SIZE_32BITS_4BYTES}")";
+	LEA_V4_RCX="\x48\x8d\x0c\x25";
+	code="${code}${LEA_V4_RCX}$(printEndianValue "$field_b_addr" "${SIZE_32BITS_4BYTES}")";
+	CMP_RAX_RCX="\x48\x39\xc1";
+	code="${code}${CMP_RAX_RCX}";
+	echo -en "${code}" | base64 -w0;
+}
+
+compare_addr_v(){
+	local field_a_addr="$1";
+	local field_b_v="$2";
+	local code="";
+	LEA_V4_RAX="\x48\x8d\x04\x25";
+	code="${code}${LEA_V4_RAX}$(printEndianValue "$field_a_addr" "${SIZE_32BITS_4BYTES}")";
+	MOV_V4_RCX="\x48\xc7\xc1";
+	code="${code}${MOV_V4_RCX}$(printEndianValue "$field_b_addr" "${SIZE_32BITS_4BYTES}")";
+	CMP_RAX_RCX="\x48\x39\xc1";
+	code="${code}${CMP_RAX_RCX}";
+	echo -en "${code}" | base64 -w0;
+}
