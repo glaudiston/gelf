@@ -223,7 +223,7 @@ success:	{
 r1:	1
 r2:	1
 test:?	r1	r2
-#test	?=	success
+test	?=	success
 exit	r1
 EOF
 	o=$(run_test)

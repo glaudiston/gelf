@@ -681,6 +681,22 @@ parse_snippet()
 		return $?;
 	}
 	fi;
+	if [[ "${code_line_elements[$(( 0 + deep-1 ))]}" =~ ^[#] ]]; then # ignoring tabs, starts with pound symbol(#)
+	{
+		struct_parsed_snippet \
+			"COMMENT" \
+			"" \
+			"${instr_offset}" \
+			"" \
+			"0" \
+			"${static_data_offset}" \
+			"" \
+			"0" \
+			"${CODE_LINE_B64}" \
+			"1";
+		return $?;
+	}
+	fi;
 	if [[ "${code_line_elements[$(( 0 + deep-1 ))]}" =~ [:][?]$ ]]; then # define a test
 	{
 		# symbol:?	field	operator	field
@@ -755,22 +771,6 @@ parse_snippet()
 			"${CODE_LINE_B64}" \
 			"1";
 		return $?;
-	fi;
-	if [[ "${code_line_elements[$(( 0 + deep-1 ))]}" =~ ^[#] ]]; then # ignoring tabs, starts with pound symbol(#)
-	{
-		struct_parsed_snippet \
-			"COMMENT" \
-			"" \
-			"${instr_offset}" \
-			"" \
-			"0" \
-			"${static_data_offset}" \
-			"" \
-			"0" \
-			"${CODE_LINE_B64}" \
-			"1";
-		return $?;
-	}
 	fi;
 	if [[ "${code_line_elements[$(( 0 + deep-1 ))]}" =~ :$ ]]; then
 	{
