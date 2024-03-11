@@ -11,22 +11,6 @@
 #include <sys/wait.h>
 
 #define TRUE 1
-#define RAX 0
-#define RCX 1
-#define RDX 2
-#define RBX 3
-#define RSP 4
-#define RBP 5
-#define RSI 6
-#define RDI 7
-#define R8 8 
-#define R9 9 
-#define R10 10
-#define R11 11
-#define R12 12
-#define R13 13
-#define R14 14
-#define R15 15
 
 //Good ref https://www.felixcloutier.com/x86/
 //
@@ -44,5 +28,10 @@ extern void peek_array(pid_t child, void *addr, char* out);
 #define ANSI_COLOR_CYAN    "\x1b[36m"
 #define ANSI_COLOR_GRAY    "\x1b[38;5;240m"
 #define ANSI_COLOR_RESET   "\x1b[0m"
+#ifdef aarch64
+#include "arch_aarch64.c"
+#endif
+#ifdef x64
 #include "arch_x86-64.c"
+#endif
 #endif

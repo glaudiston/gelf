@@ -1369,6 +1369,9 @@ write_elf()
 	if [ "$PH_VADDR_V" == "" ]; then
 		PH_VADDR_V=$(cat /proc/sys/vm/mmap_min_addr)
 	fi;
+	if [ "$PH_VADDR_V" == "" ]; then
+		PH_VADDR_V=$(( 1 << 16 ));
+	fi;
 	local SH_COUNT=$(get_section_headers_count "");
 	local INPUT_SOURCE_CODE="$(cat)";
 	local INIT_CODE="

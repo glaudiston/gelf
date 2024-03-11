@@ -52,8 +52,11 @@ system_call_write_len=24
 # given a data address as argument, write it to stdout
 function system_call_write()
 {
-	local DATA_ADDR_V="$1";
-	local DATA_LEN="$2";
+	local symbol_type="$1";
+	local data_output="$2";
+	local DATA_ADDR_V="$3";
+	local DATA_LEN="$4";
+	local instr_offset="$5";
 	local CODE="";
 	local DATA_ADDR="$(printEndianValue $DATA_ADDR_V $SIZE_32BITS_4BYTES)";
 	STDOUT=1;
@@ -62,7 +65,8 @@ function system_call_write()
 	local sys_write_bin="$(aarch64_instr_value r8 "$(( 16#${sys_write} ))")";
 
 	local output_fd_bin="$(aarch64_instr_value r0 "${STDOUT}")";
-	local data_addr_bin="$(aarch64_instr_value r1 "$(( ${DATA_ADDR_V} - ( 1 << 16)  )) ")"
+	debug data addr=$DATA_ADDR_V 
+	local data_addr_bin="$(aarch64_instr_value r1 "$(( ${DATA_ADDR_V} - (1<<16) )) ")"
 	local data_size_bin="$(aarch64_instr_value r2 "${DATA_LEN}")";
 
 	local BIN_CODE="";
