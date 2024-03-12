@@ -543,7 +543,7 @@ int call(pid_t child, unsigned long addr)
 {
 	int data = (int)ptrace(PTRACE_PEEKTEXT, child, (void*)addr+1, 0);
 	int bytecode_instr_size = 5;
-	printf("%016lx: call %016lx; # near int: %i\n", addr, addr+data+bytecode_instr_size,(int) data + bytecode_instr_size); fflush(stdout);
+	printf("%016lx: call 0x%lx; # near int: %i\n", addr, addr+data+bytecode_instr_size,(int) data + bytecode_instr_size); fflush(stdout);
 	return 0;
 }
 // a map is better, this this is better than ifs

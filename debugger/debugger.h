@@ -28,10 +28,10 @@ extern void peek_array(pid_t child, void *addr, char* out);
 #define ANSI_COLOR_CYAN    "\x1b[36m"
 #define ANSI_COLOR_GRAY    "\x1b[38;5;240m"
 #define ANSI_COLOR_RESET   "\x1b[0m"
-#ifdef aarch64
+#ifdef __aarch64__
 #include "arch_aarch64.c"
 #endif
-#ifdef x64
+#ifdef __x86_64__
 #include "arch_x86-64.c"
 #endif
 #endif
