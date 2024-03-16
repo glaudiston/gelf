@@ -115,7 +115,7 @@ test_concat_static_symbols(){
 	compile_test <<EOF
 a:	abc
 b:	def
-c:|	a	b
+c:	a	b
 out:	1
 write	out	c
 d:	0
@@ -129,7 +129,7 @@ test_concat_dyn_symbols(){
 	compile_test <<EOF
 a::	1
 b::	2
-c:|	a	b
+c:	a	b
 out:	1
 write	out	c
 d:	0
@@ -144,7 +144,7 @@ test_concat_stat_dyn_symbols(){
 s:	xpto
 a::	1
 b::	2
-c:|	s	a	b
+c:	s	a	b
 out:	1
 write	out	c
 d:	0
@@ -159,7 +159,7 @@ test_concat_dyn_stat_symbols(){
 s:	xpto
 a::	1
 b::	2
-c:|	b	s	a
+c:	b	s	a
 out:	1
 write	out	c
 d:	0
@@ -173,7 +173,7 @@ test_exec_concat(){
 	compile_test <<EOF
 a:	/usr/bin/
 b::	1
-c:|	a	b
+c:	a	b
 !	c	c
 succeed:	0
 exit	succeed
@@ -228,6 +228,22 @@ exit	r1
 EOF
 	o=$(run_test)
 	expect $? 0
+}
+
+test_loop(){
+	compile_test <<EOF
+end:	{
+	exit	0
+}
+loop:	{
+	v:	v	+	1
+	t:?	v	5
+	t	?=	end
+}
+loop
+err:	1
+exit	err
+EOF
 }
 
 . ./test_suite.sh

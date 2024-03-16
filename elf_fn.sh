@@ -838,7 +838,7 @@ parse_snippet()
 			debug new_bloc=[$new_bloc]
 			echo "$new_bloc";
 			return $?;
-		};
+		}
 		else # maybe it is just a variable or constant
 		{
 			if [[ "${code_line_elements[$(( 0 + deep-1 ))]}" =~ ::$ ]]; then
@@ -886,30 +886,104 @@ parse_snippet()
 				# Once the code changes the variable value, it will be converted to variable.
 				# So if a variable is never changed, it will be always a constant hardcoded at the bytecode;
 				local symbol_name="$( echo -n "${code_line_elements[$(( 0 + deep-1 ))]/:*/}" )"
-				symbol_value="$( echo -n "${CODE_LINE/*:	/}" )"
-				instr_bytes="";
-				instr_len=0;
-				data_bytes="$(set_symbol_value "${symbol_value}" "${SNIPPETS}")";
-				data_len="$( echo -n "${data_bytes}" | base64 -d | wc -c)";
-				if is_hard_coded_value "${data_bytes}"; then
-					data_len=0; # hard-coded values does not use data space
+				local symbol_data="$(echo "$SNIPPETS" | grep "SYMBOL_TABLE,${symbol_name}," | tail -1)";
+				debug "symbol_name=$symbol_name: ${#code_line_elements[@]} == $(( 2 + deep - 1 ))"
+				if [ "${symbol_data}" == "" -a ${#code_line_elements[@]} == $(( 2 + deep - 1 )) ]; then
+				{
+					debug "New symbol to set ${symbol_name}"
+					# New symbol
+					symbol_value="$( echo -n "${CODE_LINE/*:	/}" )"
+					instr_bytes="";
+					instr_len=0;
+					data_bytes="$(set_symbol_value "${symbol_value}" "${SNIPPETS}")";
+					data_len="$( echo -n "${data_bytes}" | base64 -d | wc -c)";
+					if is_hard_coded_value "${data_bytes}"; then
+						data_len=0; # hard-coded values does not use data space
+					fi;
+					# if this is not the first static variable, we need to append 1 to the static_data_offset,
+					# because it should be an \x00(null byte) between static data.
+					struct_parsed_snippet \
+						"SYMBOL_TABLE" \
+						"${symbol_name}" \
+						"${instr_offset}" \
+						"${instr_bytes}" \
+						"${instr_len}" \
+						"${static_data_offset}" \
+						"${data_bytes}" \
+						"${data_len}" \
+						"${CODE_LINE_B64}" \
+						"1";
+					return $?;
+				}
 				fi;
-				# if this is not the first static variable, we need to append 1 to the static_data_offset,
-				# because it should be an \x00(null byte) between static data.
+				# redefine symbol
+				#####
+				# concat all symbols in a new one
+				local dyn_args=0;
+				local static_value="";
+				local instr_bytes="";
+				local data_addr=""; # target concatenated data_addr
+				for (( i=$((deep)); i<${#code_line_elements[@]}; i++ ));
+				do
+					local symbol_name=$(echo -n "${code_line_elements[$(( i - deep+1 ))]}");
+					local symbol_data=$(get_b64_symbol_value "${symbol_name}" "${SNIPPETS}" )
+					local symbol_type=$(echo "${symbol_data}" | cut -d, -f${B64_SYMBOL_VALUE_RETURN_TYPE});
+					local symbol_value=$(echo "$symbol_data" | cut -d, -f${B64_SYMBOL_VALUE_RETURN_OUT});
+					local symbol_addr="$(echo "${symbol_data}" | cut -d, -f${B64_SYMBOL_VALUE_RETURN_ADDR})";
+					local symbol_len="$(echo "${symbol_data}" | cut -d, -f${B64_SYMBOL_VALUE_RETURN_SIZE})";
+					local sym_dyn_data_size=$(get_sym_dyn_data_size "${symbol_name}" "${SNIPPETS}")
+					if [ "${symbol_type}" == "${SYMBOL_TYPE_STATIC}" ]; then
+						static_value="$( echo "${static_value}${symbol_value}" | base64 -d | base64 -w0 )";
+						instr_bytes="${instr_bytes}$(concat_symbol_instr "${symbol_addr}" "${dyn_data_offset}" "${symbol_len}" "$i")";
+					else
+						dyn_args="$(( dyn_args + 1 ))";
+						sym_dyn_data_size=$(get_sym_dyn_data_size "${symbol_name}" "${SNIPPETS}")
+						instr_bytes="${instr_bytes}$(concat_symbol_instr "$(( symbol_addr ))" "${dyn_data_offset}" "-1" "$i")";
+					fi;
+				done;
+				# if all arguments are static, we can merge them at build time
+				local symbol_name=$(echo -n "${code_line_elements[$(( 0 + deep-1 ))]}" | cut -d: -f1);
+				if [ "${dyn_args}" -eq 0 ]; then
+				{
+					local instr_bytes="";
+					local instr_len=0;
+					local data_bytes="${static_value}";
+					local data_len=$(echo -n "$data_bytes" | base64 -d | wc -c);
+					debug "Concatenating static elements into symbol [$symbol_name] with value [$static_value]";
+					struct_parsed_snippet \
+						"SYMBOL_TABLE" \
+						"${symbol_name}" \
+						"${instr_offset}" \
+						"${instr_bytes}" \
+						"${instr_len}" \
+						"${static_data_offset}" \
+						"${data_bytes}" \
+						"${data_len}" \
+						"${CODE_LINE_B64}" \
+						"1";
+					return $?
+				}
+				fi;
+				# if at least one are dynamic we need to set instructions
+				debug "Concatenating dynamic symbols."
+				local instr_len=$(echo -n "$instr_bytes" | base64 -d | wc -c);
+				local data_bytes="";
+				local data_len=8;
 				struct_parsed_snippet \
 					"SYMBOL_TABLE" \
 					"${symbol_name}" \
 					"${instr_offset}" \
 					"${instr_bytes}" \
 					"${instr_len}" \
-					"${static_data_offset}" \
+					"${dyn_data_offset}" \
 					"${data_bytes}" \
 					"${data_len}" \
 					"${CODE_LINE_B64}" \
 					"1";
 				return $?;
+				### CONCAT BLOCK END
 			}
-			fi;
+			fi
 		}
 		fi;
 	}
@@ -994,73 +1068,6 @@ parse_snippet()
 		return $?;
 	}
 	fi;
-	if [[ "${code_line_elements[$(( 0 + deep-1 ))]}" =~ [:][|]$ ]]; then # concat
-	{
-		# concat all symbols in a new one
-		local dyn_args=0;
-		local static_value="";
-		local instr_bytes="";
-		local data_addr=""; # target concatenated data_addr
-		for (( i=1; i<${#code_line_elements[@]}; i++ ));
-		do
-			local symbol_name=$(echo -n "${code_line_elements[$(( i - deep+1 ))]}");
-			local symbol_data=$(get_b64_symbol_value "${symbol_name}" "${SNIPPETS}" )
-			local symbol_type=$(echo "${symbol_data}" | cut -d, -f${B64_SYMBOL_VALUE_RETURN_TYPE});
-			local symbol_value=$(echo "$symbol_data" | cut -d, -f${B64_SYMBOL_VALUE_RETURN_OUT});
-			local symbol_addr="$(echo "${symbol_data}" | cut -d, -f${B64_SYMBOL_VALUE_RETURN_ADDR})";
-			local symbol_len="$(echo "${symbol_data}" | cut -d, -f${B64_SYMBOL_VALUE_RETURN_SIZE})";
-			local sym_dyn_data_size=$(get_sym_dyn_data_size "${symbol_name}" "${SNIPPETS}")
-			if [ "${symbol_type}" == "${SYMBOL_TYPE_STATIC}" ]; then
-				static_value="$( echo "${static_value}${symbol_value}" | base64 -d | base64 -w0 )";
-				instr_bytes="${instr_bytes}$(concat_symbol_instr "${symbol_addr}" "${dyn_data_offset}" "${symbol_len}" "$i")";
-			else
-				dyn_args="$(( dyn_args + 1 ))";
-				sym_dyn_data_size=$(get_sym_dyn_data_size "${symbol_name}" "${SNIPPETS}")
-				instr_bytes="${instr_bytes}$(concat_symbol_instr "$(( symbol_addr ))" "${dyn_data_offset}" "-1" "$i")";
-			fi;
-		done;
-		# if all arguments are static, we can merge them at build time
-		local symbol_name=$(echo -n "${code_line_elements[$(( 0 + deep-1 ))]}" | cut -d: -f1);
-		if [ "${dyn_args}" -eq 0 ]; then
-		{
-			local instr_bytes="";
-			local instr_len=0;
-			local data_bytes="${static_value}";
-			local data_len=$(echo -n "$data_bytes" | base64 -d | wc -c);
-			debug "Concatenating static elements into symbol [$symbol_name] with value [$static_value]";
-			struct_parsed_snippet \
-				"SYMBOL_TABLE" \
-				"${symbol_name}" \
-				"${instr_offset}" \
-				"${instr_bytes}" \
-				"${instr_len}" \
-				"${static_data_offset}" \
-				"${data_bytes}" \
-				"${data_len}" \
-				"${CODE_LINE_B64}" \
-				"1";
-			return $?
-		}
-		fi;
-		# if at least one are dynamic we need to set instructions
-		debug "Concatenating dynamic symbols."
-		local instr_len=$(echo -n "$instr_bytes" | base64 -d | wc -c);
-		local data_bytes="";
-		local data_len=8;
-		struct_parsed_snippet \
-			"SYMBOL_TABLE" \
-			"${symbol_name}" \
-			"${instr_offset}" \
-			"${instr_bytes}" \
-			"${instr_len}" \
-			"${dyn_data_offset}" \
-			"${data_bytes}" \
-			"${data_len}" \
-			"${CODE_LINE_B64}" \
-			"1";
-		return $?;
-	}
-	fi
 	if [[ "${code_line_elements[$(( 0 + deep-1 ))]}" == write ]]; then
 	{
 		local WRITE_OUTPUT_ELEM=1;
