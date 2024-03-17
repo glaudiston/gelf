@@ -697,65 +697,13 @@ parse_snippet()
 		return $?;
 	}
 	fi;
-	if [[ "${code_line_elements[$(( 0 + deep-1 ))]}" =~ [:][?]$ ]]; then # define a test
-	{
-		# symbol:?	field	operator	field
-		#   defines a new symbol based on a boolean condition
-		local symbol_name="$(echo -n "${CODE_LINE/:*/}")";
-		local field_a="${code_line_elements[$(( 1 + deep-1 ))]}";
-		local field_data_a=$(get_b64_symbol_value "${field_a}" "${SNIPPETS}")
-		local field_a_addr=$(echo "$field_data_a" | cut -d, -f${B64_SYMBOL_VALUE_RETURN_ADDR})
-		local field_type_a=$(echo "${field_data_a}" | cut -d, -f${B64_SYMBOL_VALUE_RETURN_TYPE});
-		local field_a_v=$(echo "${field_data_a}" | cut -d, -f${B64_SYMBOL_VALUE_RETURN_OUT} | base64 -d)
-		local field_b="${code_line_elements[$(( 2 + deep-1 ))]}";
-		local field_data_b=$(get_b64_symbol_value "${field_b}" "${SNIPPETS}");
-		local field_b_addr=$(echo "$field_data_b" | cut -d, -f${B64_SYMBOL_VALUE_RETURN_ADDR})
-		local field_type_b=$(echo "${field_data_b}" | cut -d, -f${B64_SYMBOL_VALUE_RETURN_TYPE});
-		local field_b_v=$(echo "${field_data_b}" | cut -d, -f${B64_SYMBOL_VALUE_RETURN_OUT} | base64 -d)
-		local instr_bytes="";
-		# a static, b static
-		if [ "${field_type_a}" == "$SYMBOL_TYPE_STATIC" -a "${field_type_b}" == "$SYMBOL_TYPE_STATIC" ]; then
-			debug "Compare sta, sta: [$symbol_name] as result of [$field_a: $field_a_v] - [$field_b: $field_b_v]";
-			instr_bytes=$(compare_v "$field_a_v" "$field_b_v");
-		fi;
-		# a static, b dyn
-		if [ "${field_type_a}" == "$SYMBOL_TYPE_STATIC" -a "${field_type_b}" == "$SYMBOL_TYPE_DYNAMIC" ]; then
-			debug "Compare sta, dyn: [$symbol_name] as result of [$field_a] - [$field_b]";
-			instr_bytes=$(compare_addr_v "$field_a_v" "$field_b_addr");
-		fi;
-		# a dyn, b static
-		if [ "${field_type_a}" == "$SYMBOL_TYPE_DYNAMIC" -a "${field_type_b}" == "$SYMBOL_TYPE_STATIC" ]; then
-			debug "Compare dyn, sta: [$symbol_name] as result of [$field_a] - [$field_b]";
-			instr_bytes=$(compare_v_addr "$field_a_addr" "$field_b_v");
-		fi;
-		# a dyn and b dyn
-		if [ "${field_type_a}" == "$SYMBOL_TYPE_DYNAMIC" -a "${field_type_b}" == "$SYMBOL_TYPE_DYNAMIC" ]; then
-			debug "Compare dyn, dyn: [$symbol_name] as result of [$field_a] - [$field_b]";
-			instr_bytes=$(compare_addr "$field_a_addr" "$field_b_addr");
-		fi;
-		local instr_len=$(echo "$instr_bytes" | base64 -d | wc -c);
-		local data_bytes="";
-		local data_len=0;
-		struct_parsed_snippet \
-			"SYMBOL_TABLE" \
-			"${symbol_name}" \
-			"${instr_offset}" \
-			"${instr_bytes}" \
-			"${instr_len}" \
-			"${static_data_offset}" \
-			"${data_bytes}" \
-			"${data_len}" \
-			"${CODE_LINE_B64}" \
-			"1";
-		return $?;
-	}
-	fi;
 	if [[ "${code_line_elements[$(( 1 + deep-1 ))]}" =~ [?][=]$ ]]; then # conditional call
-		debug "conditional function calling: [${code_line_elements[$(( 0 + deep-1 ))]}], deep=$deep"
 		local test_symbol_name="${code_line_elements[$(( 0 + deep-1 ))]}";
 		local target="${code_line_elements[$(( 2 + deep-1 ))]}"
 		local target_offset="$( echo "$SNIPPETS" | grep "SNIPPET,${target}," | cut -d, -f${SNIPPET_COLUMN_INSTR_OFFSET} )";
-		local instr_bytes="$(system_call_procedure "${target_offset}" "${instr_offset}" )";
+		debug "conditional function calling: [${code_line_elements[$(( 0 + deep-1 ))]}], deep=$deep, target=$target,${target_offset}"
+		debug "$(echo "$SNIPPETS" | grep "SYMBOL_TABLE,${target},")"
+		local instr_bytes="$(jump_if_equal "${target_offset}" "${instr_offset}" )";
 		local instr_len="$(echo "${instr_bytes}" | base64 -d | wc -c)";
 		local data_bytes="";
 		local data_len=0;
@@ -886,11 +834,94 @@ parse_snippet()
 				# Once the code changes the variable value, it will be converted to variable.
 				# So if a variable is never changed, it will be always a constant hardcoded at the bytecode;
 				local symbol_name="$( echo -n "${code_line_elements[$(( 0 + deep-1 ))]/:*/}" )"
+				local sec_arg="$(echo -n "${code_line_elements[$(( 1 + deep-1 ))]}")"
 				local symbol_data="$(echo "$SNIPPETS" | grep "SYMBOL_TABLE,${symbol_name}," | tail -1)";
-				debug "symbol_name=$symbol_name: ${#code_line_elements[@]} == $(( 2 + deep - 1 ))"
-				if [ "${symbol_data}" == "" -a ${#code_line_elements[@]} == $(( 2 + deep - 1 )) ]; then
+				local is_new_symbol=0;
+				debug "symbol_name=$symbol_name: ${#code_line_elements[@]} == $(( 3 + deep - 1 ))"
+				if [ "${symbol_data}" == "" ]; then 
 				{
 					debug "New symbol to set ${symbol_name}"
+					is_new_symbol="1";
+				}
+				fi;
+				if [ "$sec_arg" == "?" -a "${is_new_symbol}" == 1 ]; then # define a test
+				{
+					# symbol:?	field	operator	field
+					#   defines a new symbol based on a boolean condition
+					local symbol_name="$(echo -n "${symbol_name/:*/}")";
+					debug "New boolean test symbol: symbol_name: $symbol_name"
+					local field_a="${code_line_elements[$(( 2 + deep-1 ))]}";
+					local field_data_a=$(get_b64_symbol_value "${field_a}" "${SNIPPETS}")
+					local field_a_addr=$(echo "$field_data_a" | cut -d, -f${B64_SYMBOL_VALUE_RETURN_ADDR})
+					local field_type_a=$(echo "${field_data_a}" | cut -d, -f${B64_SYMBOL_VALUE_RETURN_TYPE});
+					local field_a_v=$(echo "${field_data_a}" | cut -d, -f${B64_SYMBOL_VALUE_RETURN_OUT} | base64 -d)
+					local field_b="${code_line_elements[$(( 3 + deep-1 ))]}";
+					local field_data_b=$(get_b64_symbol_value "${field_b}" "${SNIPPETS}");
+					local field_b_addr=$(echo "$field_data_b" | cut -d, -f${B64_SYMBOL_VALUE_RETURN_ADDR})
+					local field_type_b=$(echo "${field_data_b}" | cut -d, -f${B64_SYMBOL_VALUE_RETURN_TYPE});
+					local field_b_v=$(echo "${field_data_b}" | cut -d, -f${B64_SYMBOL_VALUE_RETURN_OUT} | base64 -d)
+					local instr_bytes="";
+					# a static, b static
+					if [ "${field_type_a}" == "$SYMBOL_TYPE_STATIC" -a "${field_type_b}" == "$SYMBOL_TYPE_STATIC" ]; then
+						debug "Compare sta, sta: [$symbol_name] as result of [$field_a: $field_a_v] - [$field_b: $field_b_v]";
+						instr_bytes=$(compare_v "$field_a_v" "$field_b_v");
+					fi;
+					# a static, b dyn
+					if [ "${field_type_a}" == "$SYMBOL_TYPE_STATIC" -a "${field_type_b}" == "$SYMBOL_TYPE_DYNAMIC" ]; then
+						debug "Compare sta, dyn: [$symbol_name] as result of [$field_a] - [$field_b]";
+						instr_bytes=$(compare_addr_v "$field_a_v" "$field_b_addr");
+					fi;
+					# a dyn, b static
+					if [ "${field_type_a}" == "$SYMBOL_TYPE_DYNAMIC" -a "${field_type_b}" == "$SYMBOL_TYPE_STATIC" ]; then
+						debug "Compare dyn, sta: [$symbol_name] as result of [$field_a] - [$field_b]";
+						instr_bytes=$(compare_addr_v "$field_a_addr" "$field_b_v");
+					fi;
+					# a dyn and b dyn
+					if [ "${field_type_a}" == "$SYMBOL_TYPE_DYNAMIC" -a "${field_type_b}" == "$SYMBOL_TYPE_DYNAMIC" ]; then
+						debug "Compare dyn, dyn: [$symbol_name] as result of [$field_a] - [$field_b]";
+						instr_bytes=$(compare_addr "$field_a_addr" "$field_b_addr");
+					fi;
+					local instr_len=$(echo "$instr_bytes" | base64 -d | wc -c);
+					local data_bytes="";
+					local data_len=0;
+					struct_parsed_snippet \
+						"SYMBOL_TABLE" \
+						"${symbol_name}" \
+						"${instr_offset}" \
+						"${instr_bytes}" \
+						"${instr_len}" \
+						"${static_data_offset}" \
+						"${data_bytes}" \
+						"${data_len}" \
+						"${CODE_LINE_B64}" \
+						"1";
+					return $?;
+				}
+				fi;
+				if [ "$sec_arg" == "+" -a "${is_new_symbol}" == 1 ]; then # increment a variable
+				{
+					local symbol_value="$(echo -n "${code_line_elements[$(( 2 + deep-1 ))]}")"
+					debug "increment found by ${symbol_value}"
+					instr_bytes="$(set_increment $dyn_data_offset $symbol_value)";
+					instr_len="$(echo "${instr_bytes}" | base64 -d | wc -c)";
+					data_bytes="";
+					data_len="8";
+					struct_parsed_snippet \
+						"SYMBOL_TABLE" \
+						"${symbol_name}" \
+						"${instr_offset}" \
+						"${instr_bytes}" \
+						"${instr_len}" \
+						"${dyn_data_offset}" \
+						"${data_bytes}" \
+						"${data_len}" \
+						"${CODE_LINE_B64}" \
+						"1";
+					return $?;
+				}
+				fi;
+				if [ "${is_new_symbol}" == 1 -a "${#code_line_elements[@]}" == "$(( 2 + deep - 1 ))" ]; then
+				{
 					# New symbol
 					symbol_value="$( echo -n "${CODE_LINE/*:	/}" )"
 					instr_bytes="";

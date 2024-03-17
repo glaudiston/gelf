@@ -255,12 +255,13 @@ TEST="\x85"; # 10000101
 IMM="$(( 2#00111000 ))";
 MOV_V8_RAX="${M64}$( printEndianValue $(( MOV + IMM + RAX )) ${SIZE_8BITS_1BYTE} )"; # 48 b8
 MOV_V4_RCX="\x48\xc7\xc1";
-MOV_RDX="${M64}$( printEndianValue $(( MOV + IMM + RDX )) ${SIZE_8BITS_1BYTE} )"; # 48 ba
+MOV_V8_RDX="${M64}$( printEndianValue $(( MOV + IMM + RDX )) ${SIZE_8BITS_1BYTE} )"; # 48 ba
+MOV_V4_RDX="\x48\xc7\xc2" # MOV value and resolve address, so the content of memory address is set at the register
 MOV_ADDR_RDX="\x48\x8b\x14\x25"; # followed by 4 bytes le;
 MOV_ADDR_RSI="\x48\x8b\x34\x25";
 MOV_ADDR_RDI="\x48\x8b\x3c\x25";
 MOV_RAX_ADDR4="\x48\x01\x04\x25";
-MOV_RDX_ADDR="\x48\x89\x14\x25"; # followed by 4 bytes le;
+MOV_RDX_ADDR4="\x48\x89\x14\x25"; # followed by 4 bytes le;
 REP="\xf3"; # repeat until rcx
 MOVSB="\xa4"; # move 64bits(8 bytes) from %rsi addr to %rdi addr
 MOVSQ="\x48\xa5"; # move 64bits(8 bytes) from %rsi addr to %rdi addr
@@ -323,6 +324,7 @@ MOV_RESOLVE_ADDRESS="\x8b"; # Replace the address pointer with the value pointed
 MODRM="$(printEndianValue "$(( MODRM_MOD_DISPLACEMENT_REG_POINTER + MODRM_REG_RDI + RAX))" $SIZE_8BITS_1BYTE)";
 #MOV_RAX_RAX="${M64}${MOV_RESOLVE_ADDRESS}${MODRM}";
 MOV_RAX_RAX="\x48\x8b\x00";
+MOV_RCX_RCX="\x48\x8b\x09";
 MODRM="$(printEndianValue "$(( MODRM_MOD_DISPLACEMENT_REG_POINTER + MODRM_REG_RSI + RSI))" $SIZE_8BITS_1BYTE)";
 MOV_RSI_RSI="${M64}${MOV_RESOLVE_ADDRESS}${MODRM}"; # mov (%rsi), %rsi
 MODRM="$(printEndianValue "$(( MODRM_MOD_DISPLACEMENT_REG_POINTER + MODRM_REG_RDX + RDX))" $SIZE_8BITS_1BYTE)";
@@ -389,6 +391,8 @@ ADD_M64_RDI="${ADD_M64}";
 
 
 # LEA - Load Effective Address (page 1146)
+LEA_V4_RDX="\x48\x8d\x14\x25";
+
 SYSCALL="$( printEndianValue $(( 16#050f )) $SIZE_16BITS_2BYTES)"
 SYS_READ=0;
 SYS_WRITE=1;
@@ -586,7 +590,7 @@ function sys_mmap()
 	PROT_READ=1;
 	PROT_WRITE=2;
 	PROT_EXEC=4;
-	CODE="${CODE}${MOV_RDX}$(printEndianValue $(( PROT_READ + PROT_WRITE )) ${SIZE_64BITS_8BYTES})";
+	CODE="${CODE}${MOV_V8_RDX}$(printEndianValue $(( PROT_READ + PROT_WRITE )) ${SIZE_64BITS_8BYTES})";
 	# man mmap for valid flags
 	#    mov r10, 2    ; flags
 	MAP_SHARED=1;
@@ -851,7 +855,7 @@ function read_file()
 			CODE="${CODE}${MOV_V8_RAX}$(printEndianValue $SYS_WRITE $SIZE_64BITS_8BYTES)";
 			STDOUT=1;
 			CODE="${CODE}${MOV_V8_RDI}$(printEndianValue $STDOUT $SIZE_64BITS_8BYTES)";
-			CODE="${CODE}${MOV_RDX}$(printEndianValue "${DATA_LEN}" $SIZE_64BITS_8BYTES)";
+			CODE="${CODE}${MOV_V8_RDX}$(printEndianValue "${DATA_LEN}" $SIZE_64BITS_8BYTES)";
 			CODE="${CODE}${SYSCALL}";
 			echo -en "${CODE}" | base64 -w0;
 		else
@@ -878,7 +882,7 @@ function system_call_read()
 	if [ "$len" == "rsi" ]; then
 		CODE="${CODE}${MOV_RSI_RDX}";
 	else
-		CODE="${CODE}${MOV_RDX}$(printEndianValue ${len} $SIZE_64BITS_8BYTES)";
+		CODE="${CODE}${MOV_V8_RDX}$(printEndianValue ${len} $SIZE_64BITS_8BYTES)";
 	fi;
 	if [ "$DATA_ADDR" == "" ]; then
 		#use rax
@@ -902,7 +906,7 @@ function system_call_write_addr()
 	CODE="${CODE}${MOV_V8_RAX}$(printEndianValue $SYS_WRITE $SIZE_64BITS_8BYTES)";
 	CODE="${CODE}${MOV_V8_RDI}$(printEndianValue $OUT $SIZE_64BITS_8BYTES)";
 	CODE="${CODE}${MOV_RSI}${DATA_ADDR}";
-	CODE="${CODE}${MOV_RDX}$(printEndianValue "${DATA_LEN}" $SIZE_64BITS_8BYTES)";
+	CODE="${CODE}${MOV_V8_RDX}$(printEndianValue "${DATA_LEN}" $SIZE_64BITS_8BYTES)";
 	CODE="${CODE}${SYSCALL}";
 	echo -en "${CODE}" | base64 -w0;
 }
@@ -1020,7 +1024,7 @@ function system_call_write_dyn_addr()
 		if [ "${DATA_LEN}" == "0" ]; then
 			code="${code}$(detect_string_length)";
 		else
-			local MOV_V_RDX="${MOV_RDX}$(printEndianValue "${DATA_LEN}" ${SIZE_64BITS_8BYTES})";
+			local MOV_V_RDX="${MOV_V8_RDX}$(printEndianValue "${DATA_LEN}" ${SIZE_64BITS_8BYTES})";
 			code="${code}${MOV_V_RDX}";
 		fi;
 		code="${code}${MOV_V8_RDI}$(printEndianValue $OUT $SIZE_64BITS_8BYTES)";
@@ -1141,7 +1145,7 @@ function system_call_exec()
 	exec_code="${exec_code}${MOV_RSI}$(printEndianValue ${PTR_ARGS:=0} ${SIZE_64BITS_8BYTES})"
 
 	# 40100f:       ba 00 00 00 00          mov    $0x0,%edx
-	exec_code="${exec_code}${MOV_RDX}$(printEndianValue ${PTR_ENV:=0} ${SIZE_64BITS_8BYTES})" # const char *const envp[]
+	exec_code="${exec_code}${MOV_V8_RDX}$(printEndianValue ${PTR_ENV:=0} ${SIZE_64BITS_8BYTES})" # const char *const envp[]
 
 	# 401014:       b8 3b 00 00 00          mov    $0x3b,%eax
 	exec_code="${exec_code}${MOV_V8_RAX}$(printEndianValue ${SYS_EXECVE} ${SIZE_64BITS_8BYTES})" # sys_execve (3b)
@@ -1270,8 +1274,10 @@ compare_addr(){
 	local code="";
 	LEA_V4_RAX="\x48\x8d\x04\x25";
 	code="${code}${LEA_V4_RAX}$(printEndianValue "$field_a_addr" "${SIZE_32BITS_4BYTES}")";
+	code="${code}${MOV_RAX_RAX}";
 	LEA_V4_RCX="\x48\x8d\x0c\x25";
 	code="${code}${LEA_V4_RCX}$(printEndianValue "$field_b_addr" "${SIZE_32BITS_4BYTES}")";
+	code="${code}${MOV_RCX_RCX}";
 	CMP_RAX_RCX="\x48\x39\xc1";
 	code="${code}${CMP_RAX_RCX}";
 	echo -en "${code}" | base64 -w0;
@@ -1298,6 +1304,7 @@ compare_v_addr(){
 	code="${code}${MOV_V4_RAX}$(printEndianValue "$field_a_v" "${SIZE_32BITS_4BYTES}")";
 	LEA_V4_RCX="\x48\x8d\x0c\x25";
 	code="${code}${LEA_V4_RCX}$(printEndianValue "$field_b_addr" "${SIZE_32BITS_4BYTES}")";
+	code="${code}${MOV_RCX_RCX}";
 	CMP_RAX_RCX="\x48\x39\xc1";
 	code="${code}${CMP_RAX_RCX}";
 	echo -en "${code}" | base64 -w0;
@@ -1309,9 +1316,37 @@ compare_addr_v(){
 	local code="";
 	LEA_V4_RAX="\x48\x8d\x04\x25";
 	code="${code}${LEA_V4_RAX}$(printEndianValue "$field_a_addr" "${SIZE_32BITS_4BYTES}")";
+	code="${code}${MOV_RAX_RAX}";
 	MOV_V4_RCX="\x48\xc7\xc1";
-	code="${code}${MOV_V4_RCX}$(printEndianValue "$field_b_addr" "${SIZE_32BITS_4BYTES}")";
+	code="${code}${MOV_V4_RCX}$(printEndianValue "$field_b_v" "${SIZE_32BITS_4BYTES}")";
 	CMP_RAX_RCX="\x48\x39\xc1";
 	code="${code}${CMP_RAX_RCX}";
 	echo -en "${code}" | base64 -w0;
 }
+
+set_increment(){
+	local addr=$1;
+	local value=$2;
+	local code="";
+	if [ "$value" == 1 ]; then
+		code="${code}${MOV_V4_RDX}$(printEndianValue "${addr}" "${SIZE_32BITS_4BYTES}")";
+		code="${code}${MOV_RDX_RDX}";
+		local INC_RDX="\x48\xff\xc2";
+		code="${code}${INC_RDX}";
+		code="${code}${MOV_RDX_ADDR4}$(printEndianValue "${addr}" "${SIZE_32BITS_4BYTES}")"
+	else
+		error "increment not implemented for other than the value 1"
+	fi;
+	echo -en "${code}" | base64 -w0
+}
+
+jump_if_equal(){
+	local code="";
+	local target_offset="$1";
+	local current_offset="$2";
+	local jump_instr_size=6; # 2 bytes for jz and 4 bytes for addr
+	CODE_TO_JUMP="$(printEndianValue "$(( target_offset - current_offset - jump_instr_size ))" ${SIZE_32BITS_4BYTES})";
+	code="${code}${JZ}${CODE_TO_JUMP}"; # The second byte is the opcode for the JE instruction. The following four bytes represent the signed 32-bit offset from the current instruction to the target label.
+	echo -en "${code}" | base64 -w0
+}
+

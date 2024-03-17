@@ -222,7 +222,7 @@ success:	{
 }
 r1:	1
 r2:	1
-test:?	r1	r2
+test:	?	r1	r2
 test	?=	success
 exit	r1
 EOF
@@ -236,14 +236,16 @@ end:	{
 	exit	0
 }
 loop:	{
-	v:	v	+	1
-	t:?	v	5
+	v:	+	1
+	t:	?	v	5
 	t	?=	end
 }
 loop
 err:	1
 exit	err
 EOF
+	o=$(run_test)
+	expect $? 0
 }
 
 . ./test_suite.sh
