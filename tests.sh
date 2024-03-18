@@ -27,7 +27,7 @@ EOF
 test_arg_count(){
 	compile_test <<EOF
 stdout:	1
-c::$
+c:	@$
 write	stdout	c
 with no error:	0
 exit	with no error
@@ -39,7 +39,7 @@ EOF
 test_write_out_arg(){
 	compile_test <<EOF
 stdout:	1
-a::	1
+a:	@1
 write	stdout	a
 with no error:	0
 exit	with no error
@@ -67,7 +67,6 @@ EOF
 }
 
 test_exec(){
-# this should be the last line on file:
 	compile_test <<EOF
 cmd:	/usr/bin/whoami
 !	cmd
@@ -79,18 +78,34 @@ EOF
 	expect $? 0 $chk "$o"
 }
 
+test_exec_capture_stdout(){
+	compile_test <<EOF
+cmd:	/usr/bin/whoami
+v:	!	cmd
+s:	command output: 
+t:	s	v
+stdout:	1
+write	stdout	t
+success:	0
+exit	success
+EOF
+	eo=$(echo -n "command output: "; /usr/bin/whoami)
+	o=$(run_test)
+	expect $? 0 "$eo" "$o"
+}
+
 test_exec_with_input_args(){
 	compile_test <<EOF
-cmd::	1
-arg a::	2
-arg b::	3
+cmd:	@1
+arg a:	@2
+arg b:	@3
 !	cmd	arg a	arg b
 succeed:	0
 exit	succeed
 EOF
 	cmd="/usr/bin/ls";
 	arg_a="-1";
-        arg_b="/";
+	arg_b="/";
 	chk=$(LANG=C "$cmd" "$arg_a" "$arg_b"|md5sum | cut -d " " -f1);
 	expect_exit=$?
 	out_test=$(run_test "$cmd" "$arg_a" "$arg_b" | md5sum | cut -d " " -f1);
@@ -127,8 +142,8 @@ EOF
 
 test_concat_dyn_symbols(){
 	compile_test <<EOF
-a::	1
-b::	2
+a:	@1
+b:	@2
 c:	a	b
 out:	1
 write	out	c
@@ -142,8 +157,8 @@ EOF
 test_concat_stat_dyn_symbols(){
 	compile_test <<EOF
 s:	xpto
-a::	1
-b::	2
+a:	@1
+b:	@2
 c:	s	a	b
 out:	1
 write	out	c
@@ -157,8 +172,8 @@ EOF
 test_concat_dyn_stat_symbols(){
 	compile_test <<EOF
 s:	xpto
-a::	1
-b::	2
+a:	@1
+b:	@2
 c:	b	s	a
 out:	1
 write	out	c
@@ -172,7 +187,7 @@ EOF
 test_exec_concat(){
 	compile_test <<EOF
 a:	/usr/bin/
-b::	1
+b:	@1
 c:	a	b
 !	c	c
 succeed:	0
