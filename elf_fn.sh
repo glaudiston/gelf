@@ -629,6 +629,392 @@ is_valid_hex()
 	return 1;
 }
 
+define_variable(){
+	# All variables, constants, macros are symbols and should be managed by a symbol table
+	# It should have name type, scope and memory address
+	# The compiler should updated that items in the first code read
+	#
+	# TODO implement scoped variables and constants
+	# TODO implement global macro values, replacing code with values
+	#
+	# Constants should replace the code value before process the code.
+	# Constants should not keep in memory, instead should replace the vlaue hardcoded in bytecode.
+	# Variables should recover the target address and size at runtime.
+	# A variable and constant are defined at the same way. The compiler should consider everything as constant.
+	# Once the code changes the variable value, it will be converted to variable.
+	# So if a variable is never changed, it will be always a constant hardcoded at the bytecode;
+	local symbol_name="$( echo -n "${code_line_elements[$(( 0 + deep-1 ))]/:*/}" )"
+	#local symbol_name="$(echo -n "${symbol_name/:*/}")";
+	local sec_arg="$(echo -n "${code_line_elements[$(( 1 + deep-1 ))]}")"
+	local symbol_data="$(echo "$SNIPPETS" | grep "SYMBOL_TABLE,${symbol_name}," | tail -1)";
+	local is_new_symbol=0;
+	debug "symbol_name=$symbol_name: ${#code_line_elements[@]} == $(( 3 + deep - 1 ))"
+	if [ "${symbol_data}" == "" ]; then 
+	{
+		debug "New symbol to set ${symbol_name}"
+		is_new_symbol="1";
+	}
+	fi;
+	if [ "$sec_arg" == "?" ]; then # define a test
+	{
+		# symbol:?	field	operator	field
+		#   defines a new symbol based on a boolean condition
+		debug "New boolean test symbol: symbol_name: $symbol_name"
+		local field_a="${code_line_elements[$(( 2 + deep-1 ))]}";
+		local field_data_a=$(get_b64_symbol_value "${field_a}" "${SNIPPETS}")
+		local field_a_addr=$(echo "$field_data_a" | cut -d, -f${B64_SYMBOL_VALUE_RETURN_ADDR})
+		local field_type_a=$(echo "${field_data_a}" | cut -d, -f${B64_SYMBOL_VALUE_RETURN_TYPE});
+		local field_a_v=$(echo "${field_data_a}" | cut -d, -f${B64_SYMBOL_VALUE_RETURN_OUT} | base64 -d)
+		local field_b="${code_line_elements[$(( 3 + deep-1 ))]}";
+		local field_data_b=$(get_b64_symbol_value "${field_b}" "${SNIPPETS}");
+		local field_b_addr=$(echo "$field_data_b" | cut -d, -f${B64_SYMBOL_VALUE_RETURN_ADDR})
+		local field_type_b=$(echo "${field_data_b}" | cut -d, -f${B64_SYMBOL_VALUE_RETURN_TYPE});
+		local field_b_v=$(echo "${field_data_b}" | cut -d, -f${B64_SYMBOL_VALUE_RETURN_OUT} | base64 -d)
+		local instr_bytes="";
+		# a static, b static
+		if [ "${field_type_a}" == "$SYMBOL_TYPE_STATIC" -a "${field_type_b}" == "$SYMBOL_TYPE_STATIC" ]; then
+			debug "Compare sta, sta: [$symbol_name] as result of [$field_a: $field_a_v] - [$field_b: $field_b_v]";
+			instr_bytes=$(compare_v "$field_a_v" "$field_b_v");
+		fi;
+		# a static, b dyn
+		if [ "${field_type_a}" == "$SYMBOL_TYPE_STATIC" -a "${field_type_b}" == "$SYMBOL_TYPE_DYNAMIC" ]; then
+			debug "Compare sta, dyn: [$symbol_name] as result of [$field_a] - [$field_b]";
+			instr_bytes=$(compare_addr_v "$field_a_v" "$field_b_addr");
+		fi;
+		# a dyn, b static
+		if [ "${field_type_a}" == "$SYMBOL_TYPE_DYNAMIC" -a "${field_type_b}" == "$SYMBOL_TYPE_STATIC" ]; then
+			debug "Compare dyn, sta: [$symbol_name] as result of [$field_a] - [$field_b]";
+			instr_bytes=$(compare_addr_v "$field_a_addr" "$field_b_v");
+		fi;
+		# a dyn and b dyn
+		if [ "${field_type_a}" == "$SYMBOL_TYPE_DYNAMIC" -a "${field_type_b}" == "$SYMBOL_TYPE_DYNAMIC" ]; then
+			debug "Compare dyn, dyn: [$symbol_name] as result of [$field_a] - [$field_b]";
+			instr_bytes=$(compare_addr "$field_a_addr" "$field_b_addr");
+		fi;
+		local instr_len=$(echo "$instr_bytes" | base64 -d | wc -c);
+		local data_bytes="";
+		local data_len=0;
+		struct_parsed_snippet \
+			"SYMBOL_TABLE" \
+			"${symbol_name}" \
+			"${instr_offset}" \
+			"${instr_bytes}" \
+			"${instr_len}" \
+			"${static_data_offset}" \
+			"${data_bytes}" \
+			"${data_len}" \
+			"${CODE_LINE_B64}" \
+			"1";
+		return $?;
+	}
+	fi;
+	if [ "$sec_arg" == "+" ]; then # increment a variable
+	{
+		local symbol_value="${code_line_elements[$(( 2 + deep-1 ))]}"
+		debug "increment found by ${symbol_value}";
+		instr_bytes="$(set_increment $dyn_data_offset $symbol_value)";
+		instr_len="$(echo "${instr_bytes}" | base64 -d | wc -c)";
+		data_bytes="";
+		data_len="8";
+		struct_parsed_snippet \
+			"SYMBOL_TABLE" \
+			"${symbol_name}" \
+			"${instr_offset}" \
+			"${instr_bytes}" \
+			"${instr_len}" \
+			"${dyn_data_offset}" \
+			"${data_bytes}" \
+			"${data_len}" \
+			"${CODE_LINE_B64}" \
+			"1";
+		return $?;
+	}
+	fi
+	if [[ "$sec_arg" =~ ^@[0-9]*$ ]]; then # capture the argument into variable
+	{
+		local arg_number="${sec_arg/@/}"
+		debug "capture argument number ${arg_number} into variable ${symbol_name}";
+		# create a new dynamic symbol called ${symbol_name}
+		local instr_bytes="$(get_arg $dyn_data_offset $arg_number)";
+		local instr_len=$(echo -n "${instr_bytes}" | base64 -d | wc -c );
+		# this address will receive the point to the arg variable set in rsp currently;
+		# a better solution would be not have this space in binary but in memory.
+		# but it is good enough for now. because we don't really have a dynamic memory now
+		local data_bytes="";
+		data_len="8"; # pointer size
+		struct_parsed_snippet \
+			"SYMBOL_TABLE" \
+			"${symbol_name}" \
+			"${instr_offset}" \
+			"${instr_bytes}" \
+			"${instr_len}" \
+			"${dyn_data_offset}" \
+			"${data_bytes}" \
+			"${data_len}" \
+			"${CODE_LINE_B64}" \
+			"1";
+		return $?;
+	}
+	fi
+	if [[ "$sec_arg" =~ ^@[$]$ ]]; then # capture the argument count into variable
+	{
+		# create a new dynamic symbol called ${symbol_name}
+		# That should point to the rbp register first 8 bytes (int)
+		# argc_addr: memory address to put the argc 
+		#   should i use the snippets data?
+		argc_pos=$dyn_data_offset;
+		instr_bytes="$(get_arg_count $argc_pos)"
+		instr_len=$(echo -n "${instr_bytes}" | base64 -d | wc -c )
+		data_bytes="";
+		data_len="0"; # pointer size
+		struct_parsed_snippet \
+			"SYMBOL_TABLE" \
+			"${symbol_name}" \
+			"${instr_offset}" \
+			"${instr_bytes}" \
+			"${instr_len}" \
+			"${dyn_data_offset}" \
+			"${data_bytes}" \
+			"${data_len}" \
+			"${CODE_LINE_B64}" \
+			"1";
+		return $?;
+	}
+	fi
+	if [ "$sec_arg" == "!" ]; then # exec and capture output into variable
+	{
+		local cmd="$(echo -n "${code_line_elements[$(( 2 + deep-1 ))]}")"
+		debug "exec and capture output of ${cmd} into ${symbol_name}"
+		# TODO for now positional args are good enough, but the correct is to have args and env as an array each;
+		local args=( );
+		local static_map=( );
+		debug "i=$deep; i<$(( ${#code_line_elements[@]} + deep-1 )); because items: ${#code_line_elements[@]}"
+		for (( i=$((deep + 1)); i<$(( ${#code_line_elements[@]} + deep-1 )); i++ ));
+		do {
+			local arg_id="${code_line_elements[$i]}";
+			local arg_snippet="$( echo "$SNIPPETS" | grep "SYMBOL_TABLE,${arg_id}," )";
+			local arg_addr="$(echo "$arg_snippet" | cut -d, -f${SNIPPET_COLUMN_DATA_OFFSET} )";
+			local arg_is_static=0;
+			if is_static_data_snippet "${arg_snippet}"; then
+				# if arg is static, the call is different because we pass the address to the string itself
+				# instead of the address of the pointer to the string we have when it is dynamic
+				# I've choose doing this way because we do less instructions as we don't need to allocate additional
+				# bytes to create a pointer to the static string, we can just set the address to the register.
+				arg_is_static=1;
+			fi;
+			args[$((i-deep))]="$arg_addr";
+			static_map[$((i-deep))]=$arg_is_static;
+		};
+		done;
+		local data_bytes="";
+		local env=(); # memory address to the env
+		local args_addr="$(( dyn_data_offset ))"; # the array address
+		local args_size=$(( 8 * ${#args[@]} + 8 )) # 8 to cmd, 8 for each argument and 8 to null to close the array
+		local env_addr=$(( args_addr + args_size ));
+		local env_size=8; 
+		env_size=0;
+		env_addr=0; # no support for env, set NULL
+		local data_len=$(( args_size + env_size )); # 8 to each array (args and env)
+		local argsparam="${args[@]}";
+		local staticmapparam="${static_map[@]}";
+		local exec_result="$(system_call_exec "${args_addr}" "${argsparam}" "${staticmapparam}" "${env_addr}")";
+		instr_bytes="$(echo "${exec_result}" | cut -d, -f1)";
+		instr_len="$(echo "${exec_result}" | cut -d, -f2)";
+		struct_parsed_snippet \
+			"SYMBOL_TABLE" \
+			"${symbol_name}" \
+			"${instr_offset}" \
+			"${instr_bytes}" \
+			"${instr_len}" \
+			"${dyn_data_offset}" \
+			"${data_bytes}" \
+			"${data_len}" \
+			"${CODE_LINE_B64}" \
+			"1";
+		return $?;
+	}
+	fi;
+	if [ "${is_new_symbol}" == 1 -a "${#code_line_elements[@]}" == "$(( 2 + deep - 1 ))" ]; then
+	{
+		# New symbol
+		symbol_value="$( echo -n "${CODE_LINE/*:	/}" )"
+		instr_bytes="";
+		instr_len=0;
+		data_bytes="$(set_symbol_value "${symbol_value}" "${SNIPPETS}")";
+		data_len="$( echo -n "${data_bytes}" | base64 -d | wc -c)";
+		if is_hard_coded_value "${data_bytes}"; then
+			data_len=0; # hard-coded values does not use data space
+		fi;
+		# if this is not the first static variable, we need to append 1 to the static_data_offset,
+		# because it should be an \x00(null byte) between static data.
+		struct_parsed_snippet \
+			"SYMBOL_TABLE" \
+			"${symbol_name}" \
+			"${instr_offset}" \
+			"${instr_bytes}" \
+			"${instr_len}" \
+			"${static_data_offset}" \
+			"${data_bytes}" \
+			"${data_len}" \
+			"${CODE_LINE_B64}" \
+			"1";
+		return $?;
+	}
+	fi;
+	# redefine symbol
+	#####
+	# concat all symbols in a new one
+	local dyn_args=0;
+	local static_value="";
+	local instr_bytes="";
+	local data_addr=""; # target concatenated data_addr
+	for (( i=$((deep)); i<${#code_line_elements[@]}; i++ ));
+	do
+		local symbol_name=$(echo -n "${code_line_elements[$(( i - deep+1 ))]}");
+		local symbol_data=$(get_b64_symbol_value "${symbol_name}" "${SNIPPETS}" )
+		local symbol_type=$(echo "${symbol_data}" | cut -d, -f${B64_SYMBOL_VALUE_RETURN_TYPE});
+		local symbol_value=$(echo "$symbol_data" | cut -d, -f${B64_SYMBOL_VALUE_RETURN_OUT});
+		local symbol_addr="$(echo "${symbol_data}" | cut -d, -f${B64_SYMBOL_VALUE_RETURN_ADDR})";
+		local symbol_len="$(echo "${symbol_data}" | cut -d, -f${B64_SYMBOL_VALUE_RETURN_SIZE})";
+		local sym_dyn_data_size=$(get_sym_dyn_data_size "${symbol_name}" "${SNIPPETS}")
+		if [ "${symbol_type}" == "${SYMBOL_TYPE_STATIC}" ]; then
+			static_value="$( echo "${static_value}${symbol_value}" | base64 -d | base64 -w0 )";
+			instr_bytes="${instr_bytes}$(concat_symbol_instr "${symbol_addr}" "${dyn_data_offset}" "${symbol_len}" "$i")";
+		else
+			dyn_args="$(( dyn_args + 1 ))";
+			sym_dyn_data_size=$(get_sym_dyn_data_size "${symbol_name}" "${SNIPPETS}")
+			instr_bytes="${instr_bytes}$(concat_symbol_instr "$(( symbol_addr ))" "${dyn_data_offset}" "-1" "$i")";
+		fi;
+	done;
+	# if all arguments are static, we can merge them at build time
+	local symbol_name=$(echo -n "${code_line_elements[$(( 0 + deep-1 ))]}" | cut -d: -f1);
+	if [ "${dyn_args}" -eq 0 ]; then
+	{
+		local instr_bytes="";
+		local instr_len=0;
+		local data_bytes="${static_value}";
+		local data_len=$(echo -n "$data_bytes" | base64 -d | wc -c);
+		debug "Concatenating static elements into symbol [$symbol_name] with value [$static_value]";
+		struct_parsed_snippet \
+			"SYMBOL_TABLE" \
+			"${symbol_name}" \
+			"${instr_offset}" \
+			"${instr_bytes}" \
+			"${instr_len}" \
+			"${static_data_offset}" \
+			"${data_bytes}" \
+			"${data_len}" \
+			"${CODE_LINE_B64}" \
+			"1";
+		return $?
+	}
+	fi;
+	# if at least one are dynamic we need to set instructions
+	debug "Concatenating dynamic symbols."
+	local instr_len=$(echo -n "$instr_bytes" | base64 -d | wc -c);
+	local data_bytes="";
+	local data_len=8;
+	struct_parsed_snippet \
+		"SYMBOL_TABLE" \
+		"${symbol_name}" \
+		"${instr_offset}" \
+		"${instr_bytes}" \
+		"${instr_len}" \
+		"${dyn_data_offset}" \
+		"${data_bytes}" \
+		"${data_len}" \
+		"${CODE_LINE_B64}" \
+		"1";
+	return $?;
+	### CONCAT BLOCK END
+}
+
+define_code_block(){
+	# TODO add identation validation
+	debug parsing code block...
+	new_bloc="$(
+		SNIPPET_NAME="$(echo "$CODE_LINE" |cut -d: -f1 | tr -d '\t')";
+		code_bloc="$(echo "${CODE_LINE}"; read_code_bloc "${deep}")";
+		bloc_outer_code_b64="$(echo -n "${code_bloc}" | base64 -w0 )"
+		bloc_inner_code="$(
+			echo "${code_bloc}" |
+			awk 'NR>2 {print prev}; {prev=$0};' |
+			base64 -w0
+		)";
+		recursive_parse="$(
+			local insideSnips="";
+			echo "$bloc_inner_code" |
+			base64 -d | while read l; do
+				debug parsing inside fn line [$l]...
+				local parsedLine=$(echo -n "$l" | parse_snippets "${ROUND}" "${PH_VADDR_V}" "${INSTR_TOTAL_SIZE}" "${static_data_size}" "$(echo -e "$SNIPPETS\n${insideSnips}")" "$deep")
+				insideSnips=$(echo -en "${insideSnips}\n${parsedLine}")
+				echo "${parsedLine}"
+			done;
+		)";
+		innerlines="$(echo "$recursive_parse"  |
+			cut -d, -f$SNIPPET_COLUMN_SOURCE_LINES_COUNT |
+			awk '{s+=$1}END{print s}'
+		)"
+		local bloc_source_lines_count=$(( innerlines +2 ))
+		local instr_bytes=$(echo "$recursive_parse"  |
+			cut -d, -f$SNIPPET_COLUMN_INSTR_BYTES
+		)
+		local instr_size_sum="$( echo "${instr_bytes}" |
+			base64 -d | wc -c |
+			awk '{s+=$1}END{print s}'
+		)"
+		local data_bytes="$(echo "$recursive_parse"  |
+			cut -d, -f$SNIPPET_COLUMN_DATA_BYTES )"
+		local data_bytes_sum="$( echo "${data_bytes}" |
+			base64 -d | wc -c |
+			awk '{s+=$1}END{print s}'
+		)";
+		out="$(struct_parsed_snippet \
+			"SNIPPET" \
+			"${SNIPPET_NAME}" \
+			"${instr_offset}" \
+			"${instr_bytes}" \
+			"${instr_size_sum}" \
+			"${static_data_offset}" \
+			"${data_bytes}" \
+			"${data_bytes_sum}" \
+			"${bloc_outer_code_b64}" \
+			"${bloc_source_lines_count}";
+		)";
+		echo "$out";
+	)";
+	local bloc_name=$(echo "$new_bloc" | cut -d, -f${SNIPPET_COLUMN_SUBNAME})
+	if [ "$SNIPPETS" == "" ]; then
+		SNIPPETS="$( echo "$new_bloc")";
+	else
+		SNIPPETS="$( echo -e "$SNIPPETS\n$new_bloc")";
+	fi;
+	debug new_bloc=[$new_bloc]
+	echo "$new_bloc";
+}
+
+conditional_call(){
+	local test_symbol_name="${code_line_elements[$(( 0 + deep-1 ))]}";
+	local target="${code_line_elements[$(( 2 + deep-1 ))]}"
+	local target_offset="$( echo "$SNIPPETS" | grep "SNIPPET,${target}," | cut -d, -f${SNIPPET_COLUMN_INSTR_OFFSET} )";
+	debug "conditional function calling: [${code_line_elements[$(( 0 + deep-1 ))]}], deep=$deep, target=$target,${target_offset}"
+	debug "$(echo "$SNIPPETS" | grep "SYMBOL_TABLE,${target},")"
+	local instr_bytes="$(jump_if_equal "${target_offset}" "${instr_offset}" )";
+	local instr_len="$(echo "${instr_bytes}" | base64 -d | wc -c)";
+	local data_bytes="";
+	local data_len=0;
+	struct_parsed_snippet \
+		"SNIPPET_CALL" \
+		"je" \
+		"${instr_offset}" \
+		"${instr_bytes}" \
+		"${instr_len}" \
+		"${static_data_offset}" \
+		"${data_bytes}" \
+		"${data_len}" \
+		"${CODE_LINE_B64}" \
+		"1";
+}
 # parse_snippet given a source code snippet echoes snippet struct to stdout
 # allowing a pipeline to read a full instruction or bloc at time;
 # it should return a code snippet
@@ -698,407 +1084,19 @@ parse_snippet()
 	}
 	fi;
 	if [[ "${code_line_elements[$(( 1 + deep-1 ))]}" =~ [?][=]$ ]]; then # conditional call
-		local test_symbol_name="${code_line_elements[$(( 0 + deep-1 ))]}";
-		local target="${code_line_elements[$(( 2 + deep-1 ))]}"
-		local target_offset="$( echo "$SNIPPETS" | grep "SNIPPET,${target}," | cut -d, -f${SNIPPET_COLUMN_INSTR_OFFSET} )";
-		debug "conditional function calling: [${code_line_elements[$(( 0 + deep-1 ))]}], deep=$deep, target=$target,${target_offset}"
-		debug "$(echo "$SNIPPETS" | grep "SYMBOL_TABLE,${target},")"
-		local instr_bytes="$(jump_if_equal "${target_offset}" "${instr_offset}" )";
-		local instr_len="$(echo "${instr_bytes}" | base64 -d | wc -c)";
-		local data_bytes="";
-		local data_len=0;
-		struct_parsed_snippet \
-			"SNIPPET_CALL" \
-			"je" \
-			"${instr_offset}" \
-			"${instr_bytes}" \
-			"${instr_len}" \
-			"${static_data_offset}" \
-			"${data_bytes}" \
-			"${data_len}" \
-			"${CODE_LINE_B64}" \
-			"1";
+		conditional_call
 		return $?;
 	fi;
 	if [[ "${code_line_elements[$(( 0 + deep-1 ))]}" =~ :$ ]]; then
 	{
 		if [[ "${CODE_LINE_XXD}" =~ .*3a097b$ ]]; then # check if ends with ":\t{" ... so it's a code block function
 		{
-			# TODO add identation validation
-			debug parsing code block...
-			new_bloc="$(
-				SNIPPET_NAME="$(echo "$CODE_LINE" |cut -d: -f1 | tr -d '\t')";
-				code_bloc="$(echo "${CODE_LINE}"; read_code_bloc "${deep}")";
-				bloc_outer_code_b64="$(echo -n "${code_bloc}" | base64 -w0 )"
-				bloc_inner_code="$(
-					echo "${code_bloc}" |
-					awk 'NR>2 {print prev}; {prev=$0};' |
-					base64 -w0
-				)";
-				recursive_parse="$(
-					local insideSnips="";
-					echo "$bloc_inner_code" |
-					base64 -d | while read l; do
-						debug parsing inside fn line [$l]...
-						local parsedLine=$(echo -n "$l" | parse_snippets "${ROUND}" "${PH_VADDR_V}" "${INSTR_TOTAL_SIZE}" "${static_data_size}" "$(echo -e "$SNIPPETS\n${insideSnips}")" "$deep")
-						insideSnips=$(echo -en "${insideSnips}\n${parsedLine}")
-						echo "${parsedLine}"
-					done;
-				)";
-				innerlines="$(echo "$recursive_parse"  |
-					cut -d, -f$SNIPPET_COLUMN_SOURCE_LINES_COUNT |
-					awk '{s+=$1}END{print s}'
-				)"
-				local bloc_source_lines_count=$(( innerlines +2 ))
-				local instr_bytes=$(echo "$recursive_parse"  |
-					cut -d, -f$SNIPPET_COLUMN_INSTR_BYTES
-				)
-				local instr_size_sum="$( echo "${instr_bytes}" |
-					base64 -d | wc -c |
-					awk '{s+=$1}END{print s}'
-				)"
-				local data_bytes="$(echo "$recursive_parse"  |
-					cut -d, -f$SNIPPET_COLUMN_DATA_BYTES )"
-				local data_bytes_sum="$( echo "${data_bytes}" |
-					base64 -d | wc -c |
-					awk '{s+=$1}END{print s}'
-				)";
-				out="$(struct_parsed_snippet \
-					"SNIPPET" \
-					"${SNIPPET_NAME}" \
-					"${instr_offset}" \
-					"${instr_bytes}" \
-					"${instr_size_sum}" \
-					"${static_data_offset}" \
-					"${data_bytes}" \
-					"${data_bytes_sum}" \
-					"${bloc_outer_code_b64}" \
-					"${bloc_source_lines_count}";
-				)";
-				echo "$out";
-			)";
-			local bloc_name=$(echo "$new_bloc" | cut -d, -f${SNIPPET_COLUMN_SUBNAME})
-			if [ "$SNIPPETS" == "" ]; then
-				SNIPPETS="$( echo "$new_bloc")";
-			else
-				SNIPPETS="$( echo -e "$SNIPPETS\n$new_bloc")";
-			fi;
-			debug new_bloc=[$new_bloc]
-			echo "$new_bloc";
+			define_code_block
 			return $?;
-		}
-		else # maybe it is just a variable or constant
-		{
-			# All variables, constants, macros are symbols and should be managed by a symbol table
-			# It should have name type, scope and memory address
-			# The compiler should updated that items in the first code read
-			#
-			# TODO implement scoped variables and constants
-			# TODO implement global macro values, replacing code with values
-			#
-			# Constants should replace the code value before process the code.
-			# Constants should not keep in memory, instead should replace the vlaue hardcoded in bytecode.
-			# Variables should recover the target address and size at runtime.
-			# A variable and constant are defined at the same way. The compiler should consider everything as constant.
-			# Once the code changes the variable value, it will be converted to variable.
-			# So if a variable is never changed, it will be always a constant hardcoded at the bytecode;
-			local symbol_name="$( echo -n "${code_line_elements[$(( 0 + deep-1 ))]/:*/}" )"
-			#local symbol_name="$(echo -n "${symbol_name/:*/}")";
-			local sec_arg="$(echo -n "${code_line_elements[$(( 1 + deep-1 ))]}")"
-			local symbol_data="$(echo "$SNIPPETS" | grep "SYMBOL_TABLE,${symbol_name}," | tail -1)";
-			local is_new_symbol=0;
-			debug "symbol_name=$symbol_name: ${#code_line_elements[@]} == $(( 3 + deep - 1 ))"
-			if [ "${symbol_data}" == "" ]; then 
-			{
-				debug "New symbol to set ${symbol_name}"
-				is_new_symbol="1";
-			}
-			fi;
-			if [ "$sec_arg" == "?" ]; then # define a test
-			{
-				# symbol:?	field	operator	field
-				#   defines a new symbol based on a boolean condition
-				debug "New boolean test symbol: symbol_name: $symbol_name"
-				local field_a="${code_line_elements[$(( 2 + deep-1 ))]}";
-				local field_data_a=$(get_b64_symbol_value "${field_a}" "${SNIPPETS}")
-				local field_a_addr=$(echo "$field_data_a" | cut -d, -f${B64_SYMBOL_VALUE_RETURN_ADDR})
-				local field_type_a=$(echo "${field_data_a}" | cut -d, -f${B64_SYMBOL_VALUE_RETURN_TYPE});
-				local field_a_v=$(echo "${field_data_a}" | cut -d, -f${B64_SYMBOL_VALUE_RETURN_OUT} | base64 -d)
-				local field_b="${code_line_elements[$(( 3 + deep-1 ))]}";
-				local field_data_b=$(get_b64_symbol_value "${field_b}" "${SNIPPETS}");
-				local field_b_addr=$(echo "$field_data_b" | cut -d, -f${B64_SYMBOL_VALUE_RETURN_ADDR})
-				local field_type_b=$(echo "${field_data_b}" | cut -d, -f${B64_SYMBOL_VALUE_RETURN_TYPE});
-				local field_b_v=$(echo "${field_data_b}" | cut -d, -f${B64_SYMBOL_VALUE_RETURN_OUT} | base64 -d)
-				local instr_bytes="";
-				# a static, b static
-				if [ "${field_type_a}" == "$SYMBOL_TYPE_STATIC" -a "${field_type_b}" == "$SYMBOL_TYPE_STATIC" ]; then
-					debug "Compare sta, sta: [$symbol_name] as result of [$field_a: $field_a_v] - [$field_b: $field_b_v]";
-					instr_bytes=$(compare_v "$field_a_v" "$field_b_v");
-				fi;
-				# a static, b dyn
-				if [ "${field_type_a}" == "$SYMBOL_TYPE_STATIC" -a "${field_type_b}" == "$SYMBOL_TYPE_DYNAMIC" ]; then
-					debug "Compare sta, dyn: [$symbol_name] as result of [$field_a] - [$field_b]";
-					instr_bytes=$(compare_addr_v "$field_a_v" "$field_b_addr");
-				fi;
-				# a dyn, b static
-				if [ "${field_type_a}" == "$SYMBOL_TYPE_DYNAMIC" -a "${field_type_b}" == "$SYMBOL_TYPE_STATIC" ]; then
-					debug "Compare dyn, sta: [$symbol_name] as result of [$field_a] - [$field_b]";
-					instr_bytes=$(compare_addr_v "$field_a_addr" "$field_b_v");
-				fi;
-				# a dyn and b dyn
-				if [ "${field_type_a}" == "$SYMBOL_TYPE_DYNAMIC" -a "${field_type_b}" == "$SYMBOL_TYPE_DYNAMIC" ]; then
-					debug "Compare dyn, dyn: [$symbol_name] as result of [$field_a] - [$field_b]";
-					instr_bytes=$(compare_addr "$field_a_addr" "$field_b_addr");
-				fi;
-				local instr_len=$(echo "$instr_bytes" | base64 -d | wc -c);
-				local data_bytes="";
-				local data_len=0;
-				struct_parsed_snippet \
-					"SYMBOL_TABLE" \
-					"${symbol_name}" \
-					"${instr_offset}" \
-					"${instr_bytes}" \
-					"${instr_len}" \
-					"${static_data_offset}" \
-					"${data_bytes}" \
-					"${data_len}" \
-					"${CODE_LINE_B64}" \
-					"1";
-				return $?;
-			}
-			fi;
-			if [ "$sec_arg" == "+" ]; then # increment a variable
-			{
-				local symbol_value="${code_line_elements[$(( 2 + deep-1))]}"
-				debug "increment found by ${symbol_value}"
-				instr_bytes="$(set_increment $dyn_data_offset $symbol_value)";
-				instr_len="$(echo "${instr_bytes}" | base64 -d | wc -c)";
-				data_bytes="";
-				data_len="8";
-				struct_parsed_snippet \
-					"SYMBOL_TABLE" \
-					"${symbol_name}" \
-					"${instr_offset}" \
-					"${instr_bytes}" \
-					"${instr_len}" \
-					"${dyn_data_offset}" \
-					"${data_bytes}" \
-					"${data_len}" \
-					"${CODE_LINE_B64}" \
-					"1";
-				return $?;
-			}
-			fi
-			if [[ "$sec_arg" =~ ^@[0-9]*$ ]]; then # capture the argument into variable
-			{
-				local arg_number="${sec_arg/@/}"
-				debug "capture argument number ${arg_number} into variable ${symbol_name}";
-				# create a new dynamic symbol called ${symbol_name}
-				local instr_bytes="$(get_arg $dyn_data_offset $arg_number)";
-				local instr_len=$(echo -n "${instr_bytes}" | base64 -d | wc -c );
-				# this address will receive the point to the arg variable set in rsp currently;
-				# a better solution would be not have this space in binary but in memory.
-				# but it is good enough for now. because we don't really have a dynamic memory now
-				local data_bytes="";
-				data_len="8"; # pointer size
-				struct_parsed_snippet \
-					"SYMBOL_TABLE" \
-					"${symbol_name}" \
-					"${instr_offset}" \
-					"${instr_bytes}" \
-					"${instr_len}" \
-					"${dyn_data_offset}" \
-					"${data_bytes}" \
-					"${data_len}" \
-					"${CODE_LINE_B64}" \
-					"1";
-				return $?;
-			}
-			fi
-			if [[ "$sec_arg" =~ ^@[$]$ ]]; then # capture the argument count into variable
-			{
-				# create a new dynamic symbol called ${symbol_name}
-				# That should point to the rbp register first 8 bytes (int)
-				# argc_addr: memory address to put the argc 
-				#   should i use the snippets data?
-				argc_pos=$dyn_data_offset;
-				instr_bytes="$(get_arg_count $argc_pos)"
-				instr_len=$(echo -n "${instr_bytes}" | base64 -d | wc -c )
-				data_bytes="";
-				data_len="0"; # pointer size
-				struct_parsed_snippet \
-					"SYMBOL_TABLE" \
-					"${symbol_name}" \
-					"${instr_offset}" \
-					"${instr_bytes}" \
-					"${instr_len}" \
-					"${dyn_data_offset}" \
-					"${data_bytes}" \
-					"${data_len}" \
-					"${CODE_LINE_B64}" \
-					"1";
-				return $?;
-			}
-			fi
-			if [ "$sec_arg" == "!" ]; then # exec and capture output into variable
-			{
-				local cmd="$(echo -n "${code_line_elements[$(( 2 + deep-1 ))]}")"
-				debug "exec and capture output of ${symbol_name} into ${cmd}"
-				# TODO for now positional args are good enough, but the correct is to have args and env as an array each;
-				local args=( );
-				local static_map=( );
-				for (( i=$deep; i<$(( ${#code_line_elements[@]} + deep-1 )); i++ ));
-				do {
-					local arg_id="${code_line_elements[$i]}";
-					local arg_snippet="$( echo "$SNIPPETS" | grep "SYMBOL_TABLE,${arg_id}," )";
-					local arg_addr="$(echo "$arg_snippet" | cut -d, -f${SNIPPET_COLUMN_DATA_OFFSET} )";
-					local arg_is_static=0;
-					if is_static_data_snippet "${arg_snippet}"; then
-						# if arg is static, the call is different because we pass the address to the string itself
-						# instead of the address of the pointer to the string we have when it is dynamic
-						# I've choose doing this way because we do less instructions as we don't need to allocate additional
-						# bytes to create a pointer to the static string, we can just set the address to the register.
-						arg_is_static=1;
-					fi;
-					args[$((i-1))]="$arg_addr";
-					static_map[$((i-1))]=$arg_is_static;
-				};
-				done;
-				local data_bytes="";
-				local env=(); # memory address to the env
-				local args_addr="$(( dyn_data_offset ))"; # the array address
-				local args_size=$(( 8 * ${#args[@]} + 8 )) # 8 to cmd, 8 for each argument and 8 to null to close the array
-				local env_addr=$(( args_addr + args_size ));
-				local env_size=8; 
-				env_size=0;
-				env_addr=0; # no support for env, set NULL
-				local data_len=$(( args_size + env_size )); # 8 to each array (args and env)
-				local argsparam="${args[@]}";
-				local staticmapparam="${static_map[@]}";
-				local exec_result="$(system_call_exec "${args_addr}" "${argsparam}" "${staticmapparam}" "${env_addr}")";
-				instr_bytes="$(echo "${exec_result}" | cut -d, -f1)";
-				instr_len="$(echo "${exec_result}" | cut -d, -f2)";
-				struct_parsed_snippet \
-					"INSTRUCTION" \
-					"sys_execve" \
-					"${instr_offset}" \
-					"${instr_bytes}" \
-					"${instr_len}" \
-					"${static_data_offset}" \
-					"${data_bytes}" \
-					"${data_len}" \
-					"${CODE_LINE_B64}" \
-					"1";
-				return $?;
-				struct_parsed_snippet \
-					"SYMBOL_TABLE" \
-					"${symbol_name}" \
-					"${instr_offset}" \
-					"${instr_bytes}" \
-					"${instr_len}" \
-					"${dyn_data_offset}" \
-					"${data_bytes}" \
-					"${data_len}" \
-					"${CODE_LINE_B64}" \
-					"1";
-				return $?;
-			}
-			fi;
-			if [ "${is_new_symbol}" == 1 -a "${#code_line_elements[@]}" == "$(( 2 + deep - 1 ))" ]; then
-			{
-				# New symbol
-				symbol_value="$( echo -n "${CODE_LINE/*:	/}" )"
-				instr_bytes="";
-				instr_len=0;
-				data_bytes="$(set_symbol_value "${symbol_value}" "${SNIPPETS}")";
-				data_len="$( echo -n "${data_bytes}" | base64 -d | wc -c)";
-				if is_hard_coded_value "${data_bytes}"; then
-					data_len=0; # hard-coded values does not use data space
-				fi;
-				# if this is not the first static variable, we need to append 1 to the static_data_offset,
-				# because it should be an \x00(null byte) between static data.
-				struct_parsed_snippet \
-					"SYMBOL_TABLE" \
-					"${symbol_name}" \
-					"${instr_offset}" \
-					"${instr_bytes}" \
-					"${instr_len}" \
-					"${static_data_offset}" \
-					"${data_bytes}" \
-					"${data_len}" \
-					"${CODE_LINE_B64}" \
-					"1";
-				return $?;
-			}
-			fi;
-			# redefine symbol
-			#####
-			# concat all symbols in a new one
-			local dyn_args=0;
-			local static_value="";
-			local instr_bytes="";
-			local data_addr=""; # target concatenated data_addr
-			for (( i=$((deep)); i<${#code_line_elements[@]}; i++ ));
-			do
-				local symbol_name=$(echo -n "${code_line_elements[$(( i - deep+1 ))]}");
-				local symbol_data=$(get_b64_symbol_value "${symbol_name}" "${SNIPPETS}" )
-				local symbol_type=$(echo "${symbol_data}" | cut -d, -f${B64_SYMBOL_VALUE_RETURN_TYPE});
-				local symbol_value=$(echo "$symbol_data" | cut -d, -f${B64_SYMBOL_VALUE_RETURN_OUT});
-				local symbol_addr="$(echo "${symbol_data}" | cut -d, -f${B64_SYMBOL_VALUE_RETURN_ADDR})";
-				local symbol_len="$(echo "${symbol_data}" | cut -d, -f${B64_SYMBOL_VALUE_RETURN_SIZE})";
-				local sym_dyn_data_size=$(get_sym_dyn_data_size "${symbol_name}" "${SNIPPETS}")
-				if [ "${symbol_type}" == "${SYMBOL_TYPE_STATIC}" ]; then
-					static_value="$( echo "${static_value}${symbol_value}" | base64 -d | base64 -w0 )";
-					instr_bytes="${instr_bytes}$(concat_symbol_instr "${symbol_addr}" "${dyn_data_offset}" "${symbol_len}" "$i")";
-				else
-					dyn_args="$(( dyn_args + 1 ))";
-					sym_dyn_data_size=$(get_sym_dyn_data_size "${symbol_name}" "${SNIPPETS}")
-					instr_bytes="${instr_bytes}$(concat_symbol_instr "$(( symbol_addr ))" "${dyn_data_offset}" "-1" "$i")";
-				fi;
-			done;
-			# if all arguments are static, we can merge them at build time
-			local symbol_name=$(echo -n "${code_line_elements[$(( 0 + deep-1 ))]}" | cut -d: -f1);
-			if [ "${dyn_args}" -eq 0 ]; then
-			{
-				local instr_bytes="";
-				local instr_len=0;
-				local data_bytes="${static_value}";
-				local data_len=$(echo -n "$data_bytes" | base64 -d | wc -c);
-				debug "Concatenating static elements into symbol [$symbol_name] with value [$static_value]";
-				struct_parsed_snippet \
-					"SYMBOL_TABLE" \
-					"${symbol_name}" \
-					"${instr_offset}" \
-					"${instr_bytes}" \
-					"${instr_len}" \
-					"${static_data_offset}" \
-					"${data_bytes}" \
-					"${data_len}" \
-					"${CODE_LINE_B64}" \
-					"1";
-				return $?
-			}
-			fi;
-			# if at least one are dynamic we need to set instructions
-			debug "Concatenating dynamic symbols."
-			local instr_len=$(echo -n "$instr_bytes" | base64 -d | wc -c);
-			local data_bytes="";
-			local data_len=8;
-			struct_parsed_snippet \
-				"SYMBOL_TABLE" \
-				"${symbol_name}" \
-				"${instr_offset}" \
-				"${instr_bytes}" \
-				"${instr_len}" \
-				"${dyn_data_offset}" \
-				"${data_bytes}" \
-				"${data_len}" \
-				"${CODE_LINE_B64}" \
-				"1";
-			return $?;
-			### CONCAT BLOCK END
 		}
 		fi;
+		define_variable
+		return $?
 	}
 	fi;
 	if [[ "${code_line_elements[$(( 0 + deep-1 ))]}" =~ :\<=$ ]]; then # read from file into var

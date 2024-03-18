@@ -253,6 +253,7 @@ TEST="\x85"; # 10000101
 # 110	Memory (Direct w/Disp32)
 # 111	Register (Direct)
 IMM="$(( 2#00111000 ))";
+MOV_V4_RAX="\x48\xc7\xc0";
 MOV_V8_RAX="${M64}$( printEndianValue $(( MOV + IMM + RAX )) ${SIZE_8BITS_1BYTE} )"; # 48 b8
 MOV_V4_RCX="\x48\xc7\xc1";
 MOV_V8_RDX="${M64}$( printEndianValue $(( MOV + IMM + RDX )) ${SIZE_8BITS_1BYTE} )"; # 48 ba
@@ -313,6 +314,8 @@ MOV_RSP_ADDR=$(get_mov_rsp_addr);
 MOV_RSI_ADDR=$(get_mov_rsi_addr);
 MOV_RSI_RDX="${M64}${MOV_R}$( printEndianValue $(( MOVR + MODRM_REG_RSI + RDX )) ${SIZE_8BITS_1BYTE} )"; # move the RSI to RDX #11110010
 ADD_SHORT="\x83"; # ADD 8 or 16 bit operand (depend on ModR/M opcode first bit(most significant (bit 7)) been zero) and the ModR/M opcode
+INC_RDX="\x48\xff\xc2";
+DEC_RDI="\x48\xff\xcf";
 ADD_MODRM_RSI="$(printEndianValue $(( MODRM_MOD_DISPLACEMENT_REG + RSI )) $SIZE_8BITS_1BYTE)";
 ADD_MODRM_RSP="$(printEndianValue $(( MODRM_MOD_DISPLACEMENT_REG + RSP )) $SIZE_8BITS_1BYTE)";
 ADD_RSI="${M64}${ADD_SHORT}${ADD_MODRM_RSI}";
@@ -367,9 +370,11 @@ MOV_R10="\x49\xBA";
 # R14	xor r14, r14	4D 31 F6
 # R15	xor r15, r15	4D 31 FF
 XOR_RAX_RAX="\x48\x31\xc0";
-XOR_RDX_RDX="\x48\x31\xD2";
+XOR_RDX_RDX="\x48\x31\xd2";
+XOR_RSI_RSI="\x48\x31\xf6";
 XOR_RDI_RDI="\x48\x31\xff";
 XOR_R8_R8="\x4d\x31\xc0";
+XOR_R10_R10="\x4d\x31\xd2";
 
 # JMP
 # We have some types of jump
@@ -955,7 +960,6 @@ function detect_string_length()
 	#code="${code}${MOV_DATA_RAX}";
 	TEST_RAX_RAX="\x48\x85\xc0";
 	# inc rdx
-	INC_RDX="\x48\xff\xc2";
 	code="${code}${INC_RDX}";
 	# test data byte
 	TEST_AL="\x84\xc0";
@@ -1124,6 +1128,7 @@ function system_call_exec()
 	# set the args array in memory
 	local argc=${#args[@]}
 	debug "exec args=$argc = [${args[@]}] == [$2]"
+	debug "exec staticmap=${#static_map[@]} = [${static_map[@]}] == [$3]"
 	for (( i=0; i<${argc}; i++ ));
 	do {
 		exec_code="${exec_code}${MOV_V8_RAX}$(printEndianValue "${args[$i]}" "${SIZE_64BITS_8BYTES}")";
@@ -1167,8 +1172,19 @@ function system_call_exec()
 	CODE_TO_JUMP="$(printEndianValue "$(echo -en "${exec_code}" | wc -c)" ${SIZE_32BITS_4BYTES})" # 45 is the number of byte instructions of the syscall sys_execve (including the MOV (%rdi), %rdi.
 	fork_code="${fork_code}${JNE}${CODE_TO_JUMP}"; # The second byte "85" is the opcode for the JNE instruction. The following four bytes "06 00 00 00" represent the signed 32-bit offset from the current instruction to the target label.
 	# end fork code
+	local wait_code="";
+	local sys_wait4=61;
+	wait_code="${wait_code}${MOV_V4_RAX}$(printEndianValue ${sys_wait4} ${SIZE_32BITS_4BYTES})"
+	# printEndianValues seems buggy with negative values
+	#wait_code="${wait_code}${MOV_V4_RDI}$(printEndianValue -1 ${SIZE_32BITS_4BYTES}) ";# pid_t pid
+	# so lets change to decrement rdi
+	wait_code="${wait_code}${XOR_RDI_RDI}${DEC_RDI}";
+	wait_code="${wait_code}${XOR_RSI_RSI}";# int __user *stat_addr
+	wait_code="${wait_code}${XOR_RDX_RDX}";# int options
+	wait_code="${wait_code}${XOR_R10_R10}";# struct rusage
+	wait_code="${wait_code}${SYSCALL}";
 
-	code="${fork_code}${exec_code}";
+	code="${fork_code}${exec_code}${wait_code}";
 	echo -en "${code}" | base64 -w0;
 	echo -en ",$(echo -en "${code}" | wc -c )";
 }
@@ -1287,7 +1303,6 @@ compare_v(){
 	local field_a_v="$1";
 	local field_b_v="$2";
 	local code="";
-	MOV_V4_RAX="\x48\xc7\xc0";
 	code="${code}${MOV_V4_RAX}$(printEndianValue "$field_a_v" "${SIZE_32BITS_4BYTES}")";
 	MOV_V4_RCX="\x48\xc7\xc1";
 	code="${code}${MOV_V4_RCX}$(printEndianValue "$field_b_v" "${SIZE_32BITS_4BYTES}")";
@@ -1300,7 +1315,6 @@ compare_v_addr(){
 	local field_a_v="$1";
 	local field_b_addr="$2";
 	local code="";
-	MOV_V4_RAX="\x48\xc7\xc0";
 	code="${code}${MOV_V4_RAX}$(printEndianValue "$field_a_v" "${SIZE_32BITS_4BYTES}")";
 	LEA_V4_RCX="\x48\x8d\x0c\x25";
 	code="${code}${LEA_V4_RCX}$(printEndianValue "$field_b_addr" "${SIZE_32BITS_4BYTES}")";
@@ -1331,7 +1345,6 @@ set_increment(){
 	if [ "$value" == 1 ]; then
 		code="${code}${MOV_V4_RDX}$(printEndianValue "${addr}" "${SIZE_32BITS_4BYTES}")";
 		code="${code}${MOV_RDX_RDX}";
-		local INC_RDX="\x48\xff\xc2";
 		code="${code}${INC_RDX}";
 		code="${code}${MOV_RDX_ADDR4}$(printEndianValue "${addr}" "${SIZE_32BITS_4BYTES}")"
 	else
