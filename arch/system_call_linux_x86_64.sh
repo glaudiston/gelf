@@ -253,6 +253,7 @@ TEST="\x85"; # 10000101
 # 110	Memory (Direct w/Disp32)
 # 111	Register (Direct)
 IMM="$(( 2#00111000 ))";
+MOV_EDI_EDI="\x67\x8b\x3f";
 MOV_V4_RAX="\x48\xc7\xc0";
 MOV_V8_RAX="${M64}$( printEndianValue $(( MOV + IMM + RAX )) ${SIZE_8BITS_1BYTE} )"; # 48 b8
 MOV_V4_RCX="\x48\xc7\xc1";
@@ -311,8 +312,8 @@ get_mov_rsi_addr()
 	#echo -n "${REX}${INSTR_MOV}${MOD_RM}${SBI}";
 	echo -n "\x48\x89\x34\x25";
 }
-MOV_RSP_ADDR=$(get_mov_rsp_addr);
-MOV_RSI_ADDR=$(get_mov_rsi_addr);
+MOV_RSP_ADDR4=$(get_mov_rsp_addr);
+MOV_RSI_ADDR4=$(get_mov_rsi_addr);
 MOV_RSI_RDX="${M64}${MOV_R}$( printEndianValue $(( MOVR + MODRM_REG_RSI + RDX )) ${SIZE_8BITS_1BYTE} )"; # move the RSI to RDX #11110010
 ADD_SHORT="\x83"; # ADD 8 or 16 bit operand (depend on ModR/M opcode first bit(most significant (bit 7)) been zero) and the ModR/M opcode
 INC_RDX="\x48\xff\xc2";
@@ -1160,9 +1161,9 @@ function system_call_exec()
 		dup2_child="$(system_call_dup2 "$pipe_out" "$stdout" | base64 -d | toHexDump)";
 		# read_pipe will run on the parent pid.
 		read_pipe="${read_pipe}${MOV_V4_RAX}$(printEndianValue "${SYS_READ}" "${SIZE_32BITS_4BYTES}")";
-		MOV_EDI_EDI="\x67\x8b\x3f";
 		read_pipe="${read_pipe}${MOV_V4_RDI}$(printEndianValue "${pipe_in}" "${SIZE_32BITS_4BYTES}")${MOV_EDI_EDI}"; # fd
 		read_pipe="${read_pipe}${MOV_V4_RSI}$(printEndianValue "${pipe_buffer_addr}" "${SIZE_32BITS_4BYTES}")"; # buff
+		read_pipe="${read_pipe}${MOV_RSI_ADDR4}$(printEndianValue "$((pipe_buffer_addr - 8))" "${SIZE_32BITS_4BYTES}")"; # set the pointer to the buffer allowing concat to work
 		read_pipe="${read_pipe}${MOV_V4_RDX}$(printEndianValue "${pipe_buffer_size}" "${SIZE_32BITS_4BYTES}")"; # count
 		read_pipe="${read_pipe}${SYSCALL}";
 	fi;
@@ -1242,7 +1243,7 @@ function get_arg_count()
 	# 	This function should copy the pointer value currently set at RSP and copy it to the address
 	local ADDR="$1"; # memory where to put the argc count
 	local CODE="";
-	CODE="${CODE}${MOV_RSP_ADDR}$(printEndianValue $ADDR $SIZE_32BITS_4BYTES)";
+	CODE="${CODE}${MOV_RSP_ADDR4}$(printEndianValue $ADDR $SIZE_32BITS_4BYTES)";
 	echo -en "${CODE}" | base64 -w0;
 }
 
@@ -1258,7 +1259,7 @@ function get_arg()
 	# RESOLVE RSI (Copy pointer address content to RSI)
 	CODE="${CODE}${MOV_RSI_RSI}";
 	# MOV RSI ADDR
-	CODE="${CODE}${MOV_RSI_ADDR}$(printEndianValue "$ADDR" $SIZE_32BITS_4BYTES)";
+	CODE="${CODE}${MOV_RSI_ADDR4}$(printEndianValue "$ADDR" $SIZE_32BITS_4BYTES)";
 
 	echo -en "${CODE}" | base64 -w0;
 }

@@ -810,8 +810,10 @@ define_variable(){
 		local env=(); # memory address to the env
 		local pipe_struct_size=8; # 2 int array; int 4 bytes each
 		local pipe_buffer_size=$((16#100));# 256;
-		local pipe_addr=$(( dyn_data_offset ))
-		local args_addr="$(( dyn_data_offset + pipe_struct_size + pipe_buffer_size ))"; # the array address
+		local ptr_to_buffer_size=8; # reserve the first 8 bytes to a pointer to the buffer data (currently 8 bytes ahead), so the concat code will not break trying to resolve a pointer
+		local pipe_buffer_addr=$(( dyn_data_offset + ptr_to_buffer_size ));
+		local pipe_addr=$(( pipe_buffer_addr + pipe_buffer_size ))
+		local args_addr="$(( pipe_addr + pipe_struct_size ))"; # the array address
 		local args_size=$(( 8 * ${#args[@]} + 8 )) # 8 to cmd, 8 for each argument and 8 to null to close the array
 		local env_addr=$(( args_addr + args_size ));
 		local env_size=8; 
@@ -819,10 +821,8 @@ define_variable(){
 		env_addr=0; # no support for env, set NULL
 		local argsparam="${args[@]}";
 		local staticmapparam="${static_map[@]}";
-		local pipe_buffer_addr=$((pipe_addr+8));
-		local data_len=$(( args_size + env_size + pipe_struct_size + pipe_buffer_size ));
+		local data_len=$(( ptr_to_buffer_size + pipe_buffer_size + pipe_struct_size + args_size + env_size ));
 		local exec_result="$(system_call_exec "${args_addr}" "${argsparam}" "${staticmapparam}" "${env_addr}" "${pipe_addr}" "${pipe_buffer_addr}" "${pipe_buffer_size}")";
-		dyn_data_offset=$(( dyn_data_offset + pipe_struct_size ))
 		instr_bytes="$(echo "${exec_result}" | cut -d, -f1)";
 		instr_len="$(echo "${exec_result}" | cut -d, -f2)";
 		struct_parsed_snippet \
