@@ -29,10 +29,16 @@ int mov_v_rsi(pid_t child, unsigned long addr)
 	return TRUE + RSI;
 }
 
+// mov (%edi), %edi
+int mov__edi__edi(pid_t child, unsigned long addr)
+{
+	printf("%016lx: mov (%%edi), %%edi;" ANSI_COLOR_GRAY "\t\t# resolve only the 4 bytes into RDI", addr);fflush(stdout);
+	return TRUE + RDI;
+}
 // movzbq (%rdx), %rax
 int mov__rdx__rax(pid_t child, unsigned long addr)
 {
-	printf("%016lx: movzbq (%rdx), %rax;" ANSI_COLOR_GRAY "\t# move to rax the resolved pointer value of RDX", addr);fflush(stdout);
+	printf("%016lx: movzbq (%%rdx), %%rax;" ANSI_COLOR_GRAY "\t# move to rax the resolved pointer value of RDX", addr);fflush(stdout);
 	return TRUE + RDX;
 }
 int mov_rax_addr(pid_t child, unsigned long addr)
@@ -43,7 +49,7 @@ int mov_rax_addr(pid_t child, unsigned long addr)
 }
 int mov_addr_rax(pid_t child, unsigned long addr)
 {
-	printf("%016lx: movzbq (%rsi), %rax;" ANSI_COLOR_GRAY "\t# move to rax the resolved pointer value of RSI", addr);fflush(stdout);
+	printf("%016lx: movzbq (%%rsi), %%rax;" ANSI_COLOR_GRAY "\t# move to rax the resolved pointer value of RSI", addr);fflush(stdout);
 	return TRUE + RSI;
 }
 
@@ -149,10 +155,10 @@ int mov_v8_rdi(pid_t child, unsigned long addr)
 	printf("%016lx: mov 0x%08lx, %%rdi;" ANSI_COLOR_GRAY "\t#", addr, v);
 	return TRUE + RDI;
 }
-int mov_v_rdi_3(pid_t child, unsigned long addr)
+int mov_v4_rdi(pid_t child, unsigned long addr)
 {
 	long unsigned v = ptrace(PTRACE_PEEKTEXT, child, (void*)addr+3, 0);
-	printf("%016lx: mov 0x%lx, %%rdi;" ANSI_COLOR_GRAY "\t#", addr, v);fflush(stdout);
+	printf("%016lx: mov 0x%04x, %%rdi;" ANSI_COLOR_GRAY "\t#", addr, v);fflush(stdout);
 	return TRUE + RDI;
 }
 int mov_v_r8(pid_t child, unsigned long addr)
@@ -243,6 +249,11 @@ int xor_r8_r8(pid_t child, unsigned long addr)
 	printf("%016lx: xor %%r8, %%r8;" ANSI_COLOR_GRAY "\t\t# zero\n", addr); fflush(stdout);
 	return 0;
 }
+int xor_r10_r10(pid_t child, unsigned long addr)
+{
+	printf("%016lx: xor %%r10, %%r10;" ANSI_COLOR_GRAY "\t\t# zero\n", addr); fflush(stdout);
+	return 0;
+}
 int xor_rdx_rdx(pid_t child, unsigned long addr)
 {
 	printf("%016lx: xor %%rdx, %%rdx;" ANSI_COLOR_GRAY "\t# zero\n", addr); fflush(stdout);
@@ -273,7 +284,7 @@ int add_v_rdx(pid_t child, unsigned long addr)
 int cmp_rax_v(pid_t child, unsigned long addr)
 {
 	unsigned char v = ptrace(PTRACE_PEEKTEXT, child, (void*)addr+3,0);
-	printf("%016lx: cmp %%rax, %i;" ANSI_COLOR_GRAY "\t\t# %s, rax==%i\n", addr, v, v == regs.rax ? "TRUE": "FALSE", (char)regs.rax);
+	printf("%016lx: cmp %%rax, %i;" ANSI_COLOR_GRAY "\t\t# %s, rax is H(0x%llx) I(%li)\n", addr, v, v == regs.rax ? "true": "false", regs.rax, regs.rax);
 	return 0;
 }
 int cmp_rax_rcx(pid_t child, unsigned long addr)
@@ -376,7 +387,8 @@ int test_al(pid_t child, unsigned long addr)
 }
 int jne(pid_t child, unsigned long addr)
 {
-	printf("%016lx: JNE;\n", addr);
+	long unsigned v = ptrace(PTRACE_PEEKTEXT, child, (void*)addr+2,0);
+	printf("%016lx: jne %i;" ANSI_COLOR_GRAY "\t\t\t# if false jump to 0x%x\n", addr, v, regs.rip + v + 6);	// 6 = 2 instr bytes + 4 address bytes
 	return 0;
 }
 int mov_al(pid_t child, unsigned long addr)
@@ -393,37 +405,46 @@ void detect_friendly_instruction(pid_t child, unsigned long addr, char * friendl
 #define SYS_STAT 4
 #define SYS_FSTAT 5
 #define SYS_MMAP 9
+#define SYS_PIPE 22
+#define SYS_DUP2 33
 #define SYS_FORK 57
 #define SYS_EXECVE 59
 #define SYS_EXIT 60
+#define SYS_WAIT4 61
 	char syscall[512];
 	char buff[256];
 	switch (regs.rax) {
 		case SYS_OPEN:
 			peek_string(child, (void*)regs.rdi, buff); // filename
-			sprintf(friendly_instr, "open(%s)", buff);
+			sprintf(friendly_instr, "sys_open(%s)", buff);
 			break;
 		case SYS_WRITE:
 			peek_string(child, (void*)regs.rsi, buff);
 			long unsigned v = ptrace(PTRACE_PEEKTEXT, child, (void*)regs.rsi, 0);
-			sprintf(friendly_instr, "write(%lli, \"%s\"(%lx), %lli)", regs.rdi, buff, v, regs.rdx);
+			sprintf(friendly_instr, "sys_write(%lli, \"%s\"(%lx), %lli)", regs.rdi, buff, v, regs.rdx);
 			break;
 		case SYS_READ:
 			peek_string(child, (void*)regs.rsi, buff);
-			sprintf(friendly_instr, "read(%lli, %llx, %lli)", regs.rdi, regs.rsi, regs.rdx);
+			sprintf(friendly_instr, "sys_read(%lli, 0x%llx, %lli)", regs.rdi, regs.rsi, regs.rdx);
 			break;
 		case SYS_MMAP:
-			sprintf(friendly_instr, "mmap(0x%llx, 0x%llx, 0x%llx, 0x%llx, 0x%llx, 0x%llx); # alocates %lli bytes using fd %lli", 
+			sprintf(friendly_instr, "sys_mmap(0x%llx, 0x%llx, 0x%llx, 0x%llx, 0x%llx, 0x%llx); # alocates %lli bytes using fd %lli", 
 				regs.rdi, regs.rsi, regs.rdx, regs.r10, regs.r8, regs.r9, regs.rsi, regs.r8);
 			break;
 		case SYS_STAT:
-			sprintf(friendly_instr, "stat(%lli)",regs.rsi);
+			sprintf(friendly_instr, "sys_stat(%lli)",regs.rsi);
 			break;
 		case SYS_FSTAT:
-			sprintf(friendly_instr, "fstat(%lli, 0x%016llx)",regs.rdi,regs.rsi);
+			sprintf(friendly_instr, "sys_fstat(%lli, 0x%016llx)",regs.rdi,regs.rsi);
+			break;
+		case SYS_PIPE:
+			sprintf(friendly_instr, "sys_pipe(0x%x);", regs.rdi);
+			break;
+		case SYS_DUP2:
+			sprintf(friendly_instr, "sys_dup2(%i,%i);", regs.rdi, regs.rsi);
 			break;
 		case SYS_FORK:
-			sprintf(friendly_instr, "fork()");
+			sprintf(friendly_instr, "sys_fork()");
 			running_forks++;
 			break;
 		case SYS_EXECVE:
@@ -433,10 +454,13 @@ void detect_friendly_instruction(pid_t child, unsigned long addr, char * friendl
 			peek_string(child, (void*)regs.rdi, filename);
 			peek_array(child, (void*)regs.rsi, args);
 			peek_array(child, (void*)regs.rdx, env);
-			sprintf(friendly_instr, "execve(file: \"%s\", args: %s, env: %s)", filename, args, env);
+			sprintf(friendly_instr, "sys_execve(file: \"%s\", args: %s, env: %s)", filename, args, env);
 			break;
 		case SYS_EXIT:
-			sprintf(friendly_instr, "exit(%lli)",regs.rdi);
+			sprintf(friendly_instr, "sys_exit(%lli)",regs.rdi);
+			break;
+		case SYS_WAIT4:
+			sprintf(friendly_instr, "sys_wait4(%lli,%lli,%lli,%lli)",regs.rdi,regs.rsi,regs.rdx, regs.r10);
 			break;
 		default:
 			sprintf(friendly_instr, "# rax: %lli", regs.rax);
@@ -455,7 +479,7 @@ int p_syscall(pid_t child, unsigned long addr)
 int jz(pid_t child, unsigned long addr)
 {
 	unsigned data = ptrace(PTRACE_PEEKTEXT, child, (void*)addr+2, 0);
-	printf("%016lx: jz .%i" ANSI_COLOR_GRAY "\t\t\t# jump if equal(test subtraction is zero)\n", addr, data);
+	printf("%016lx: jz .%i" ANSI_COLOR_GRAY "\t\t\t#if true, jump to 0x%x\n", addr, data, regs.rip + data + 6);
 	return 0;
 }
 int jg_int(pid_t child, unsigned long addr)
@@ -476,6 +500,11 @@ int inc_rdx(pid_t child, unsigned long addr)
 	printf("%016lx: inc %%rdx;" ANSI_COLOR_GRAY "\t\t\t#", addr);
 	return TRUE + RDX;
 }
+int dec_rdi(pid_t child, unsigned long addr)
+{
+	printf("%016lx: dec %%rdi;" ANSI_COLOR_GRAY "\t\t#", addr);
+	return TRUE + RDI;
+}
 int dec_rdx(pid_t child, unsigned long addr)
 {
 	printf("%016lx: dec %%rdx;" ANSI_COLOR_GRAY "\t\t#", addr);
@@ -483,7 +512,7 @@ int dec_rdx(pid_t child, unsigned long addr)
 }
 int inc_esi(pid_t child, unsigned long addr)
 {
-	printf("%016lx: INC %%esi;\n", addr);
+	printf("%016lx: inc %%esi;\n", addr);
 	return 0;
 }
 int mul_esi(pid_t child, unsigned long addr)
@@ -826,12 +855,17 @@ struct bytecode_entry
 	{
 		.k = {0x48,0xc7,0xc7},
 		.kl = 3,
-		.fn = mov_v_rdi_3
+		.fn = mov_v4_rdi
 	},
 	{
 		.k = {0x48,0xff,0xc2},
 		.kl = 3,
 		.fn = inc_rdx
+	},
+	{
+		.k = {0x48,0xff,0xcf},
+		.kl = 3,
+		.fn = dec_rdi
 	},
 	{
 		.k = {0x48,0xff,0xca},
@@ -884,6 +918,11 @@ struct bytecode_entry
 		.fn = xor_r8_r8,
 	},
 	{
+		.k = {0x4d,0x31,0xd2},
+		.kl = 3,
+		.fn = xor_r10_r10,
+	},
+	{
 		.k = {0x52},
 		.kl = 1,
 		.fn = push_rdx,
@@ -923,6 +962,11 @@ struct bytecode_entry
 		.kl = 5,
 		.fn = movw_rsp,
 	        //	15 e0 	movw   $0xe015,0x2(%rsp)
+	},
+	{
+		.k = {0x67, 0x8b, 0x3f},
+		.kl = 3,
+		.fn = mov__edi__edi
 	},
 	{
 		// pushq $0x2

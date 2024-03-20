@@ -257,7 +257,8 @@ MOV_V4_RAX="\x48\xc7\xc0";
 MOV_V8_RAX="${M64}$( printEndianValue $(( MOV + IMM + RAX )) ${SIZE_8BITS_1BYTE} )"; # 48 b8
 MOV_V4_RCX="\x48\xc7\xc1";
 MOV_V8_RDX="${M64}$( printEndianValue $(( MOV + IMM + RDX )) ${SIZE_8BITS_1BYTE} )"; # 48 ba
-MOV_V4_RDX="\x48\xc7\xc2" # MOV value and resolve address, so the content of memory address is set at the register
+MOV_V4_RDI="\x48\xc7\xc7";
+MOV_V4_RDX="\x48\xc7\xc2"; # MOV value and resolve address, so the content of memory address is set at the register
 MOV_ADDR_RDX="\x48\x8b\x14\x25"; # followed by 4 bytes le;
 MOV_ADDR_RSI="\x48\x8b\x34\x25";
 MOV_ADDR_RDI="\x48\x8b\x3c\x25";
@@ -1097,9 +1098,44 @@ function toHexDump()
 	xxd --ps | sed "s/\(..\)/\\\\x\1/g" | tr -d '\n'
 }
 
-function system_call_sys_execve()
+function system_call_pipe()
 {
-	:
+	local pipe_addr="$1";
+	local sys_pipe=22;
+	local code="";
+	code="${code}${MOV_V4_RAX}$(printEndianValue "${sys_pipe}" "$SIZE_32BITS_4BYTES")";
+	code="${code}${MOV_V4_RDI}$(printEndianValue "${pipe_addr}" "$SIZE_32BITS_4BYTES")";
+	code="${code}${SYSCALL}";
+	echo -en "${code}" | base64 -w0;
+}
+
+function system_call_wait4()
+{
+	local sys_wait4=61;
+	local code="";
+	code="${code}${MOV_V4_RAX}$(printEndianValue ${sys_wait4} ${SIZE_32BITS_4BYTES})"
+	# printEndianValues seems buggy with negative values
+	#wait_code="${wait_code}${MOV_V4_RDI}$(printEndianValue -1 ${SIZE_32BITS_4BYTES}) ";# pid_t pid
+	# so lets change to decrement rdi
+	code="${code}${XOR_RDI_RDI}${DEC_RDI}";
+	code="${code}${XOR_RSI_RSI}";# int __user *stat_addr
+	code="${code}${XOR_RDX_RDX}";# int options
+	code="${code}${XOR_R10_R10}";# struct rusage
+	code="${code}${SYSCALL}";
+	echo -en "${code}" | base64 -w0;
+}
+
+system_call_dup2(){
+	local old_fd_addr="$1"; # where in memory we have the int value of the fd
+	local new_fd="$2";
+	local sys_dup2=33;
+	local code="";
+	code="${code}${MOV_V4_RAX}$(printEndianValue "${sys_dup2}" "${SIZE_32BITS_4BYTES}")";
+	code="${code}${MOV_V4_RDI}$(printEndianValue "${old_fd_addr}" "${SIZE_32BITS_4BYTES}")";
+	code="${code}${MOV_RDI_RDI}";
+	code="${code}${MOV_V4_RSI}$(printEndianValue "${new_fd}" "${SIZE_32BITS_4BYTES}")";
+	code="${code}${SYSCALL}";
+	echo -en "${code}" | base64 -w0;
 }
 
 function system_call_exec()
@@ -1110,20 +1146,27 @@ function system_call_exec()
 	eval "args=( $2 )"
 	local static_map=( );
 	eval "static_map=( $3 )";
-	local PTR_ENV="$4"
+	local PTR_ENV="$4";
+	local pipe_addr="$5";
+	local pipe_buffer_addr="$6";
+	local pipe_buffer_size="$7";
 	local code="";
-	# TODO: JNE ?
-	#CODE=${CODE}${cmp}$(printEndianValue 0 ${SIZE_32BITS_4BYTES})$(printEndianValue $rax ${})) ; rax receives 0 for the child and the child pid on the parent
-	# je child_process_only # only on the child, jump over next line to execute the execve code
-	# jmp end # if reach this (is parent) then jump over all sys_execve instructions to the end and do nothing
-	# child_process_only:
-	#								mem       elf     str
-	# 401000:       48 bf 00 20 40 00 00    movabs $0x402000,%rdi #        == 2000 == /bin/sh
-	# 401007:       00 00 00
-	#CODE="${CODE}${MOV_V8_RDI}$(printEndianValue ${PTR_FILE:=0} ${SIZE_64BITS_8BYTES})"
-	#       :       48 bf c0 00 01 00 00 00 00 00"
+	local stdout=1;
+	local dup2_child="";
+	local read_pipe="";
+	if [ "$pipe_addr" != "" ]; then
+		pipe_in="$pipe_addr";
+		pipe_out="$((pipe_addr + 4))";
+		dup2_child="$(system_call_dup2 "$pipe_out" "$stdout" | base64 -d | toHexDump)";
+		# read_pipe will run on the parent pid.
+		read_pipe="${read_pipe}${MOV_V4_RAX}$(printEndianValue "${SYS_READ}" "${SIZE_32BITS_4BYTES}")";
+		MOV_EDI_EDI="\x67\x8b\x3f";
+		read_pipe="${read_pipe}${MOV_V4_RDI}$(printEndianValue "${pipe_in}" "${SIZE_32BITS_4BYTES}")${MOV_EDI_EDI}"; # fd
+		read_pipe="${read_pipe}${MOV_V4_RSI}$(printEndianValue "${pipe_buffer_addr}" "${SIZE_32BITS_4BYTES}")"; # buff
+		read_pipe="${read_pipe}${MOV_V4_RDX}$(printEndianValue "${pipe_buffer_size}" "${SIZE_32BITS_4BYTES}")"; # count
+		read_pipe="${read_pipe}${SYSCALL}";
+	fi;
 
-	# start exec code
 	local exec_code="";
 	# set the args array in memory
 	local argc=${#args[@]}
@@ -1144,24 +1187,21 @@ function system_call_exec()
 		exec_code="${exec_code}${MOV_RDI_RDI}";
 	fi;
 
-	# LEA_RSP_RSI="\x48\x8d\x74\x24\x08";
-	# 40100a:       48 8d 74 24 08          lea    0x8(%rsp),%rsi
-	# CODE="${CODE}${LEA_RSP_RSI}"
 	exec_code="${exec_code}${MOV_RSI}$(printEndianValue ${PTR_ARGS:=0} ${SIZE_64BITS_8BYTES})"
 
-	# 40100f:       ba 00 00 00 00          mov    $0x0,%edx
 	exec_code="${exec_code}${MOV_V8_RDX}$(printEndianValue ${PTR_ENV:=0} ${SIZE_64BITS_8BYTES})" # const char *const envp[]
 
-	# 401014:       b8 3b 00 00 00          mov    $0x3b,%eax
 	exec_code="${exec_code}${MOV_V8_RAX}$(printEndianValue ${SYS_EXECVE} ${SIZE_64BITS_8BYTES})" # sys_execve (3b)
 
-	# 401019:       0f 05                   syscall
 	exec_code="${exec_code}${SYSCALL}";
 	# end exec code:
 	
+	local pipe_code="";
+	if [ "$pipe_addr" != "" ]; then
+		local pipe_code=$(system_call_pipe "${pipe_addr}"| base64 -d | toHexDump);
+	fi;
 	# start fork code
-	local fork_code="";
-	fork_code="${fork_code}$(system_call_fork | cut -d, -f1 | base64 -d | toHexDump)";
+	local fork_code="$(system_call_fork | cut -d, -f1 | base64 -d | toHexDump)";
 	# TODO: CMP ? then (0x3d) rAx, lz
 	local TWOBYTE_INSTRUCTION_PREFIX="\0f"; # The first byte "0F" is the opcode for the two-byte instruction prefix that indicates the following instruction is a conditional jump.
 	local ModRM="$( printEndianValue $(( MODRM_MOD_DISPLACEMENT_REG + MODRM_OPCODE_CMP + RAX )) $SIZE_8BITS_1BYTE)";
@@ -1169,22 +1209,12 @@ function system_call_exec()
 	# rax will be zero on child, on parent will be the pid of the forked child
 	# so if non zero (on parent) we will jump over the sys_execve code to not run it twice,
 	# and because it will exit after run
-	CODE_TO_JUMP="$(printEndianValue "$(echo -en "${exec_code}" | wc -c)" ${SIZE_32BITS_4BYTES})" # 45 is the number of byte instructions of the syscall sys_execve (including the MOV (%rdi), %rdi.
+	CODE_TO_JUMP="$(printEndianValue "$(echo -en "${dup2_child}${exec_code}" | wc -c)" ${SIZE_32BITS_4BYTES})" # 45 is the number of byte instructions of the syscall sys_execve (including the MOV (%rdi), %rdi.
 	fork_code="${fork_code}${JNE}${CODE_TO_JUMP}"; # The second byte "85" is the opcode for the JNE instruction. The following four bytes "06 00 00 00" represent the signed 32-bit offset from the current instruction to the target label.
 	# end fork code
-	local wait_code="";
-	local sys_wait4=61;
-	wait_code="${wait_code}${MOV_V4_RAX}$(printEndianValue ${sys_wait4} ${SIZE_32BITS_4BYTES})"
-	# printEndianValues seems buggy with negative values
-	#wait_code="${wait_code}${MOV_V4_RDI}$(printEndianValue -1 ${SIZE_32BITS_4BYTES}) ";# pid_t pid
-	# so lets change to decrement rdi
-	wait_code="${wait_code}${XOR_RDI_RDI}${DEC_RDI}";
-	wait_code="${wait_code}${XOR_RSI_RSI}";# int __user *stat_addr
-	wait_code="${wait_code}${XOR_RDX_RDX}";# int options
-	wait_code="${wait_code}${XOR_R10_R10}";# struct rusage
-	wait_code="${wait_code}${SYSCALL}";
+	local wait_code="$(system_call_wait4 | base64 -d | toHexDump)";
 
-	code="${fork_code}${exec_code}${wait_code}";
+	code="${pipe_code}${fork_code}${dup2_child}${exec_code}${wait_code}${read_pipe}";
 	echo -en "${code}" | base64 -w0;
 	echo -en ",$(echo -en "${code}" | wc -c )";
 }

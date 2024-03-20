@@ -808,16 +808,21 @@ define_variable(){
 		done;
 		local data_bytes="";
 		local env=(); # memory address to the env
-		local args_addr="$(( dyn_data_offset ))"; # the array address
+		local pipe_struct_size=8; # 2 int array; int 4 bytes each
+		local pipe_buffer_size=$((16#100));# 256;
+		local pipe_addr=$(( dyn_data_offset ))
+		local args_addr="$(( dyn_data_offset + pipe_struct_size + pipe_buffer_size ))"; # the array address
 		local args_size=$(( 8 * ${#args[@]} + 8 )) # 8 to cmd, 8 for each argument and 8 to null to close the array
 		local env_addr=$(( args_addr + args_size ));
 		local env_size=8; 
 		env_size=0;
 		env_addr=0; # no support for env, set NULL
-		local data_len=$(( args_size + env_size )); # 8 to each array (args and env)
 		local argsparam="${args[@]}";
 		local staticmapparam="${static_map[@]}";
-		local exec_result="$(system_call_exec "${args_addr}" "${argsparam}" "${staticmapparam}" "${env_addr}")";
+		local pipe_buffer_addr=$((pipe_addr+8));
+		local data_len=$(( args_size + env_size + pipe_struct_size + pipe_buffer_size ));
+		local exec_result="$(system_call_exec "${args_addr}" "${argsparam}" "${staticmapparam}" "${env_addr}" "${pipe_addr}" "${pipe_buffer_addr}" "${pipe_buffer_size}")";
+		dyn_data_offset=$(( dyn_data_offset + pipe_struct_size ))
 		instr_bytes="$(echo "${exec_result}" | cut -d, -f1)";
 		instr_len="$(echo "${exec_result}" | cut -d, -f2)";
 		struct_parsed_snippet \
@@ -1476,16 +1481,16 @@ write_elf()
 		* argv is $rsp + 8
 		 (gdb) print *((char**)($rsp + 8))
 	";
-	debug first parse round
+	debug first parse round;
 	local static_data_size=0;
 	local parsed_snippets="$(echo "${INPUT_SOURCE_CODE}" | parse_snippets "${ROUND_FIRST}" "${PH_VADDR_V}" "${INSTR_TOTAL_SIZE-0}" "${static_data_size}" )";
 	# now we have the all information parsed
 	# but the addresses are just offsets
 	# we need to redo to replace the addresses references
-	debug ==== second parse round ====
+	debug ==== second parse round ====;
 	local INSTR_TOTAL_SIZE=$(echo -en "${parsed_snippets}" | detect_instruction_size_from_code);
-	local static_data_size=$(echo -en "${parsed_snippets}" | detect_static_data_size_from_code)
-	debug INSTR_TOTAL_SIZE=${INSTR_TOTAL_SIZE} static_data_size=${static_data_size}
+	local static_data_size=$(echo -en "${parsed_snippets}" | detect_static_data_size_from_code);
+	debug INSTR_TOTAL_SIZE=${INSTR_TOTAL_SIZE} static_data_size=${static_data_size};
 	# update snippets with new addr
 	parsed_snippets=$(echo "${INPUT_SOURCE_CODE}" | parse_snippets "${ROUND_FINAL}" "${PH_VADDR_V}" "${INSTR_TOTAL_SIZE}" "${static_data_size}" );
 	local ELF_BODY="$(echo "$parsed_snippets" |
