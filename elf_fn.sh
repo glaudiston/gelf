@@ -257,12 +257,16 @@ print_elf_body()
 	local DATA_ALL="$(echo "${SNIPPETS}" | 
 		while read d;
 		do
-			ds=$(echo -en "$d" | cut -d, -f$SNIPPET_COLUMN_DATA_LEN);
-			dbl=$(echo -en "$d" | cut -d, -f$SNIPPET_COLUMN_DATA_BYTES | base64 -d | wc -c);
-			if [ "${ds:=0}" -gt 0 -a "${dbl:=0}" -gt 0 ]; then # avoid hard coded values
-				echo -en "$d" | cut -d, -f$SNIPPET_COLUMN_DATA_BYTES;
-				echo -en "\x00" | base64 -w0; # ensure a null byte to split data
-				let static_data_count++;
+			local dt=$(echo -en "$d" | cut -d, -f${SNIPPET_COLUMN_TYPE});
+			local ds=$(echo -en "$d" | cut -d, -f$SNIPPET_COLUMN_DATA_LEN);
+			local dbl=$(echo -en "$d" | cut -d, -f$SNIPPET_COLUMN_DATA_BYTES | base64 -d | wc -c);
+			if [ "$dt" == "SYMBOL_TABLE" ]; then
+				if [ "${ds:=0}" -gt 0 -a "${dbl:=0}" -gt 0 ]; then # avoid hard coded values
+					debug " > > symbol_add [$dt] ;snip[$d]";
+					echo -en "$d" | cut -d, -f$SNIPPET_COLUMN_DATA_BYTES;
+					echo -en "\x00" | base64 -w0; # ensure a null byte to split data
+					let static_data_count++;
+				fi;
 			fi;
 		done; 
 	)";
@@ -329,12 +333,12 @@ get_b64_symbol_value()
 	local input="ascii";
 	debug "get_b64_symbol_value: symbol_name=$symbol_name";
 	if [ "$symbol_name" == "" ]; then
-		echo -n ",0,${SYMBOL_TYPE_STATIC},0";
+		echo -n ",0,${SYMBOL_TYPE_HARD_CODED},0";
 	fi;
 	if is_valid_number "$symbol_name"; then {
 		out=$(echo -n "$symbol_name" | base64 -w0);
 		outsize=$(echo -n "${out}" | base64 -d | wc -c)
-		echo -n ${out},${outsize},${SYMBOL_TYPE_STATIC}
+		echo -n ${out},${outsize},${SYMBOL_TYPE_HARD_CODED}
 		return
 	}
 	fi;
@@ -371,7 +375,7 @@ get_b64_symbol_value()
 	if [ "${symbol_value}" == "" ];then
 	{
 		if [ "${symbol_len}" == 0 ]; then
-			echo -n ",0,${SYMBOL_TYPE_STATIC}"
+			echo -n ",0,${SYMBOL_TYPE_HARD_CODED}"
 			return;
 		fi;
 		# Empty values will be only accessible at runtime, eg: args, arg count...
@@ -381,6 +385,13 @@ get_b64_symbol_value()
 		return;
 	};
 	fi
+	if is_valid_number "$(echo "${symbol_value}" | base64 -d)"; then {
+		out="$symbol_value";
+		outsize=$(echo -n "${out}" | base64 -d | wc -c)
+		echo -n ${out},${outsize},${SYMBOL_TYPE_HARD_CODED}
+		return
+	}
+	fi;
 	out=$(echo -n "${symbol_value}")
 	outsize=$(echo -n "${out}" | base64 -d | wc -c)
 	echo -n ${out},${outsize},${SYMBOL_TYPE_STATIC},${symbol_addr}
@@ -685,26 +696,7 @@ define_variable(){
 		local field_type_b=$(echo "${field_data_b}" | cut -d, -f${B64_SYMBOL_VALUE_RETURN_TYPE});
 		local field_b_v=$(echo "${field_data_b}" | cut -d, -f${B64_SYMBOL_VALUE_RETURN_OUT} | base64 -d)
 		local instr_bytes="";
-		# a static, b static
-		if [ "${field_type_a}" == "$SYMBOL_TYPE_STATIC" -a "${field_type_b}" == "$SYMBOL_TYPE_STATIC" ]; then
-			debug "Compare sta, sta: [$symbol_name] as result of [$field_a: $field_a_v] - [$field_b: $field_b_v]";
-			instr_bytes=$(compare_v "$field_a_v" "$field_b_v");
-		fi;
-		# a static, b dyn
-		if [ "${field_type_a}" == "$SYMBOL_TYPE_STATIC" -a "${field_type_b}" == "$SYMBOL_TYPE_DYNAMIC" ]; then
-			debug "Compare sta, dyn: [$symbol_name] as result of [$field_a] - [$field_b]";
-			instr_bytes=$(compare_addr_v "$field_a_v" "$field_b_addr");
-		fi;
-		# a dyn, b static
-		if [ "${field_type_a}" == "$SYMBOL_TYPE_DYNAMIC" -a "${field_type_b}" == "$SYMBOL_TYPE_STATIC" ]; then
-			debug "Compare dyn, sta: [$symbol_name] as result of [$field_a] - [$field_b]";
-			instr_bytes=$(compare_addr_v "$field_a_addr" "$field_b_v");
-		fi;
-		# a dyn and b dyn
-		if [ "${field_type_a}" == "$SYMBOL_TYPE_DYNAMIC" -a "${field_type_b}" == "$SYMBOL_TYPE_DYNAMIC" ]; then
-			debug "Compare dyn, dyn: [$symbol_name] as result of [$field_a] - [$field_b]";
-			instr_bytes=$(compare_addr "$field_a_addr" "$field_b_addr");
-		fi;
+		instr_bytes=$(compare "${field_a_v:=0}" "${field_b_v:=0}" "$field_type_a" "$field_type_b")
 		local instr_len=$(echo "$instr_bytes" | base64 -d | wc -c);
 		local data_bytes="";
 		local data_len=0;
@@ -1073,8 +1065,7 @@ conditional_call(){
 	local test_symbol_name="${code_line_elements[$(( 0 + deep-1 ))]}";
 	local target="${code_line_elements[$(( 2 + deep-1 ))]}"
 	local target_offset="$( echo "$SNIPPETS" | grep "SNIPPET,${target}," | cut -d, -f${SNIPPET_COLUMN_INSTR_OFFSET} )";
-	debug "conditional function calling: [${code_line_elements[$(( 0 + deep-1 ))]}], deep=$deep, target=$target,${target_offset}"
-	debug "$(echo "$SNIPPETS" | grep "SYMBOL_TABLE,${target},")"
+	debug "conditional function calling: [${test_symbol_name}], deep=$deep, target=$target,$(printf 0x%x ${target_offset})"
 	local instr_bytes="$(jump_if_equal "${target_offset}" "${instr_offset}" )";
 	local instr_len="$(echo "${instr_bytes}" | base64 -d | wc -c)";
 	local data_bytes="";
@@ -1179,8 +1170,8 @@ parse_snippet()
 	{
 		local WRITE_OUTPUT_ELEM=1;
 		local WRITE_DATA_ELEM=2;
-		local input_symbol_name="${code_line_elements[$WRITE_DATA_ELEM]}";
-		local out=${code_line_elements[$WRITE_OUTPUT_ELEM]};
+		local input_symbol_name="${code_line_elements[$(( WRITE_DATA_ELEM + deep-1 ))]}";
+		local out=${code_line_elements[$(( WRITE_OUTPUT_ELEM + deep-1 ))]};
 		# expected: STDOUT, STDERR, FD...
 		local data_output=$(get_b64_symbol_value "${out}" "${SNIPPETS}" | cut -d, -f${B64_SYMBOL_VALUE_RETURN_OUT} | base64 -d | tr -d '\0' );
 		# I think we can remove the parse_data_bytes and force the symbol have the data always
@@ -1193,6 +1184,7 @@ parse_snippet()
 		local data_bytes_len="$(echo -n "${symbol_data}"| cut -d, -f2)";
 		local data_addr_v=$(echo "${symbol_data}" | cut -d, -f${B64_SYMBOL_VALUE_RETURN_ADDR});
 		if [ "${symbol_type}" != "${SYMBOL_TYPE_STATIC}" ]; then
+		{
 			data_bytes_len=0; # no data to append. just registers used.
 			if [ "${symbol_type}" == "${SYMBOL_TYPE_PROCEDURE}" ]; then
 			{
@@ -1201,13 +1193,18 @@ parse_snippet()
 				data_addr_v="${procedure_addr}"; # point to the procedure address
 			}
 			fi;
+		}
 		fi;
 		# TODO: detect if using dyn data addr and pass it 
 		local input_symbol_return="$( echo "$SNIPPETS" | grep "SYMBOL_TABLE,${input_symbol_name}," | cut -d, -f${SNIPPET_COLUMN_RETURN} )";
+		debug "write: input_symbol_return=$input_symbol_return";
 		if [ "$input_symbol_return" != "" ]; then
 			data_addr_v="${input_symbol_return}";
-		else
+		elif [ "$data_addr_v" != "" ]; then
 			data_addr_v="$(( data_addr_v ))";
+		else
+			debug "write: expect symbol_value to be a hard coded number value: ${symbol_value}"
+			data_addr_v="$( echo ${symbol_value} | base64 -d)"
 		fi;
 		local instr_bytes="$(system_call_write "${symbol_type}" "${data_output}" "$data_addr_v" "$data_bytes_len" "${instr_offset}")";
 		data_bytes="";

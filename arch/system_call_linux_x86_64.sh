@@ -257,6 +257,9 @@ MOV_EDI_EDI="\x67\x8b\x3f";
 MOV_V4_RAX="\x48\xc7\xc0";
 MOV_V8_RAX="${M64}$( printEndianValue $(( MOV + IMM + RAX )) ${SIZE_8BITS_1BYTE} )"; # 48 b8
 MOV_V4_RCX="\x48\xc7\xc1";
+LEA_V4_RAX="\x48\x8d\x04\x25";
+LEA_V4_RCX="\x48\x8d\x0c\x25";
+CMP_RAX_RCX="\x48\x39\xc1";
 MOV_V8_RDX="${M64}$( printEndianValue $(( MOV + IMM + RDX )) ${SIZE_8BITS_1BYTE} )"; # 48 ba
 MOV_V4_RDI="\x48\xc7\xc7";
 MOV_V4_RDX="\x48\xc7\xc2"; # MOV value and resolve address, so the content of memory address is set at the register
@@ -988,7 +991,7 @@ function system_call_write_dyn_addr()
 	local DATA_ADDR_V="$2";
 	local DATA_LEN="$3";
 	local CODE="";
-	debug "write a dynamic address[$(printf 0x%x $DATA_ADDR_V )] to $OUT";
+	debug "write a dynamic address[$(printf 0x%x $DATA_ADDR_V 2>/dev/null|| echo $DATA_ADDR_V)] to $OUT";
 	if [ "$(echo -n "${DATA_ADDR_V}" | cut -d, -f1 | base64 -w0)" == "$( echo -n ${ARCH_CONST_ARGUMENT_ADDRESS} | base64 -w0)" ]; then
 	{
 		local CODE="";
@@ -1315,56 +1318,34 @@ concat_symbol_instr(){
 	echo -en "${code}" | base64 -w0;
 }
 
-compare_addr(){
-	local field_a_addr="$1";
-	local field_b_addr="$2";
+compare()
+{
+	local a="$1";
+	local b="$2";
+	local type_a="$3";
+	local type_b="$4";
+	# types can be hardcoded, static or dynamic
 	local code="";
-	LEA_V4_RAX="\x48\x8d\x04\x25";
-	code="${code}${LEA_V4_RAX}$(printEndianValue "$field_a_addr" "${SIZE_32BITS_4BYTES}")";
-	code="${code}${MOV_RAX_RAX}";
-	LEA_V4_RCX="\x48\x8d\x0c\x25";
-	code="${code}${LEA_V4_RCX}$(printEndianValue "$field_b_addr" "${SIZE_32BITS_4BYTES}")";
-	code="${code}${MOV_RCX_RCX}";
-	CMP_RAX_RCX="\x48\x39\xc1";
-	code="${code}${CMP_RAX_RCX}";
-	echo -en "${code}" | base64 -w0;
-}
-
-compare_v(){
-	local field_a_v="$1";
-	local field_b_v="$2";
-	local code="";
-	code="${code}${MOV_V4_RAX}$(printEndianValue "$field_a_v" "${SIZE_32BITS_4BYTES}")";
-	MOV_V4_RCX="\x48\xc7\xc1";
-	code="${code}${MOV_V4_RCX}$(printEndianValue "$field_b_v" "${SIZE_32BITS_4BYTES}")";
-	CMP_RAX_RCX="\x48\x39\xc1";
-	code="${code}${CMP_RAX_RCX}";
-	echo -en "${code}" | base64 -w0;
-}
-
-compare_v_addr(){
-	local field_a_v="$1";
-	local field_b_addr="$2";
-	local code="";
-	code="${code}${MOV_V4_RAX}$(printEndianValue "$field_a_v" "${SIZE_32BITS_4BYTES}")";
-	LEA_V4_RCX="\x48\x8d\x0c\x25";
-	code="${code}${LEA_V4_RCX}$(printEndianValue "$field_b_addr" "${SIZE_32BITS_4BYTES}")";
-	code="${code}${MOV_RCX_RCX}";
-	CMP_RAX_RCX="\x48\x39\xc1";
-	code="${code}${CMP_RAX_RCX}";
-	echo -en "${code}" | base64 -w0;
-}
-
-compare_addr_v(){
-	local field_a_addr="$1";
-	local field_b_v="$2";
-	local code="";
-	LEA_V4_RAX="\x48\x8d\x04\x25";
-	code="${code}${LEA_V4_RAX}$(printEndianValue "$field_a_addr" "${SIZE_32BITS_4BYTES}")";
-	code="${code}${MOV_RAX_RAX}";
-	MOV_V4_RCX="\x48\xc7\xc1";
-	code="${code}${MOV_V4_RCX}$(printEndianValue "${field_b_v:=0}" "${SIZE_32BITS_4BYTES}")";
-	CMP_RAX_RCX="\x48\x39\xc1";
+	if [ "${type_a}" == "$SYMBOL_TYPE_HARD_CODED" ]; then
+		code="${code}${MOV_V4_RAX}$(printEndianValue "$a" "${SIZE_32BITS_4BYTES}")";
+	fi;
+	if [ "${type_b}" == "$SYMBOL_TYPE_HARD_CODED" ]; then
+		code="${code}${MOV_V4_RCX}$(printEndianValue "$b" "${SIZE_32BITS_4BYTES}")";
+	fi;
+	if [ "${type_a}" == "$SYMBOL_TYPE_STATIC" ]; then
+		code="${code}${MOV_V4_RAX}$(printEndianValue "$a" "${SIZE_32BITS_4BYTES}")";
+	fi;
+	if [ "${type_b}" == "$SYMBOL_TYPE_STATIC" ]; then
+		code="${code}${MOV_V4_RCX}$(printEndianValue "$b" "${SIZE_32BITS_4BYTES}")";
+	fi;
+	if [ "${type_a}" == "$SYMBOL_TYPE_DYNAMIC" ]; then
+		code="${code}${LEA_V4_RAX}$(printEndianValue "$a" "${SIZE_32BITS_4BYTES}")";
+		code="${code}${MOV_RAX_RAX}";
+	fi;
+	if [ "${type_b}" == "$SYMBOL_TYPE_DYNAMIC" ]; then
+		code="${code}${LEA_V4_RCX}$(printEndianValue "$b" "${SIZE_32BITS_4BYTES}")";
+		code="${code}${MOV_RCX_RCX}";
+	fi;
 	code="${code}${CMP_RAX_RCX}";
 	echo -en "${code}" | base64 -w0;
 }

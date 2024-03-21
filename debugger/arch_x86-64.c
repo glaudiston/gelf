@@ -125,7 +125,7 @@ int mov_rdi_rdi(pid_t child, unsigned long addr)
 	return TRUE + RDI;
 }
 
-int mov_v_rax(pid_t child, unsigned long addr)
+int mov_v8_rax(pid_t child, unsigned long addr)
 {
 	long unsigned rax = ptrace(PTRACE_PEEKTEXT, child, (void*)addr+2, 0);
 	printf("%016lx: mov 0x%08lx, %%rax;" ANSI_COLOR_GRAY "\t#", addr, rax);fflush(stdout);
@@ -807,7 +807,7 @@ struct bytecode_entry
 	{
 		.k = {0x48,0xb8},
 		.kl = 2,
-		.fn = mov_v_rax
+		.fn = mov_v8_rax
 	},
 	{
 		.k = {0x48,0xba},
