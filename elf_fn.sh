@@ -324,9 +324,13 @@ B64_SYMBOL_VALUE_RETURN_TYPE=3;
 B64_SYMBOL_VALUE_RETURN_ADDR=4;
 get_b64_symbol_value()
 {
-	local symbol_name="$1"
+	local symbol_name="$1";
 	local SNIPPETS=$2;
 	local input="ascii";
+	debug "get_b64_symbol_value: symbol_name=$symbol_name";
+	if [ "$symbol_name" == "" ]; then
+		echo -n ",0,${SYMBOL_TYPE_STATIC},0";
+	fi;
 	if is_valid_number "$symbol_name"; then {
 		out=$(echo -n "$symbol_name" | base64 -w0);
 		outsize=$(echo -n "${out}" | base64 -d | wc -c)
@@ -362,9 +366,15 @@ get_b64_symbol_value()
 	}
 	fi;
 	local symbol_value="$( echo "$symbol_data" | cut -d, -f${SNIPPET_COLUMN_DATA_BYTES})";
+	local symbol_len="$( echo "$symbol_data" | cut -d, -f${SNIPPET_COLUMN_DATA_LEN})";
 	local symbol_addr="$( echo "$symbol_data" | cut -d, -f${SNIPPET_COLUMN_DATA_OFFSET})";
 	if [ "${symbol_value}" == "" ];then
-	{ # Empty values will be only accessible at runtime, eg: args, arg count...
+	{
+		if [ "${symbol_len}" == 0 ]; then
+			echo -n ",0,${SYMBOL_TYPE_STATIC}"
+			return;
+		fi;
+		# Empty values will be only accessible at runtime, eg: args, arg count...
 		out=$(echo -n "${symbol_addr}" | base64 -w0)
 		outsize=8; # memory_addr_size; TODO: this is platform specific, in x64 is 8 bytes
 		echo -n ${out},${outsize},${SYMBOL_TYPE_DYNAMIC},${symbol_addr}
@@ -458,6 +468,9 @@ is_hard_coded_value()
 	local ERR=1;
 	# TODO: implement a better way this one just work for numbers
 	local v="$(echo "$1" | base64 -d)";
+	if [ "$v" == "" ];then
+		return $NO_ERR;
+	fi;
 	if is_valid_number "$v"; then
 		return $NO_ERR;
 	fi;
@@ -667,6 +680,7 @@ define_variable(){
 		local field_a_v=$(echo "${field_data_a}" | cut -d, -f${B64_SYMBOL_VALUE_RETURN_OUT} | base64 -d)
 		local field_b="${code_line_elements[$(( 3 + deep-1 ))]}";
 		local field_data_b=$(get_b64_symbol_value "${field_b}" "${SNIPPETS}");
+		debug "field_data_b=[${field_data_b}]"
 		local field_b_addr=$(echo "$field_data_b" | cut -d, -f${B64_SYMBOL_VALUE_RETURN_ADDR})
 		local field_type_b=$(echo "${field_data_b}" | cut -d, -f${B64_SYMBOL_VALUE_RETURN_TYPE});
 		local field_b_v=$(echo "${field_data_b}" | cut -d, -f${B64_SYMBOL_VALUE_RETURN_OUT} | base64 -d)
@@ -705,6 +719,61 @@ define_variable(){
 			"${data_len}" \
 			"${CODE_LINE_B64}" \
 			"1";
+		return $?;
+	}
+	fi;
+	if [[ "${sec_arg}" =~ \<=$ ]]; then # read from file into var
+	{
+		debug "read file into variable"
+		local file_name="${code_line_elements[$(( 2 + deep-1 ))]}";
+		local symbol_data=$(get_b64_symbol_value "${file_name}" "${SNIPPETS}")
+		# sys_open will create a new file descriptor.
+		local symbol_type=$(echo "${symbol_data}" | cut -d, -f${B64_SYMBOL_VALUE_RETURN_TYPE});
+		if [ "${symbol_type}" != "${SYMBOL_TYPE_STATIC}" ]; then
+			data_bytes="";
+			data_bytes_len=0; # no data to append. just registers used.
+			sym_dyn_data_size=$(get_sym_dyn_data_size "${input_symbol_name}" "${SNIPPETS}")
+			data_addr_v="$((symbol_value + sym_dyn_data_size))";
+		fi;
+		local filename_addr=$(get_symbol_addr "${file_name}" "$SNIPPETS")
+		# TODO use a better place this is an insecure way, because on this page
+		# we have all code, so we can rewrite it.
+		local stat_addr=$(( 16#10400 ));
+		# Reading file involve some steps.
+		# 1. Opening the file, if succeed, we have a file descriptor
+		#    in success the rax will have the fd
+		local open_code="$(system_call_open "${filename_addr}")";
+		# 2. fstat that fd, so we have the information on data size, to allocate properly the memory.
+		# TODO guarantee a valid writable memory location
+		local fstat_code="$(sys_fstat "${stat_addr}")";
+		# 	To do this we need to have some memory space to set the stat data struct.
+		# 	TODO decide if we should mmap every time, or have a program buffer to use.
+		# 3.a. in normal files, allocate memory with mmap using the fd.
+		local mmap_code="";
+		# 3.b. in case of virtual file like pipes or nodes(/proc/...) we can't map directly, but we still need to have a memory space to read the data in, so the fstat is still necessary. We should then use the sys_read to copy the data into memory.
+		# 4. So we can access the data directly using memory addresses.
+		local read_code="$(read_file "${symbol_type}" "${stat_addr}")"
+		# it should return the bytecode, the size
+		#fd="$(set_symbol_value "${symbol_value} fd" "${SYS_OPEN}")";
+		# We should create a new dynamic symbol to have the file descriptor number
+		#CODE="${CODE}$(sys_read $)"
+		instr_bytes="${open_code}${fstat_code}${mmap_code}${read_code}"
+		instr_len=$(echo -n "${instr_bytes}" | base64 -d | wc -c )
+		data_bytes="";
+		data_len="8"; # Dynamic length, only at runtime we can know so give it the pointer size
+		struct_parsed_snippet \
+			"SYMBOL_TABLE" \
+			"${symbol_name}" \
+			"${instr_offset}" \
+			"${instr_bytes}" \
+			"${instr_len}" \
+			"${static_data_offset}" \
+			"${data_bytes}" \
+			"${data_len}" \
+			"${CODE_LINE_B64}" \
+			"1" \
+			"0" \
+			"RAX"; #TODO: this is not working, it should set the register where the write call should look at data address.
 		return $?;
 	}
 	fi;
@@ -758,6 +827,7 @@ define_variable(){
 	fi
 	if [[ "$sec_arg" =~ ^@[$]$ ]]; then # capture the argument count into variable
 	{
+		debug "setting arg count to $symbol_name"
 		# create a new dynamic symbol called ${symbol_name}
 		# That should point to the rbp register first 8 bytes (int)
 		# argc_addr: memory address to put the argc 
@@ -766,7 +836,7 @@ define_variable(){
 		instr_bytes="$(get_arg_count $argc_pos)"
 		instr_len=$(echo -n "${instr_bytes}" | base64 -d | wc -c )
 		data_bytes="";
-		data_len="0"; # pointer size
+		data_len="8"; # pointer size
 		struct_parsed_snippet \
 			"SYMBOL_TABLE" \
 			"${symbol_name}" \
@@ -850,6 +920,7 @@ define_variable(){
 		if is_hard_coded_value "${data_bytes}"; then
 			data_len=0; # hard-coded values does not use data space
 		fi;
+		debug "new symbol [$symbol_name] set to value [$data_bytes], data_len=$data_len";
 		# if this is not the first static variable, we need to append 1 to the static_data_offset,
 		# because it should be an \x00(null byte) between static data.
 		struct_parsed_snippet \
@@ -1104,60 +1175,6 @@ parse_snippet()
 		return $?
 	}
 	fi;
-	if [[ "${code_line_elements[$(( 0 + deep-1 ))]}" =~ :\<=$ ]]; then # read from file into var
-	{
-		local symbol_name="$(echo -n "${CODE_LINE/:*/}")"
-		local symbol_data=$(get_b64_symbol_value "${code_line_elements[$(( 1 + deep-1 ))]}" "${SNIPPETS}")
-		local filename_addr=$(get_symbol_addr "${code_line_elements[$(( 1 + deep-1 ))]}" "$SNIPPETS")
-		# sys_open will create a new file descriptor.
-		local symbol_type=$(echo "${symbol_data}" | cut -d, -f${B64_SYMBOL_VALUE_RETURN_TYPE});
-		if [ "${symbol_type}" != "${SYMBOL_TYPE_STATIC}" ]; then
-			data_bytes="";
-			data_bytes_len=0; # no data to append. just registers used.
-			sym_dyn_data_size=$(get_sym_dyn_data_size "${input_symbol_name}" "${SNIPPETS}")
-			data_addr_v="$((symbol_value + sym_dyn_data_size))";
-		fi;
-		# TODO use a better place this is an insecure way, because on this page
-		# we have all code, so we can rewrite it.
-		local stat_addr=$(( 16#10400 ));
-		# Reading file involve some steps.
-		# 1. Opening the file, if succeed, we have a file descriptor
-		#    in success the rax will have the fd
-		local open_code="$(system_call_open "${filename_addr}")";
-		# 2. fstat that fd, so we have the information on data size, to allocate properly the memory.
-		# TODO guarantee a valid writable memory location
-		local fstat_code="$(sys_fstat "${stat_addr}")";
-		# 	To do this we need to have some memory space to set the stat data struct.
-		# 	TODO decide if we should mmap every time, or have a program buffer to use.
-		# 3.a. in normal files, allocate memory with mmap using the fd.
-		local mmap_code="";
-		# 3.b. in case of virtual file like pipes or nodes(/proc/...) we can't map directly, but we still need to have a memory space to read the data in, so the fstat is still necessary. We should then use the sys_read to copy the data into memory.
-		# 4. So we can access the data directly using memory addresses.
-		local read_code="$(read_file "${symbol_type}" "${stat_addr}")"
-		# it should return the bytecode, the size
-		#fd="$(set_symbol_value "${symbol_value} fd" "${SYS_OPEN}")";
-		# We should create a new dynamic symbol to have the file descriptor number
-		#CODE="${CODE}$(sys_read $)"
-		instr_bytes="${open_code}${fstat_code}${mmap_code}${read_code}"
-		instr_len=$(echo -n "${instr_bytes}" | base64 -d | wc -c )
-		data_bytes="";
-		data_len="0"; # Dynamic length, only at runtime we can know so give it the pointer size
-		struct_parsed_snippet \
-			"SYMBOL_TABLE" \
-			"${symbol_name}" \
-			"${instr_offset}" \
-			"${instr_bytes}" \
-			"${instr_len}" \
-			"${static_data_offset}" \
-			"${data_bytes}" \
-			"${data_len}" \
-			"${CODE_LINE_B64}" \
-			"1" \
-			"0" \
-			"RAX"; #TODO: this is not working, it should set the register where the write call should look at data address.
-		return $?;
-	}
-	fi;
 	if [[ "${code_line_elements[$(( 0 + deep-1 ))]}" == write ]]; then
 	{
 		local WRITE_OUTPUT_ELEM=1;
@@ -1169,6 +1186,7 @@ parse_snippet()
 		# I think we can remove the parse_data_bytes and force the symbol have the data always
 		local symbol_data=$(get_b64_symbol_value "${input_symbol_name}" "${SNIPPETS}" )
 		local symbol_type=$(echo "${symbol_data}" | cut -d, -f${B64_SYMBOL_VALUE_RETURN_TYPE});
+		debug "write using data_addr_v=[${data_addr_v}]";
 		local symbol_value=$(echo "$symbol_data" | cut -d, -f${B64_SYMBOL_VALUE_RETURN_OUT});
 		local symbol_addr="$(echo "${symbol_data}" | cut -d, -f${B64_SYMBOL_VALUE_RETURN_ADDR})";
 		local data_bytes=$(echo -n "${symbol_value}"| cut -d, -f1);
@@ -1194,7 +1212,7 @@ parse_snippet()
 		local instr_bytes="$(system_call_write "${symbol_type}" "${data_output}" "$data_addr_v" "$data_bytes_len" "${instr_offset}")";
 		data_bytes="";
 		data_bytes_len=0;
-		local instr_size="$(echo -e "$instr_bytes" | base64 -d | wc -c)"
+		local instr_size="$(echo -e "$instr_bytes" | base64 -d | wc -c)";
 		struct_parsed_snippet \
 			"INSTRUCTION" \
 			"sys_write" \

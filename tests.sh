@@ -56,7 +56,7 @@ test_read_text_file(){
 	chk=$(md5sum .tmp.file | cut -d " " -f1);
 	compile_test <<EOF
 file name:	./.tmp.file
-f:<=	file name
+f:	<=	file name
 stdout:	1
 write	stdout	f
 with no error:	0
@@ -228,8 +228,41 @@ EOF
 	expect $? 1
 }
 
+test_check_var_is_not_empty(){
+	compile_test <<EOF
+ok:	{
+	suc:	1
+	exit	suc
+}
+value:	@1
+empty:	
+test:	?	value	empty
+test	?=	ok
+err:	2
+exit	err
+EOF
+	o=$(run_test abc)
+	expect $? 2
+}
 
-test_if(){
+test_check_var_is_empty(){
+	compile_test <<EOF
+ok:	{
+	suc:	1
+	exit	suc
+}
+value:	@1
+empty:	
+test:	?	value	empty
+test	?=	ok
+err:	2
+exit	err
+EOF
+	o=$(run_test)
+	expect $? 1
+}
+
+test_condition(){
 	compile_test <<EOF
 success:	{
 	r0:	0

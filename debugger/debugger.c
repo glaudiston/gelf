@@ -308,5 +308,6 @@ int main(int argc, char *argv[])
 	trace_watcher(child_pid);
     }
 
+    printf(ANSI_COLOR_RESET);
     return 0;
 }

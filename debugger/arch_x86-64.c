@@ -198,9 +198,8 @@ int mov_rdx_addr(pid_t child, unsigned long addr)
 int mov_rsp_addr(pid_t child, unsigned long addr)
 {
 	long unsigned v = ptrace(PTRACE_PEEKTEXT, child, (void*)addr, 0) >> 8 * 4;
-	long unsigned vv = ptrace(PTRACE_PEEKTEXT, child, (void*)regs.rsp, 0);
-	printf("%016lx: mov %%rsp, 0x%08lx;" ANSI_COLOR_GRAY "\t# (*0x%016lx==%li)\n", addr, v, regs.rsp, vv);fflush(stdout);
-	return 0;
+	printf("%016lx: mov %%rsp, 0x%08lx;" ANSI_COLOR_GRAY "\t#", addr, v);fflush(stdout);
+	return TRUE + RSP;
 }
 
 int mov_rax_rsi(pid_t child, unsigned long addr)
@@ -457,7 +456,7 @@ void detect_friendly_instruction(pid_t child, unsigned long addr, char * friendl
 			sprintf(friendly_instr, "sys_execve(file: \"%s\", args: %s, env: %s)", filename, args, env);
 			break;
 		case SYS_EXIT:
-			sprintf(friendly_instr, "sys_exit(%lli)",regs.rdi);
+			sprintf(friendly_instr, "sys_exit(%lli)" ANSI_COLOR_RESET,regs.rdi);
 			break;
 		case SYS_WAIT4:
 			sprintf(friendly_instr, "sys_wait4(%lli,%lli,%lli,%lli)",regs.rdi,regs.rsi,regs.rdx, regs.r10);

@@ -1363,7 +1363,7 @@ compare_addr_v(){
 	code="${code}${LEA_V4_RAX}$(printEndianValue "$field_a_addr" "${SIZE_32BITS_4BYTES}")";
 	code="${code}${MOV_RAX_RAX}";
 	MOV_V4_RCX="\x48\xc7\xc1";
-	code="${code}${MOV_V4_RCX}$(printEndianValue "$field_b_v" "${SIZE_32BITS_4BYTES}")";
+	code="${code}${MOV_V4_RCX}$(printEndianValue "${field_b_v:=0}" "${SIZE_32BITS_4BYTES}")";
 	CMP_RAX_RCX="\x48\x39\xc1";
 	code="${code}${CMP_RAX_RCX}";
 	echo -en "${code}" | base64 -w0;
