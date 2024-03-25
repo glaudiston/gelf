@@ -34,7 +34,6 @@ print_elf_file_header()
 {
 	local PH_VADDR_V="$1";
 	local SH_COUNT="$2";
-	local FIRST_CODE_OFFSET="$3";
 
 	local SH_SIZE="$SH_SIZE"; # use the constant in local scope to allow change it locally
 
@@ -83,8 +82,7 @@ print_elf_file_header()
 	PH_VADDR_V +
 	EH_SIZE +
 	PH_TOTAL_SIZE +
-	SH_TOTAL_SIZE +
-	FIRST_CODE_OFFSET
+	SH_TOTAL_SIZE
 	));
 	EI_ENTRY="$(printEndianValue ${ENTRY_V} $Elf64_Addr)";	# VADDR relative program code entry point uint64_t
 	EI_PHOFF="$(printEndianValue "${EH_SIZE}" $Elf64_Off)";	# program header offset in bytes, starts immediatelly after header, so the offset is the header size
@@ -242,19 +240,19 @@ print_elf_body()
 {
 	local PH_VADDR_V="$1";
 	local SH_COUNT="$2";
-	local SNIPPETS="$3";
+	local snippets_file=$3
 
 	local PROGRAM_HEADERS=$(get_program_segment_headers "$PH_VADDR_V" );
 
 	local SH_TOTAL_SIZE="$(( SH_COUNT * SH_SIZE ))";
 	local SECTION_HEADERS="$(get_section_headers)"; # test empty
 
-	local INSTR_ALL=$(echo -en "${SNIPPETS}" |
+	local INSTR_ALL=$(cat "${snippets_file}" |
 		cut -d, -f${SNIPPET_COLUMN_INSTR_BYTES}
 	);
 
 	local static_data_count=0;
-	local DATA_ALL="$(echo "${SNIPPETS}" | 
+	local DATA_ALL="$(cat "${snippets_file}" | 
 		while read d;
 		do
 			local dt=$(echo -en "$d" | cut -d, -f${SNIPPET_COLUMN_TYPE});
@@ -283,8 +281,10 @@ print_elf_body()
 # about the functions, I don't really want the {} brackets ... but it is easier to prase this way. since I need to read until detect it is closed, and without it I will be reading the next line outside the function.
 read_code_bloc()
 {
+	debug  "read_code_bloc start";
 	local deep="$1"
 	while read; do
+		debug  "read_code_bloc line $REPLY";
 		echo "$REPLY";
 		# end of bloc
 		if [[ "$(echo -n "$REPLY" | xxd --ps )" =~ ^(09)*7d$ ]]; then # ignore tabs and has closed brackets("}") at end of line
@@ -293,6 +293,7 @@ read_code_bloc()
 			fi;
 		fi;
 	done;
+	debug  "read_code_bloc end";
 }
 
 # parse_code_line_elements returns a base array with all given elements
@@ -672,16 +673,15 @@ define_variable(){
 	local sec_arg="$(echo -n "${code_line_elements[$(( 1 + deep-1 ))]}")"
 	local symbol_data="$(echo "$SNIPPETS" | grep "SYMBOL_TABLE,${symbol_name}," | tail -1)";
 	local is_new_symbol=0;
-	debug "symbol_name=$symbol_name: ${#code_line_elements[@]} == $(( 3 + deep - 1 ))"
+	debug "symbol_name=$symbol_name: ${#code_line_elements[@]} == $(( 3 + deep - 1 ))";
 	if [ "${symbol_data}" == "" ]; then 
 	{
-		debug "New symbol to set ${symbol_name}"
+		debug "New symbol to set ${symbol_name}";
 		is_new_symbol="1";
 	}
 	fi;
 	if [ "$sec_arg" == "?" ]; then # define a test
 	{
-		# symbol:?	field	operator	field
 		#   defines a new symbol based on a boolean condition
 		debug "New boolean test symbol: symbol_name: $symbol_name"
 		local field_a="${code_line_elements[$(( 2 + deep-1 ))]}";
@@ -691,12 +691,10 @@ define_variable(){
 		local field_a_v=$(echo "${field_data_a}" | cut -d, -f${B64_SYMBOL_VALUE_RETURN_OUT} | base64 -d)
 		local field_b="${code_line_elements[$(( 3 + deep-1 ))]}";
 		local field_data_b=$(get_b64_symbol_value "${field_b}" "${SNIPPETS}");
-		debug "field_data_b=[${field_data_b}]"
 		local field_b_addr=$(echo "$field_data_b" | cut -d, -f${B64_SYMBOL_VALUE_RETURN_ADDR})
 		local field_type_b=$(echo "${field_data_b}" | cut -d, -f${B64_SYMBOL_VALUE_RETURN_TYPE});
 		local field_b_v=$(echo "${field_data_b}" | cut -d, -f${B64_SYMBOL_VALUE_RETURN_OUT} | base64 -d)
-		local instr_bytes="";
-		instr_bytes=$(compare "${field_a_v:=0}" "${field_b_v:=0}" "$field_type_a" "$field_type_b")
+		local instr_bytes=$(compare "${field_a_v:=0}" "${field_b_v:=0}" "$field_type_a" "$field_type_b")
 		local instr_len=$(echo "$instr_bytes" | base64 -d | wc -c);
 		local data_bytes="";
 		local data_len=0;
@@ -997,60 +995,86 @@ define_variable(){
 	### CONCAT BLOCK END
 }
 
+parse_code_bloc_instr(){
+	bloc_inner_code="$(
+		echo "${code_bloc}" |
+		awk 'NR>2 {print prev}; {prev=$0};' |
+		base64 -w0
+	)";
+	local insideSnips="";
+	echo "${bloc_inner_code}" |
+		base64 -d | while read l; do
+			debug parsing inside fn line [$l]...
+			local parsedLine=$(echo -n "$l" | parse_snippets "${ROUND}" "${PH_VADDR_V}" "${INSTR_TOTAL_SIZE}" "${static_data_size}" "$(echo -e "$SNIPPETS\n${insideSnips}")" "$deep")
+			insideSnips=$(echo -en "${insideSnips}\n${parsedLine}")
+			echo "${parsedLine}"
+		done;
+}
+
+parse_code_bloc(){
+	local instr_bytes="";
+	SNIPPET_NAME="$(echo "${CODE_LINE}" |cut -d: -f1 | tr -d '\t')";
+	code_bloc="$(echo "${CODE_LINE}"; read_code_bloc "${deep}")";
+	debug "*** code_bloc:
+${code_bloc}";
+	bloc_outer_code_b64="$(echo -n "${code_bloc}" | base64 -w0 )";
+	recursive_parse=$(parse_code_bloc_instr);
+	instr_bytes=$(echo "$recursive_parse"  |
+		cut -d, -f$SNIPPET_COLUMN_INSTR_BYTES
+	);
+	local innerlines="$(echo "$recursive_parse"  |
+		cut -d, -f$SNIPPET_COLUMN_SOURCE_LINES_COUNT |
+		awk '{s+=$1}END{print s}'
+	)";
+	local bloc_source_lines_count=$(( innerlines +2 ))
+	local instr_size_sum="$( echo "${instr_bytes}" |
+		base64 -d | wc -c |
+		awk '{s+=$1}END{print s}';
+	)";
+	local jump_bytecode_len=0; # jump is a dynamic instr, it can change size based on how far is the target.
+	# so we will try until it stop changing the instr size.
+	local current_addr=$((PH_VADDR_V + INSTR_TOTAL_SIZE));
+	local target_addr=$((current_addr + jump_bytecode_len + instr_size_sum));
+	local jump_bytecode="";
+	target_addr=$((current_addr + instr_size_sum));
+	debug "JUMP $((target_addr - current_addr)) target[$target_addr] curr[$current_addr]";
+	jump_bytecode=$(system_call_jump "$target_addr" "$current_addr");
+	jump_bytecode_len=$(echo $jump_bytecode | base64 -d| wc -c);
+	instr_offset=$(( instr_offset + jump_bytecode_len ));
+	recursive_parse=$(parse_code_bloc_instr); # parse again with the correct instruction displacement
+	instr_bytes=$(echo "$recursive_parse"  |
+		cut -d, -f$SNIPPET_COLUMN_INSTR_BYTES
+	);
+	instr_offset=$(( instr_offset - jump_bytecode_len )); # revert the position because the jump have to be at snippet instr.
+	instr_size_sum=$((instr_size_sum + jump_bytecode_len));
+	instr_bytes="${jump_bytecode}${instr_bytes}";
+	local data_bytes="$(echo "$recursive_parse"  |
+		cut -d, -f$SNIPPET_COLUMN_DATA_BYTES )"
+	local data_bytes_sum="$( echo "${data_bytes}" |
+		base64 -d | wc -c |
+		awk '{s+=$1}END{print s}'
+	)";
+	out="$(struct_parsed_snippet \
+		"SNIPPET" \
+		"${SNIPPET_NAME}" \
+		"${instr_offset}" \
+		"${instr_bytes}" \
+		"${instr_size_sum}" \
+		"${static_data_offset}" \
+		"${data_bytes}" \
+		"${data_bytes_sum}" \
+		"${bloc_outer_code_b64}" \
+		"${bloc_source_lines_count}";
+	)";
+	echo "$out";
+}
+
 define_code_block(){
 	# TODO add identation validation
+	#
+	# TODO prepend a rip move over the end of this block, so this code will be executed only if a explicit goto or call is requested. 
 	debug parsing code block...
-	new_bloc="$(
-		SNIPPET_NAME="$(echo "$CODE_LINE" |cut -d: -f1 | tr -d '\t')";
-		code_bloc="$(echo "${CODE_LINE}"; read_code_bloc "${deep}")";
-		bloc_outer_code_b64="$(echo -n "${code_bloc}" | base64 -w0 )"
-		bloc_inner_code="$(
-			echo "${code_bloc}" |
-			awk 'NR>2 {print prev}; {prev=$0};' |
-			base64 -w0
-		)";
-		recursive_parse="$(
-			local insideSnips="";
-			echo "$bloc_inner_code" |
-			base64 -d | while read l; do
-				debug parsing inside fn line [$l]...
-				local parsedLine=$(echo -n "$l" | parse_snippets "${ROUND}" "${PH_VADDR_V}" "${INSTR_TOTAL_SIZE}" "${static_data_size}" "$(echo -e "$SNIPPETS\n${insideSnips}")" "$deep")
-				insideSnips=$(echo -en "${insideSnips}\n${parsedLine}")
-				echo "${parsedLine}"
-			done;
-		)";
-		innerlines="$(echo "$recursive_parse"  |
-			cut -d, -f$SNIPPET_COLUMN_SOURCE_LINES_COUNT |
-			awk '{s+=$1}END{print s}'
-		)"
-		local bloc_source_lines_count=$(( innerlines +2 ))
-		local instr_bytes=$(echo "$recursive_parse"  |
-			cut -d, -f$SNIPPET_COLUMN_INSTR_BYTES
-		)
-		local instr_size_sum="$( echo "${instr_bytes}" |
-			base64 -d | wc -c |
-			awk '{s+=$1}END{print s}'
-		)"
-		local data_bytes="$(echo "$recursive_parse"  |
-			cut -d, -f$SNIPPET_COLUMN_DATA_BYTES )"
-		local data_bytes_sum="$( echo "${data_bytes}" |
-			base64 -d | wc -c |
-			awk '{s+=$1}END{print s}'
-		)";
-		out="$(struct_parsed_snippet \
-			"SNIPPET" \
-			"${SNIPPET_NAME}" \
-			"${instr_offset}" \
-			"${instr_bytes}" \
-			"${instr_size_sum}" \
-			"${static_data_offset}" \
-			"${data_bytes}" \
-			"${data_bytes_sum}" \
-			"${bloc_outer_code_b64}" \
-			"${bloc_source_lines_count}";
-		)";
-		echo "$out";
-	)";
+	new_bloc="$(parse_code_bloc)";
 	local bloc_name=$(echo "$new_bloc" | cut -d, -f${SNIPPET_COLUMN_SUBNAME})
 	if [ "$SNIPPETS" == "" ]; then
 		SNIPPETS="$( echo "$new_bloc")";
@@ -1066,7 +1090,7 @@ conditional_call(){
 	local target="${code_line_elements[$(( 2 + deep-1 ))]}"
 	local target_offset="$( echo "$SNIPPETS" | grep "SNIPPET,${target}," | cut -d, -f${SNIPPET_COLUMN_INSTR_OFFSET} )";
 	debug "conditional function calling: [${test_symbol_name}], deep=$deep, target=$target,$(printf 0x%x ${target_offset})"
-	local instr_bytes="$(jump_if_equal "${target_offset}" "${instr_offset}" )";
+	local instr_bytes="$(jump_if_equal "$(( target_offset + 2 - (deep-1) * 2 ))" "${instr_offset}" )"; # 2 is the jump instr expected to be at the snip first instr, each deep level have 2 bytes for the instr call
 	local instr_len="$(echo "${instr_bytes}" | base64 -d | wc -c)";
 	local data_bytes="";
 	local data_len=0;
@@ -1209,6 +1233,9 @@ parse_snippet()
 		local instr_bytes="$(system_call_write "${symbol_type}" "${data_output}" "$data_addr_v" "$data_bytes_len" "${instr_offset}")";
 		data_bytes="";
 		data_bytes_len=0;
+		#if [ "${symbol_type}" == "${SYMBOL_TYPE_HARD_CODED}" ]; then
+		#	data_bytes_len=8; # actually we need to calculate how many bytes we need to print using the hardcoded value
+		#fi;
 		local instr_size="$(echo -e "$instr_bytes" | base64 -d | wc -c)";
 		struct_parsed_snippet \
 			"INSTRUCTION" \
@@ -1248,13 +1275,14 @@ parse_snippet()
 	{
 		local exit_value=$(get_b64_symbol_value "${code_line_elements[$(( 1 + deep-1 ))]}" "${SNIPPETS}" | cut -d, -f${B64_SYMBOL_VALUE_RETURN_OUT} | base64 -d | tr -d '\00' )
 
-		instr_bytes="$(system_call_exit ${exit_value})"
+		local instr_bytes="$(system_call_exit ${exit_value})";
+		instr_len=$(echo "${instr_bytes}" | base64 -d | wc -c);
 		struct_parsed_snippet \
 			"INSTRUCTION" \
 			"sys_exit" \
 			"${instr_offset}" \
 			"${instr_bytes}" \
-			"${system_call_exit_len}" \
+			"${instr_len}" \
 			"${static_data_offset}" \
 			"" \
 			"0" \
@@ -1267,7 +1295,7 @@ parse_snippet()
 	{
 		target="${code_line_elements[$(( 1 + deep-1 ))]}"
 		target_offset="$( echo "$SNIPPETS" | grep "SNIPPET,${target}," | cut -d, -f${SNIPPET_COLUMN_INSTR_OFFSET} )";
-		jmp_result="$(system_call_jump "${target_offset}" "${instr_offset}" )";
+		jmp_result="$(system_call_jump "$((target_offset + 2))" "${instr_offset}" )";
 		jmp_bytes="$(echo "${jmp_result}" | cut -d, -f1)";
 		jmp_len="$(echo "${jmp_result}" | cut -d, -f2)";
 		struct_parsed_snippet \
@@ -1289,7 +1317,7 @@ parse_snippet()
 		debug "function calling: [${code_line_elements[$(( 0 + deep-1 ))]}], deep=$deep"
 		target="${code_line_elements[$(( 0 + deep-1 ))]}"
 		target_offset="$( echo "$SNIPPETS" | grep "SNIPPET,${target}," | cut -d, -f${SNIPPET_COLUMN_INSTR_OFFSET} )";
-		local call_bytes="$(system_call_procedure "${target_offset}" "${instr_offset}" )";
+		local call_bytes="$(system_call_procedure "$((target_offset + 2))" "${instr_offset}" )";
 		local call_len="$(echo "${call_bytes}" | base64 -d | wc -c)";
 		struct_parsed_snippet \
 			"SNIPPET_CALL" \
@@ -1417,29 +1445,11 @@ parse_snippets()
 	done;
 }
 
-# get_first_code_offset should return the size of all instructions before the first call that is outside a bloc
-# the strategy is to look for all instructions and break as soon as we identify a first valid code 
-# at the first level
-#
-get_first_code_offset()
-{
-	local SNIPPETS="$(cat)";
-	local i=0;
-	echo "${SNIPPETS}" |
-	cut -d, -f${SNIPPET_COLUMN_TYPE},${SNIPPET_COLUMN_INSTR_LEN} |
-	while IFS=, read k s;
-	do
-		[[ $k =~ (INSTRUCTION|SNIPPET_CALL|SYMBOL_TABLE) ]] && break;
-		i=$(( i + s ));
-		echo "$i";
-	done | tail -1;
-}
-
 # detect_instruction_size_from_code should return the bytes used by the instructions code bloc.
 # That includes NONE OF the data section (string table, the elf and program headers
 detect_instruction_size_from_code()
 {
-	grep -E "^(SNIPPET|INSTRUCTION|SNIPPET_CALL|SYMBOL_TABLE|PROCEDURE_TABLE)," |
+	cat $1 | grep -E "^(SNIPPET|INSTRUCTION|SNIPPET_CALL|SYMBOL_TABLE|PROCEDURE_TABLE)," |
 	cut -d, -f${SNIPPET_COLUMN_INSTR_LEN} |
 	awk '{s+=$1}END{print s}'
 }
@@ -1447,7 +1457,7 @@ detect_instruction_size_from_code()
 detect_static_data_size_from_code()
 {
 	local static_data_size=$(
-		while read l;
+		cat $1 | while read l;
 		do
 			if [ "${l}" == "" ]; then
 				continue;
@@ -1498,28 +1508,29 @@ write_elf()
 	";
 	debug first parse round;
 	local static_data_size=0;
-	local parsed_snippets="$(echo "${INPUT_SOURCE_CODE}" | parse_snippets "${ROUND_FIRST}" "${PH_VADDR_V}" "${INSTR_TOTAL_SIZE-0}" "${static_data_size}" )";
+	local snippets_file="${ELF_FILE_OUTPUT}.snippets";
+	local snippets=$(echo "${INPUT_SOURCE_CODE}" | parse_snippets "${ROUND_FIRST}" "${PH_VADDR_V}" "${INSTR_TOTAL_SIZE-0}" "${static_data_size}");
+	echo -n "$snippets" > $snippets_file;
 	# now we have the all information parsed
 	# but the addresses are just offsets
 	# we need to redo to replace the addresses references
 	debug ==== second parse round ====;
-	local INSTR_TOTAL_SIZE=$(echo -en "${parsed_snippets}" | detect_instruction_size_from_code);
-	local static_data_size=$(echo -en "${parsed_snippets}" | detect_static_data_size_from_code);
+	local INSTR_TOTAL_SIZE=$(detect_instruction_size_from_code "${snippets_file}");
+	local static_data_size=$(detect_static_data_size_from_code "${snippets_file}");
 	debug INSTR_TOTAL_SIZE=${INSTR_TOTAL_SIZE} static_data_size=${static_data_size};
 	# update snippets with new addr
-	parsed_snippets=$(echo "${INPUT_SOURCE_CODE}" | parse_snippets "${ROUND_FINAL}" "${PH_VADDR_V}" "${INSTR_TOTAL_SIZE}" "${static_data_size}" );
-	local ELF_BODY="$(echo "$parsed_snippets" |
+	snippets=$(echo "${INPUT_SOURCE_CODE}" | parse_snippets "${ROUND_FINAL}" "${PH_VADDR_V}" "${INSTR_TOTAL_SIZE}" "${static_data_size}");
+	echo -n "$snippets" > $snippets_file;
+	local ELF_BODY="$(
 		print_elf_body \
 			"${PH_VADDR_V}" \
 			"${SH_COUNT}" \
-			"${parsed_snippets}";
+			"$snippets_file";
 	)";
-	local FIRST_CODE_OFFSET="$( echo "$parsed_snippets" | get_first_code_offset)";
 	local ELF_FILE_HEADER="$(
 		print_elf_file_header \
 			"${PH_VADDR_V}" \
-			"${SH_COUNT}" \
-			"${FIRST_CODE_OFFSET}";
+			"${SH_COUNT}";
 	)";
 	echo -ne "${ELF_FILE_HEADER}${ELF_BODY}" |
 		base64 -d > $ELF_FILE_OUTPUT;

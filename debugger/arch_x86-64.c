@@ -395,6 +395,12 @@ int mov_al(pid_t child, unsigned long addr)
 	printf("%016lx: MOV %%al;\n", addr);
 	return 0;
 }
+int jmp_short(pid_t child, unsigned long addr)
+{
+	long unsigned v = ptrace(PTRACE_PEEKTEXT, child, (void*)addr+1,0);
+	printf("%016lx: jmp .%i;" ANSI_COLOR_GRAY "\t\t\t# jump to 0x%x\n", addr, (char)v, regs.rip + (char)v + 2);// 2 instr bytes + 4 address bytes
+	return 0;
+}
 
 void detect_friendly_instruction(pid_t child, unsigned long addr, char * friendly_instr)
 {
@@ -478,7 +484,7 @@ int p_syscall(pid_t child, unsigned long addr)
 int jz(pid_t child, unsigned long addr)
 {
 	unsigned data = ptrace(PTRACE_PEEKTEXT, child, (void*)addr+2, 0);
-	printf("%016lx: jz .%i" ANSI_COLOR_GRAY "\t\t\t#if true, jump to 0x%x\n", addr, data, regs.rip + data + 6);
+	printf("%016lx: jz .%i" ANSI_COLOR_GRAY "\t\t\t# if true, jump to 0x%x\n", addr, data, regs.rip + data + 6);
 	return 0;
 }
 int jg_int(pid_t child, unsigned long addr)
@@ -998,11 +1004,16 @@ struct bytecode_entry
 		.k = {0xb8},
 		.kl = 1,
 		.fn = mov_v_eax
-	}, 
+	},
 	{
 		.k = {0xe8},
 		.kl = 1,
 		.fn = call,
+	},
+	{
+		.k = {0xeb},
+		.kl = 1,
+		.fn = jmp_short,
 	},
 	{
 		.k = {0xf3, 0xa4},

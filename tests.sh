@@ -296,4 +296,22 @@ EOF
 	expect $? 0
 }
 
+test_start_code(){
+	compile_test <<EOF
+stdout:	1
+a:	a
+write	stdout	a
+f:	{
+	err:	1
+	exit	err
+}
+b:	b
+write	stdout	b
+ok:	0
+exit	ok
+EOF
+	o=$(run_test)
+	expect $? 0 "ab" "$o"
+}
+
 . ./test_suite.sh

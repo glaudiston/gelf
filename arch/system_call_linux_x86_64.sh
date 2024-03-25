@@ -658,7 +658,6 @@ function bytecode_jump_short()
 {
 	local TARGET_ADDR="$1";
 	local CURRENT_ADDR="$2";
-	local JUMP_SHORT_SIZE=2;
 	local RELATIVE=$(( TARGET_ADDR - CURRENT_ADDR - JUMP_SHORT_SIZE ))
 	local CODE="";
 	if [ ! "$(( (RELATIVE >= -128) && (RELATIVE <= 127) ))" -eq 1 ]; then
@@ -670,7 +669,7 @@ function bytecode_jump_short()
 	local RADDR_V="$(printEndianValue "$RELATIVE" $SIZE_8BITS_1BYTE )";
 	# debug jump short to RADDR_V=[$( echo -n "$RADDR_V" | xxd)]
 	CODE="${CODE}${JMP_SHORT}${RADDR_V}";
-	echo -ne "$(echo -en "${CODE}" | base64 -w0),${JUMP_SHORT_SIZE}";
+	echo -ne "$(echo -en "${CODE}" | base64 -w0)";
 	return
 }
 
@@ -686,7 +685,7 @@ function system_call_jump()
 	local JUMP_NEAR_SIZE=$(( OPCODE_SIZE + DISPLACEMENT_BITS / 8 )); # 5 bytes
 
 	local short_jump_response=$(bytecode_jump_short "$TARGET_ADDR" "${CURRENT_ADDR}")
-	if [ "$(echo -n "${short_jump_response}" | cut -d, -f2)" -gt -1 ];then
+	if [ "$(echo -n "${short_jump_response}" | base64 -d | wc -c)" -gt -1 ];then
 		# debug short jump succeed;
 		echo -n "${short_jump_response}";
 		return;
@@ -838,7 +837,7 @@ function read_file()
 	# We need to stat the file to get the real value
 	# Memory address of the stat structure
 	# debug read_file 
-	if [ "${TYPE}" == "${SYMBOL_TYPE_STATIC}" ]; then
+	if [ "${TYPE}" == "${SYMBOL_TYPE_STATIC}" -o "${TYPE}" == "${SYMBOL_TYPE_HARD_CODED}" ]; then
 		# do we have a buffer to read into? should we use it in a mmap?
 		# now we create a buffer with mmap using this fd in RAX.
 		CODE="${CODE}$(sys_mmap "${DATA_LEN}" | base64 -d | toHexDump)"
@@ -1052,7 +1051,7 @@ function system_call_write()
 	local DATA_ADDR_V="$3";
 	local DATA_LEN="$4";
 	local CURRENT_RIP="$5";
-	if [ "${TYPE}" == "${SYMBOL_TYPE_STATIC}" ]; then
+	if [ "${TYPE}" == "${SYMBOL_TYPE_STATIC}" -o "${TYPE}" == "${SYMBOL_TYPE_HARD_CODED}" ]; then
 		echo -n "$(system_call_write_addr "${OUT}" "${DATA_ADDR_V}" "${DATA_LEN}")";
 	elif [ "${TYPE}" == "${SYMBOL_TYPE_DYNAMIC}" ]; then
 	{
@@ -1074,14 +1073,12 @@ function system_call_write()
 	return
 }
 
-system_call_exit_len=22
 function system_call_exit()
 {
 	local exit_code="$1"
 	local BIN_CODE="";
-	local EXIT="$(printEndianValue $SYS_EXIT $SIZE_64BITS_8BYTES)";
-	BIN_CODE="${BIN_CODE}${MOV_V8_RAX}${EXIT}"
-	BIN_CODE="${BIN_CODE}${MOV_V8_RDI}$(printEndianValue ${exit_code:=0} $SIZE_64BITS_8BYTES)"
+	BIN_CODE="${BIN_CODE}${MOV_V4_RAX}$(printEndianValue $SYS_EXIT $SIZE_32BITS_4BYTES)";
+	BIN_CODE="${BIN_CODE}${MOV_V4_RDI}$(printEndianValue ${exit_code:=0} $SIZE_32BITS_4BYTES)"
 	BIN_CODE="${BIN_CODE}${SYSCALL}"
 	echo -en "${BIN_CODE}" | base64 -w0;
 }
@@ -1089,10 +1086,9 @@ function system_call_exit()
 function system_call_fork()
 {
 	local SYS_FORK=57
-	local FORK=$(printEndianValue ${SYS_FORK} ${SIZE_64BITS_8BYTES})
 	local CODE="";
-	CODE="${CODE}${MOV_V8_RAX}${FORK}"
-	CODE="${CODE}${SYSCALL}"
+	CODE="${CODE}${MOV_V4_RAX}$(printEndianValue ${SYS_FORK} ${SIZE_32BITS_4BYTES})";
+	CODE="${CODE}${SYSCALL}";
 	echo -en "${CODE}" | base64 -w0;
 	echo -en ",$(echo -en "${CODE}" | wc -c )";
 }

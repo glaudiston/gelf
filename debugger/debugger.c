@@ -257,12 +257,6 @@ void trace_watcher(pid_t pid)
 						printf("%016lx: ret\n", addr); fflush(stdout);
 						printNextData = 0;
 					}
-					// JMP SHORT
-					else if ( first_byte == 0xeb )
-					{
-						data = ptrace(PTRACE_PEEKTEXT, pid, (void*)addr+1, 0);
-						printf("%08lx: jmp short (%i) %x\n", addr, first_byte, data);
-					}
 					// JMP NEAR
 					else if ( first_byte == 0xe9 )
 					{
