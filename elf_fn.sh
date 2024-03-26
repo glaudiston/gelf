@@ -719,22 +719,28 @@ define_variable(){
 		local symbol_data=$(get_b64_symbol_value "${file_name}" "${SNIPPETS}")
 		# sys_open will create a new file descriptor.
 		local symbol_type=$(echo "${symbol_data}" | cut -d, -f${B64_SYMBOL_VALUE_RETURN_TYPE});
+		# TODO use a better place this is an insecure way, because on this page
+		# we have all code, so we can rewrite it.
+		local ptr_data_size=8;
+		local stat_addr=$(( dyn_data_offset + ptr_data_size ));
+		local stat_struct_size=144;
 		if [ "${symbol_type}" != "${SYMBOL_TYPE_STATIC}" ]; then
 			data_bytes="";
 			data_bytes_len=0; # no data to append. just registers used.
 			sym_dyn_data_size=$(get_sym_dyn_data_size "${input_symbol_name}" "${SNIPPETS}")
-			data_addr_v="$((symbol_value + sym_dyn_data_size))";
+			data_addr_v="$(( dyn_data_offset ))";
+			data_offset="${dyn_data_offset}";
+		else
+			data_offset="${static_data_offset}";
 		fi;
 		local filename_addr=$(get_symbol_addr "${file_name}" "$SNIPPETS")
-		# TODO use a better place this is an insecure way, because on this page
-		# we have all code, so we can rewrite it.
-		local stat_addr=$(( 16#10400 ));
 		# Reading file involve some steps.
 		# 1. Opening the file, if succeed, we have a file descriptor
 		#    in success the rax will have the fd
 		local open_code="$(system_call_open "${filename_addr}")";
 		# 2. fstat that fd, so we have the information on data size, to allocate properly the memory.
 		# TODO guarantee a valid writable memory location
+		debug "STAT to ${stat_addr}";
 		local fstat_code="$(sys_fstat "${stat_addr}")";
 		# 	To do this we need to have some memory space to set the stat data struct.
 		# 	TODO decide if we should mmap every time, or have a program buffer to use.
@@ -742,7 +748,7 @@ define_variable(){
 		local mmap_code="";
 		# 3.b. in case of virtual file like pipes or nodes(/proc/...) we can't map directly, but we still need to have a memory space to read the data in, so the fstat is still necessary. We should then use the sys_read to copy the data into memory.
 		# 4. So we can access the data directly using memory addresses.
-		local read_code="$(read_file "${symbol_type}" "${stat_addr}")"
+		local read_code="$(read_file "${symbol_type}" "${stat_addr}" "${data_offset}")"
 		# it should return the bytecode, the size
 		#fd="$(set_symbol_value "${symbol_value} fd" "${SYS_OPEN}")";
 		# We should create a new dynamic symbol to have the file descriptor number
@@ -750,14 +756,14 @@ define_variable(){
 		instr_bytes="${open_code}${fstat_code}${mmap_code}${read_code}"
 		instr_len=$(echo -n "${instr_bytes}" | base64 -d | wc -c )
 		data_bytes="";
-		data_len="8"; # Dynamic length, only at runtime we can know so give it the pointer size
+		data_len="$(( stat_struct_size + ptr_data_size ))"; # Dynamic length, only at runtime we can know so give it the pointer size
 		struct_parsed_snippet \
 			"SYMBOL_TABLE" \
 			"${symbol_name}" \
 			"${instr_offset}" \
 			"${instr_bytes}" \
 			"${instr_len}" \
-			"${static_data_offset}" \
+			"${data_offset}" \
 			"${data_bytes}" \
 			"${data_len}" \
 			"${CODE_LINE_B64}" \
@@ -1140,8 +1146,8 @@ parse_snippet()
 	local static_data_displacement=$(get_current_static_data_displacement "${SNIPPETS}" "${CODE_LINE_B64}")
 	local current_static_data_address=$((zero_data_offset + static_data_displacement))
 	local static_data_offset=$current_static_data_address
-	debug "elem:[${code_line_elements[$(( 0 + deep-1 ))]}], static_data_offset=$(printf 0x%x "${static_data_offset}") dynamic_data_offset=[0x$( printf %x $(( dynamic_data_offset )) )]"
 	local dyn_data_offset="$(( zero_data_offset + static_data_size + dynamic_data_offset))";
+	debug "elem:[${code_line_elements[$(( 0 + deep-1 ))]}], static_data_offset=$(printf 0x%x "${static_data_offset}") dyn_data_offset=[0x$( printf %x $(( dyn_data_offset )) )]"
 	if [ "$CODE_LINE" == "" ]; then
 	{
 		struct_parsed_snippet \

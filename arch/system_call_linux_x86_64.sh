@@ -606,30 +606,30 @@ function sys_mmap()
 	MAP_SHARED=1;
 	MAP_PRIVATE=2;
 	MAP_SHARED_VALIDATE=3;
-	MAP_ANONYMOUS=$((2#00100000))
-	CODE="${CODE}${MOV_R10}$(printEndianValue $(( MAP_PRIVATE )) ${SIZE_64BITS_8BYTES})"
+	MAP_ANONYMOUS=$((2#00100000));
+	CODE="${CODE}${MOV_R10}$(printEndianValue $(( MAP_PRIVATE )) ${SIZE_64BITS_8BYTES})";
 	
 	# The file descriptor is expected to be at R8,
 	# but for virtual files it will fail with a -19 at rax.
 	# 
 	if [ "$fd" == "rax" ]; then
-		CODE="${CODE}${MOV_RAX_R8}"
+		CODE="${CODE}${MOV_RAX_R8}";
 	elif [ "$fd" != "" ]; then
 		CODE="${CODE}${MOV_R8}$(printEndianValue $fd ${SIZE_64BITS_8BYTES})";
 	fi;
 	#CODE="${CODE}${XOR_R8_R8}";
 	#    mov r9, 0     ; offset
-	CODE="${CODE}${MOV_R9}$(printEndianValue 0 ${SIZE_64BITS_8BYTES})"
+	CODE="${CODE}${MOV_R9}$(printEndianValue 0 ${SIZE_64BITS_8BYTES})";
 	#    mov rax, 9    ; mmap system call number
-	CODE="${CODE}${MOV_V8_RAX}$(printEndianValue $SYS_MMAP ${SIZE_64BITS_8BYTES})"
+	CODE="${CODE}${MOV_V8_RAX}$(printEndianValue $SYS_MMAP ${SIZE_64BITS_8BYTES})";
 	CODE="${CODE}${SYSCALL}";
 	# test rax to detect failure
 	local ModRM="$( printEndianValue $(( MODRM_MOD_DISPLACEMENT_REG + MODRM_OPCODE_CMP + RAX )) $SIZE_8BITS_1BYTE)";
 	CODE="${CODE}${CMP}${ModRM}\x00"; # 64bit cmp rax, 00
 	# if it fails do mmap with  MAP_ANONYMOUS
-	local ANON_MMAP_CODE="${MOV_R10}$(printEndianValue $(( MAP_PRIVATE + MAP_ANONYMOUS )) ${SIZE_64BITS_8BYTES})"
-	ANON_MMAP_CODE="${ANON_MMAP_CODE}${MOV_V8_RAX}$(printEndianValue $SYS_MMAP ${SIZE_64BITS_8BYTES})"
-	ANON_MMAP_CODE="${ANON_MMAP_CODE}${SYSCALL}"
+	local ANON_MMAP_CODE="${MOV_R10}$(printEndianValue $(( MAP_PRIVATE + MAP_ANONYMOUS )) ${SIZE_64BITS_8BYTES})";
+	ANON_MMAP_CODE="${ANON_MMAP_CODE}${MOV_V8_RAX}$(printEndianValue $SYS_MMAP ${SIZE_64BITS_8BYTES})";
+	ANON_MMAP_CODE="${ANON_MMAP_CODE}${SYSCALL}";
 	# then we need to read the data to that location
 	ANON_MMAP_CODE="${ANON_MMAP_CODE}${MOV_R8_RDI}";
 	ANON_MMAP_CODE="${ANON_MMAP_CODE}$(system_call_read "" "rsi" | base64 -d | toHexDump)"; # TODO not sure the best choice here. We should do it better
@@ -658,7 +658,7 @@ function bytecode_jump_short()
 {
 	local TARGET_ADDR="$1";
 	local CURRENT_ADDR="$2";
-	local RELATIVE=$(( TARGET_ADDR - CURRENT_ADDR - JUMP_SHORT_SIZE ))
+	local RELATIVE=$(( TARGET_ADDR - CURRENT_ADDR - JUMP_SHORT_SIZE ));
 	local CODE="";
 	if [ ! "$(( (RELATIVE >= -128) && (RELATIVE <= 127) ))" -eq 1 ]; then
 		error tried to jump to an invalid range: $RELATIVE
@@ -738,18 +738,18 @@ function system_call_procedure()
 	local OPCODE_SIZE=1;
 	local DISPLACEMENT_BITS=32; # 4 bytes
 	local CALL_NEAR_SIZE=$(( OPCODE_SIZE + DISPLACEMENT_BITS / 8 )); # 5 bytes
-	local RELATIVE=$(( TARGET - CURRENT - CALL_NEAR_SIZE ))
+	local RELATIVE=$(( TARGET - CURRENT - CALL_NEAR_SIZE ));
 	if [ "$(( (RELATIVE >= - ( 1 << ( DISPLACEMENT_BITS -1 ) )) && (RELATIVE <= ( 1 << ( DISPLACEMENT_BITS -1) ) -1) ))" -eq 1 ]; then
 		local OPCODE_CALL_NEAR="\xe8"; #direct call with 32bit displacement
-		local NEAR_ADDR_V="$(printEndianValue $RELATIVE $SIZE_32BITS_4BYTES)" # call addr
-		local BYTES="${OPCODE_CALL_NEAR}${NEAR_ADDR_V}"
+		local NEAR_ADDR_V="$(printEndianValue $RELATIVE $SIZE_32BITS_4BYTES)"; # call addr
+		local BYTES="${OPCODE_CALL_NEAR}${NEAR_ADDR_V}";
 		echo -en "$BYTES" | base64 -w0;
-		return
+		return;
 	fi;
 	error "call not implemented for this address size: CURRENT: $CURRENT, TARGET: $TARGET, RELATIVE: $RELATIVE";
 
 	FAR_CALL="\x9a";
-	MODRM="$(printEndianValue $(( MODRM_MOD_DISPLACEMENT_REG + MODRM_OPCODE_SUB + RSP )) $SIZE_8BITS_1BYTE)"
+	MODRM="$(printEndianValue $(( MODRM_MOD_DISPLACEMENT_REG + MODRM_OPCODE_SUB + RSP )) $SIZE_8BITS_1BYTE)";
 	SUB_RSP="${M64}${SUB_IMMSE8}${MODRM}\x28" # sub rsp, x28
 	addr="$(( 16#000100b8 ))"
 	BYTES="\xe8${CALL_ADDR}";
@@ -761,8 +761,8 @@ function system_call_push_stack()
 	# PUSHA/PUSHAD – Push All General Registers 0110 0000
 	
 	local PUSH="\x68";
-	local ADDR_V="$(printEndianValue )"
-	echo -n "${PUSH}${ADDR_V}"
+	local ADDR_V="$(printEndianValue )";
+	echo -n "${PUSH}${ADDR_V}";
 }
 
 function bytecode_ret()
@@ -782,7 +782,7 @@ function bytecode_ret()
 	#local LEAVE="\xc9"; #seems leave breaks in a segfault
 	# run RET
 	local bytecode_ret_len=1;
-	echo -en $(echo -en "${NEAR_RET}" | base64 -w0 ),${bytecode_ret_len}
+	echo -en $(echo -en "${NEAR_RET}" | base64 -w0 ),${bytecode_ret_len};
 }
 
 function system_call_pop_stack()
@@ -797,7 +797,7 @@ function system_call_open()
 	local filename="$1"
 	local CODE="";
 	# mov rax, 2 ; System call for open()
-	CODE="${CODE}${MOV_V8_RAX}$(printEndianValue ${SYS_OPEN} "${SIZE_64BITS_8BYTES}")"
+	CODE="${CODE}${MOV_V8_RAX}$(printEndianValue ${SYS_OPEN} "${SIZE_64BITS_8BYTES}")";
 	# mov rdi, filename ; File name
 	local FILENAME_ADDR="$(printEndianValue "${filename}" "${SIZE_64BITS_8BYTES}" )";
 	CODE="${CODE}${MOV_V8_RDI}${FILENAME_ADDR}";
@@ -840,7 +840,7 @@ function read_file()
 	if [ "${TYPE}" == "${SYMBOL_TYPE_STATIC}" -o "${TYPE}" == "${SYMBOL_TYPE_HARD_CODED}" ]; then
 		# do we have a buffer to read into? should we use it in a mmap?
 		# now we create a buffer with mmap using this fd in RAX.
-		CODE="${CODE}$(sys_mmap "${DATA_LEN}" | base64 -d | toHexDump)"
+		CODE="${CODE}$(sys_mmap "${DATA_LEN}" | base64 -d | toHexDump)";
 		# TODO test sys_mmap return at rax, and if fails(<0) then mmap without the fd
 		# TODO once mmap set, if the source file is read only we can just close it.
 		# then the fd should be at eax and r8
@@ -849,18 +849,18 @@ function read_file()
 		# collect $RAX (memory location returned from mmap)
 		# use it as argument to write out.
 		echo -en "${CODE}" | base64 -w0;
-		return
+		return;
 	elif [ "${TYPE}" == ${SYMBOL_TYPE_DYNAMIC} ]; then
 		if [ "$(echo -n "${DATA_ADDR_V}" | base64 -d | cut -d, -f1 | base64 -w0)" == "$( echo -n ${ARCH_CONST_ARGUMENT_ADDRESS} | base64 -w0)" ]; then
 			# now we create a buffer with mmap using this fd in RAX.
-			CODE="${CODE}$(sys_mmap | base64 -d | toHexDump)"
+			CODE="${CODE}$(sys_mmap | base64 -d | toHexDump)";
 			# then the fd should be at eax
 			#
 			# TODO:
 			# collect $RAX (memory location returned from mmap)
 			# use it as argument to write out.
 			# DEBUG CODE:
-			CODE="${CODE}${MOV_RAX_RSI}"
+			CODE="${CODE}${MOV_RAX_RSI}";
 			CODE="${CODE}${MOV_V8_RAX}$(printEndianValue $SYS_WRITE $SIZE_64BITS_8BYTES)";
 			STDOUT=1;
 			CODE="${CODE}${MOV_V8_RDI}$(printEndianValue $STDOUT $SIZE_64BITS_8BYTES)";
@@ -870,12 +870,12 @@ function read_file()
 		else
 			# otherwise we expect all instruction already be in the data_addr_v as base64
 			# so just throw it back
-			echo -n "$DATA_ADDR_V"
+			echo -n "$DATA_ADDR_V";
 		fi;
-		return
+		return;
 	fi
-	error "b Not Implemented path type[$TYPE], DATA_ADDR_V=[$DATA_ADDR_V]"
-	return
+	error "b Not Implemented path type[$TYPE], DATA_ADDR_V=[$DATA_ADDR_V]";
+	return;
 }
 
 function system_call_read()

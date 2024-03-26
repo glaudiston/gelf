@@ -17,12 +17,20 @@ void peek_string(pid_t child, void *addr, char* out){
 	int pos=0;
 	out[0]=0;
 	size_t l=0;
+	size_t sizeBefore=BUFF_SIZE/3;
 	size_t lastAllocSize=BUFF_SIZE;
+	size_t newSize = 0;
 	char ** data;
 	while(!done) {
 		data = (char**) ptrace(PTRACE_PEEKTEXT, child, addr+pos, 0);
 		if ( data == (char**)0xffffffffffffffff )
 			break;
+		if ( sizeof(out)+8 > lastAllocSize ) {
+			newSize = lastAllocSize + sizeBefore; // Fibonacci like size growth
+			out = realloc(out, newSize);
+			sizeBefore = lastAllocSize;
+			lastAllocSize = newSize;
+		}
 		sprintf(out,"%s%s", out, &data);
 		if (strlen((const char *)&data) < 8){
 			break;
@@ -70,6 +78,7 @@ void printRegValue(pid_t child, unsigned long r, int deep)
 	printRegValue(child, v, deep+1);
 	char * buff = malloc(BUFF_SIZE);
 	peek_string(child, (void*)r, buff); // str?
+	buff[BUFF_SIZE]=0;
 	printf(" H(0x%lx) == S(\"%s\") %s", r, buff, lastbyte);
 	free(buff);
 }
@@ -106,49 +115,6 @@ int get_bytecode_fn(pid_t child, unsigned long addr, unsigned data)
 		}
 	}
 	return -1;
-}
-
-void printRelevantRegisters(pid_t pid, struct user_regs_struct regs, int printNextData)
-{
-	unsigned long v;
-	if ( printNextData ) {
-		switch (printNextData-1) {
-			case R15:
-				v = regs.r15; break;
-			case R14:
-				v = regs.r14; break;
-			case R13:
-				v = regs.r13; break;
-			case R12:
-				v = regs.r12; break;
-			case R11:
-				v = regs.r11; break;
-			case R10:
-				v = regs.r10; break;
-			case R9:
-				v = regs.r9; break;
-			case R8:
-				v = regs.r8; break;
-			case RDI:
-				v = regs.rdi; break;
-			case RSI:
-				v = regs.rsi; break;
-			case RBP:
-				v = regs.rbp; break;
-			case RSP:
-				v = regs.rsp; break;
-			case RBX:
-				v = regs.rbx; break;
-			case RDX:
-				v = regs.rdx; break;
-			case RCX:
-				v = regs.rcx; break;
-			default: // RAX
-				v = regs.rax; break;
-		}
-		printRegValue(pid, v, 0);
-		printNextData=0;
-	}
 }
 int running_forks = 1;
 void trace_watcher(pid_t pid)
