@@ -841,6 +841,7 @@ function read_file()
 		# do we have a buffer to read into? should we use it in a mmap?
 		# now we create a buffer with mmap using this fd in RAX.
 		CODE="${CODE}$(sys_mmap "${DATA_LEN}" | base64 -d | toHexDump)";
+		CODE="${CODE}${MOV_RAX_ADDR4}$(printEndianValue "$targetMemory" $SIZE_32BITS_4BYTES)";
 		# TODO test sys_mmap return at rax, and if fails(<0) then mmap without the fd
 		# TODO once mmap set, if the source file is read only we can just close it.
 		# then the fd should be at eax and r8
@@ -854,12 +855,9 @@ function read_file()
 		if [ "$(echo -n "${DATA_ADDR_V}" | base64 -d | cut -d, -f1 | base64 -w0)" == "$( echo -n ${ARCH_CONST_ARGUMENT_ADDRESS} | base64 -w0)" ]; then
 			# now we create a buffer with mmap using this fd in RAX.
 			CODE="${CODE}$(sys_mmap | base64 -d | toHexDump)";
-			# then the fd should be at eax
-			#
-			# TODO:
 			# collect $RAX (memory location returned from mmap)
 			# use it as argument to write out.
-			# DEBUG CODE:
+			CODE="${MOV_RAX_ADDR4}$(printEndianValue "$targetMemory" $SIZE_32BITS_4BYTES)";
 			CODE="${CODE}${MOV_RAX_RSI}";
 			CODE="${CODE}${MOV_V8_RAX}$(printEndianValue $SYS_WRITE $SIZE_64BITS_8BYTES)";
 			STDOUT=1;
@@ -990,7 +988,6 @@ function system_call_write_dyn_addr()
 	local DATA_ADDR_V="$2";
 	local DATA_LEN="$3";
 	local CODE="";
-	debug "write a dynamic address[$(printf 0x%x $DATA_ADDR_V 2>/dev/null|| echo $DATA_ADDR_V)] to $OUT";
 	if [ "$(echo -n "${DATA_ADDR_V}" | cut -d, -f1 | base64 -w0)" == "$( echo -n ${ARCH_CONST_ARGUMENT_ADDRESS} | base64 -w0)" ]; then
 	{
 		local CODE="";
@@ -1022,7 +1019,6 @@ function system_call_write_dyn_addr()
 	else
 	{
 		# otherwise we expect all instruction already be in the data_addr_v as base64
-		debug "**** b **** [$DATA_ADDR_V]"
 		local code="";
 		if [ "$DATA_ADDR_V" == "RAX" ]; then
 			code="${code}${MOV_RAX_RSI}";

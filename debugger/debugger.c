@@ -15,17 +15,17 @@ void peek_string(pid_t child, void *addr, char* out){
 		return;
 	int done=0;
 	int pos=0;
-	out[0]=0;
 	size_t l=0;
 	size_t sizeBefore=BUFF_SIZE/3;
 	size_t lastAllocSize=BUFF_SIZE;
 	size_t newSize = 0;
 	char ** data;
 	while(!done) {
+		out[pos]=0;
 		data = (char**) ptrace(PTRACE_PEEKTEXT, child, addr+pos, 0);
 		if ( data == (char**)0xffffffffffffffff )
 			break;
-		if ( sizeof(out)+8 > lastAllocSize ) {
+		if ( pos+8+1 > lastAllocSize ) {
 			newSize = lastAllocSize + sizeBefore; // Fibonacci like size growth
 			out = realloc(out, newSize);
 			sizeBefore = lastAllocSize;
@@ -161,7 +161,7 @@ void trace_watcher(pid_t pid)
 		print_current_address(pid, &regs);
 		addr = regs.rip;
 		printRelevantRegisters(pid, regs, printNextData);
-		printf("PID(%i)",pid);fflush(stdout);
+		printf(ANSI_COLOR_GRAY "PID(%i)",pid);fflush(stdout);
 		uint32_t data = ptrace(PTRACE_PEEKTEXT, pid, (void*)addr, 0);
 		printNextData = get_bytecode_fn(pid, addr, data);
 		if ( printNextData == -1 ) {
