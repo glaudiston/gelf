@@ -1022,7 +1022,7 @@ parse_code_bloc(){
 	local target_addr=$((current_addr + jump_bytecode_len + instr_size_sum));
 	local jump_bytecode="";
 	target_addr=$((current_addr + instr_size_sum));
-	jump_bytecode=$(system_call_jump "$target_addr" "$current_addr");
+	jump_bytecode=$(jump "$target_addr" "$current_addr");
 	jump_bytecode_len=$(echo $jump_bytecode | base64 -d| wc -c);
 	instr_offset=$(( instr_offset + jump_bytecode_len ));
 	recursive_parse=$(parse_code_bloc_instr); # parse again with the correct instruction displacement
@@ -1273,7 +1273,7 @@ parse_snippet()
 	{
 		target="${code_line_elements[$(( 1 + deep-1 ))]}"
 		target_offset="$( echo "$SNIPPETS" | grep "SNIPPET,${target}," | cut -d, -f${SNIPPET_COLUMN_INSTR_OFFSET} )";
-		jmp_result="$(system_call_jump "$((target_offset + 2))" "${instr_offset}" )";
+		jmp_result="$(jump "$((target_offset + 2))" "${instr_offset}" )";
 		jmp_bytes="$(echo "${jmp_result}" | cut -d, -f1)";
 		jmp_len="$(echo "${jmp_result}" | cut -d, -f2)";
 		struct_parsed_snippet \
@@ -1294,7 +1294,7 @@ parse_snippet()
 	{
 		target="${code_line_elements[$(( 0 + deep-1 ))]}"
 		target_offset="$( echo "$SNIPPETS" | grep "SNIPPET,${target}," | cut -d, -f${SNIPPET_COLUMN_INSTR_OFFSET} )";
-		local call_bytes="$(system_call_procedure "$((target_offset + 2))" "${instr_offset}" )";
+		local call_bytes="$(call_procedure "$((target_offset + 2))" "${instr_offset}" )";
 		local call_len="$(echo "${call_bytes}" | base64 -d | wc -c)";
 		struct_parsed_snippet \
 			"SNIPPET_CALL" \
