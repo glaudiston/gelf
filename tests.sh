@@ -24,6 +24,32 @@ EOF
 	expect $? 0 "hello world" "$o";
 }
 
+test_hello_world_base64(){
+	compile_test <<EOF
+input:	base64
+m:	aGVsbG8Jd29ybGQK
+stdout:	1
+write	stdout	m
+ok:	0
+exit	ok
+EOF
+	o=$(run_test)
+	expect $? 0 "hello	world" "$o";
+}
+
+test_write_hard_coded_value(){
+	compile_test <<EOF
+stdout:	1
+v:	65536
+write	stdout	v
+with no error:	0
+exit	with no error
+EOF
+	o=$(run_test | xxd);
+	eo="$(echo -n 0000010000000000 | xxd --ps -r | xxd)"; # little endian value of 65536 (64bit)
+	expect $? 0 "$eo" "$o";
+}
+
 test_arg_count(){
 	compile_test <<EOF
 stdout:	1
@@ -63,6 +89,20 @@ with no error:	0
 exit	with no error
 EOF
 	o=$(run_test | md5sum | cut -d " " -f1);
+	expect $? 0 $chk "$o";
+}
+
+test_read_virtual_file(){
+	chk=$(cat /proc/sys/vm/mmap_min_addr);
+	compile_test <<EOF
+file name:	/proc/sys/vm/mmap_min_addr
+f:	<=	file name
+stdout:	1
+write	stdout	f
+with no error:	0
+exit	with no error
+EOF
+	o=$(run_test);
 	expect $? 0 $chk "$o";
 }
 
@@ -226,6 +266,26 @@ exit	r2
 EOF
 	o=$(run_test)
 	expect $? 1
+}
+
+test_fn_args(){
+	compile_test <<EOF
+fn:	{
+	af:	@1
+	bf:	@2
+	cf:	+	af	bf
+	ret	cf
+}
+a:	1
+b:	2
+d:	fn	a	b
+d!
+write	a	c
+s:	0
+exit	s
+EOF
+	o=$(run_test)
+	expect $? 0
 }
 
 test_check_var_is_not_empty(){

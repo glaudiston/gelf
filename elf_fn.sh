@@ -1071,7 +1071,10 @@ conditional_call(){
 	local test_symbol_name="${code_line_elements[$(( 0 + deep-1 ))]}";
 	local target="${code_line_elements[$(( 2 + deep-1 ))]}"
 	local target_offset="$( echo "$SNIPPETS" | grep "SNIPPET,${target}," | cut -d, -f${SNIPPET_COLUMN_INSTR_OFFSET} )";
-	local instr_bytes="$(jump_if_equal "$(( target_offset + 2 - (deep-1) * 2 ))" "${instr_offset}" )"; # 2 is the jump instr expected to be at the snip first instr, each deep level have 2 bytes for the instr call
+	local arguments=(); # TODO implement args
+	local arguments_map=();
+	# TODO jump or call ?
+	local instr_bytes="$(jump_if_equal "$(( target_offset + 2 - (deep-1) * 2 ))" "${instr_offset}" "${arguments}" "${arguments_map}" )"; # 2 is the jump instr expected to be at the snip first instr, each deep level have 2 bytes for the instr call
 	local instr_len="$(echo "${instr_bytes}" | base64 -d | wc -c)";
 	local data_bytes="";
 	local data_len=0;

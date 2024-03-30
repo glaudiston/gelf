@@ -339,13 +339,18 @@ int push_rdx(pid_t child, unsigned long addr)
 }
 int push_rsp(pid_t child, unsigned long addr)
 {
-	printf("%016lx: " ANSI_COLOR_WHITE "PUSH %%rsp;\n", addr);
-	return 0;
+	printf("%016lx: " ANSI_COLOR_WHITE "PUSH %%rsp;", addr);
+	return TRUE + RSP;
 }
 int push_rax(pid_t child, unsigned long addr)
 {
-	printf("%016lx: " ANSI_COLOR_WHITE "PUSH %%rax;\n", addr);
-	return 0;
+	printf("%016lx: " ANSI_COLOR_WHITE "PUSH %%rax;" ANSI_COLOR_GRAY "\t\t# RSP =", addr);
+	return TRUE + RSP;
+}
+int push_rcx(pid_t child, unsigned long addr)
+{
+	printf("%016lx: " ANSI_COLOR_WHITE "PUSH %%rcx;", addr);
+	return TRUE + RCX;
 }
 int pop_rax(pid_t child, unsigned long addr)
 {
@@ -929,6 +934,16 @@ struct bytecode_entry
 		.k = {0x4d,0x31,0xd2},
 		.kl = 3,
 		.fn = xor_r10_r10,
+	},
+	{
+		.k = {0x50},
+		.kl = 1,
+		.fn = push_rax,
+	},
+	{
+		.k = {0x51},
+		.kl = 1,
+		.fn = push_rcx,
 	},
 	{
 		.k = {0x52},

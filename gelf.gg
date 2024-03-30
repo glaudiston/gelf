@@ -13,7 +13,7 @@ bash:	/bin/bash
 run:	-c
 ph_addr_v:	./ph_vaddr_v
 page header virtual address value:	!	ph_addr_v
-write elf:	. elf_fn.sh; write_elf    
+write elf:	. elf_fn.sh; write_elf 
 read from:	 < 
 script:	write elf	elf file name	read from	source file name
 !	bash	run	script
