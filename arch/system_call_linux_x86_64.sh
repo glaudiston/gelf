@@ -695,9 +695,9 @@ function bytecode_jump_short()
 	return
 }
 
-# system_call_jump should receive the target address and the current BIP.
+# jump should receive the target address and the current BIP.
 #   It will select the correct approach for each context based on the JMP alternatives
-function system_call_jump()
+function jump()
 {
 	local TARGET_ADDR="$1";
 	local CURRENT_ADDR="$2";
@@ -748,7 +748,7 @@ function system_call_jump()
 # CALL – Call Procedure (in other segment)
 #  indirect 1111 1111 : mod 011 r/m
 #  indirect 0100 10XB 0100 1000 1111 1111 : mod 011 r/m
-function system_call_procedure()
+function call_procedure()
 {
 	local TARGET="$1";
 	local CURRENT="$2";
@@ -787,7 +787,7 @@ function push_v_stack()
 	echo -en "${code}" | base64 -w0
 }
 
-function system_call_push_stack()
+function push_stack()
 {
 	# PUSHA/PUSHAD – Push All General Registers 0110 0000
 	
@@ -816,7 +816,7 @@ function bytecode_ret()
 	echo -en $(echo -en "${NEAR_RET}" | base64 -w0 ),${bytecode_ret_len};
 }
 
-function system_call_pop_stack()
+function pop_stack()
 {
 	# POPA/POPAD – Pop All General Registers 0110 0001
 	:
@@ -1099,7 +1099,7 @@ function system_call_write()
 	elif [ "$TYPE" == "${SYMBOL_TYPE_PROCEDURE}" ]; then
 	{
 		local code="";
-		code="${CODE}$(system_call_procedure ${DATA_ADDR_V} ${CURRENT_RIP} | base64 -d | toHexDump)";
+		code="${CODE}$(call_procedure ${DATA_ADDR_V} ${CURRENT_RIP} | base64 -d | toHexDump)";
 		code="${code}${MOV_V8_RAX}$(printEndianValue $SYS_WRITE $SIZE_64BITS_8BYTES)";
 		code="${code}${MOV_R9_RDX}"
 		code="${code}${MOV_V8_RDI}$(printEndianValue $OUT $SIZE_64BITS_8BYTES)";
@@ -1164,7 +1164,8 @@ function system_call_wait4()
 	echo -en "${code}" | base64 -w0;
 }
 
-system_call_dup2(){
+function system_call_dup2()
+{
 	local old_fd_addr="$1"; # where in memory we have the int value of the fd
 	local new_fd="$2";
 	local sys_dup2=33;
