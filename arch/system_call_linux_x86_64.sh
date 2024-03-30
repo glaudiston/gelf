@@ -406,8 +406,8 @@ XOR_R10_R10="\x4d\x31\xd2";
 # JMP
 # We have some types of jump
 # Relative jumps (short and near):
-JMP_SHORT="\xeb"; # followed by a 8-bit signed char (-128 to 127) to move relative to BIP.
-JMP_NEAR="\xe9"; # followed by a 32-bit signed integer(-2147483648 to 2147483647).
+JMP_V1="\xeb"; # followed by a 8-bit signed char (-128 to 127) to move relative to BIP.
+JMP_V4="\xe9"; # followed by a 32-bit signed integer(-2147483648 to 2147483647).
 # Jump to the full virtual address
 JMP_RAX="\xff";
 JMP_RDI="\xe0";
@@ -680,18 +680,17 @@ function bytecode_jump_short()
 {
 	local TARGET_ADDR="$1";
 	local CURRENT_ADDR="$2";
-	local RELATIVE=$(( TARGET_ADDR - CURRENT_ADDR - JUMP_SHORT_SIZE ));
-	local CODE="";
+	local RELATIVE=$(( TARGET_ADDR - CURRENT_ADDR ));
+	local code="";
 	if [ ! "$(( (RELATIVE >= -128) && (RELATIVE <= 127) ))" -eq 1 ]; then
-		error tried to jump to an invalid range: $RELATIVE
-		echo -en ",-1";
+		debug "displacement too big to jump short.";
 		return;
 	fi;
 	# debug jump short relative $RELATIVE
 	local RADDR_V="$(printEndianValue "$RELATIVE" $SIZE_8BITS_1BYTE )";
 	# debug jump short to RADDR_V=[$( echo -n "$RADDR_V" | xxd)]
-	CODE="${CODE}${JMP_SHORT}${RADDR_V}";
-	echo -ne "$(echo -en "${CODE}" | base64 -w0)";
+	code="${code}${JMP_V1}${RADDR_V}";
+	echo -ne "$(echo -en "${code}" | base64 -w0)";
 	return
 }
 
@@ -707,23 +706,21 @@ function jump()
 	local JUMP_NEAR_SIZE=$(( OPCODE_SIZE + DISPLACEMENT_BITS / 8 )); # 5 bytes
 
 	local short_jump_response=$(bytecode_jump_short "$TARGET_ADDR" "${CURRENT_ADDR}")
-	if [ "$(echo -n "${short_jump_response}" | base64 -d | wc -c)" -gt -1 ];then
+	if [ "$(echo -n "${short_jump_response}" | base64 -d | wc -c)" -gt 0 ];then
 		# debug short jump succeed;
 		echo -n "${short_jump_response}";
 		return;
 	fi;
 	# debug jump, unable to short, trying near: $short_jump_response
-
 	#bytecode_jump_near
-	local JUMP_NEAR_SIZE=5;
-	local RELATIVE=$(( TARGET_ADDR - CURRENT_ADDR - JUMP_NEAR_SIZE ))
+	local RELATIVE=$(( TARGET_ADDR - CURRENT_ADDR ))
 	if [ "$(( (RELATIVE >= - ( 1 << 31 )) && (RELATIVE <= ( 1 << 31 ) -1) ))" -eq 1 ]; then
 		# jump near
 		local RADDR_V;
 		RADDR_V="$(printEndianValue "${RELATIVE}" $SIZE_32BITS_4BYTES)";
 		# debug "jump near relative ( $RELATIVE, $RADDR_V )";
-		CODE="${CODE}${JMP_NEAR}${RADDR_V}";
-		echo -ne "$(echo -en "${CODE}" | base64 -w0),${JUMP_NEAR_SIZE}";
+		CODE="${CODE}${JMP_V4}${RADDR_V}";
+		echo -ne "$(echo -en "${CODE}" | base64 -w0)";
 		return;
 	fi;
 
@@ -1390,14 +1387,19 @@ set_increment(){
 	local addr=$1;
 	local value=$2;
 	local code="";
+	debug "value=$value"
+	code="${code}${MOV_V4_RDX}$(printEndianValue "${addr}" "${SIZE_32BITS_4BYTES}")";
+	code="${code}${MOV_RDX_RDX}";
 	if [ "$value" == 1 ]; then
-		code="${code}${MOV_V4_RDX}$(printEndianValue "${addr}" "${SIZE_32BITS_4BYTES}")";
-		code="${code}${MOV_RDX_RDX}";
 		code="${code}${INC_RDX}";
-		code="${code}${MOV_RDX_ADDR4}$(printEndianValue "${addr}" "${SIZE_32BITS_4BYTES}")"
+	elif [ "$value" -gt -128 -a "$value" -lt 128 ]; then
+		ADD_V1_RDX="\x48\x83\xC2";
+		code="${code}${ADD_V1_RDX}$(printEndianValue "${value}" "${SIZE_8BITS_1BYTE}")";
 	else
-		error "increment not implemented for other than the value 1"
+		ADD_V4_RDX="\x48\x81\xC2";
+		code="${code}${ADD_V4_RDX}$(printEndianValue "${value}" "${SIZE_32BITS_4BYTE}")";
 	fi;
+	code="${code}${MOV_RDX_ADDR4}$(printEndianValue "${addr}" "${SIZE_32BITS_4BYTES}")"
 	echo -en "${code}" | base64 -w0
 }
 

@@ -649,6 +649,209 @@ is_valid_hex()
 	return 1;
 }
 
+define_variable_increment()
+{
+	local third_arg_idx=$((2 + deep-1));
+	local last_arg_idx="${#code_line_elements[@]}";
+	local symbol_id="";
+	local symbol_data="";
+	local symbol_value="";
+	local instr_bytes="";
+	for ((i=third_arg_idx; i<last_arg_idx; i++)); do
+		symbol_id="${code_line_elements[$(( 2 + deep-1 ))]}";
+		symbol_data=$(get_b64_symbol_value "${symbol_id}" "${SNIPPETS}")
+		symbol_type=$(echo "${symbol_data}" | cut -d, -f${B64_SYMBOL_VALUE_RETURN_TYPE});
+		symbol_value=$(echo "$symbol_data" | cut -d, -f${B64_SYMBOL_VALUE_RETURN_OUT} | base64 -d);
+		instr_bytes="${instr_bytes}$(set_increment $dyn_data_offset $symbol_value)";
+	done
+	local instr_len="$(echo "${instr_bytes}" | base64 -d | wc -c)";
+	local data_bytes="";
+	local data_len="8";
+	struct_parsed_snippet \
+		"SYMBOL_TABLE" \
+		"${symbol_name}" \
+		"${instr_offset}" \
+		"${instr_bytes}" \
+		"${instr_len}" \
+		"${dyn_data_offset}" \
+		"${data_bytes}" \
+		"${data_len}" \
+		"${CODE_LINE_B64}" \
+		"1";
+	return $?;
+}
+
+define_variable_arg()
+{
+	local arg_number="${sec_arg/@/}"
+	# create a new dynamic symbol called ${symbol_name}
+	local instr_bytes="$(get_arg $dyn_data_offset $arg_number)";
+	local instr_len=$(echo -n "${instr_bytes}" | base64 -d | wc -c );
+	# this address will receive the point to the arg variable set in rsp currently;
+	# a better solution would be not have this space in binary but in memory.
+	# but it is good enough for now. because we don't really have a dynamic memory now
+	local data_bytes="";
+	data_len="8"; # pointer size
+	struct_parsed_snippet \
+		"SYMBOL_TABLE" \
+		"${symbol_name}" \
+		"${instr_offset}" \
+		"${instr_bytes}" \
+		"${instr_len}" \
+		"${dyn_data_offset}" \
+		"${data_bytes}" \
+		"${data_len}" \
+		"${CODE_LINE_B64}" \
+		"1";
+	return $?;
+}
+
+define_variable_read_from_file()
+{
+	local file_name="${code_line_elements[$(( 2 + deep-1 ))]}";
+	local symbol_data=$(get_b64_symbol_value "${file_name}" "${SNIPPETS}")
+	# sys_open will create a new file descriptor.
+	local symbol_type=$(echo "${symbol_data}" | cut -d, -f${B64_SYMBOL_VALUE_RETURN_TYPE});
+	# TODO use a better place this is an insecure way, because on this page
+	# we have all code, so we can rewrite it.
+	local ptr_data_size=8;
+	local stat_addr=$(( dyn_data_offset + ptr_data_size ));
+	local stat_struct_size=144;
+	if [ "${symbol_type}" != "${SYMBOL_TYPE_STATIC}" ]; then
+		data_bytes="";
+		data_bytes_len=0; # no data to append. just registers used.
+		sym_dyn_data_size=$(get_sym_dyn_data_size "${input_symbol_name}" "${SNIPPETS}")
+		data_addr_v="$(( dyn_data_offset ))";
+		data_offset="${dyn_data_offset}";
+	else
+		data_offset="${static_data_offset}";
+	fi;
+	local filename_addr=$(get_symbol_addr "${file_name}" "$SNIPPETS")
+	# Reading file involve some steps.
+	# 1. Opening the file, if succeed, we have a file descriptor
+	#    in success the rax will have the fd
+	local open_code="$(system_call_open "${filename_addr}")";
+	# 2. fstat that fd, so we have the information on data size, to allocate properly the memory.
+	# TODO guarantee a valid writable memory location
+	local fstat_code="$(sys_fstat "${stat_addr}")";
+	# 	To do this we need to have some memory space to set the stat data struct.
+	# 	TODO decide if we should mmap every time, or have a program buffer to use.
+	# 3.a. in normal files, allocate memory with mmap using the fd.
+	local mmap_code="";
+	# 3.b. in case of virtual file like pipes or nodes(/proc/...) we can't map directly, but we still need to have a memory space to read the data in, so the fstat is still necessary. We should then use the sys_read to copy the data into memory.
+	# 4. So we can access the data directly using memory addresses.
+	local read_code="$(read_file "${symbol_type}" "${stat_addr}" "${data_offset}")"
+	# it should return the bytecode, the size
+	#fd="$(set_symbol_value "${symbol_value} fd" "${SYS_OPEN}")";
+	# We should create a new dynamic symbol to have the file descriptor number
+	#CODE="${CODE}$(sys_read $)"
+	instr_bytes="${open_code}${fstat_code}${mmap_code}${read_code}"
+	instr_len=$(echo -n "${instr_bytes}" | base64 -d | wc -c )
+	data_bytes="";
+	data_len="$(( stat_struct_size + ptr_data_size ))"; # Dynamic length, only at runtime we can know so give it the pointer size
+	struct_parsed_snippet \
+		"SYMBOL_TABLE" \
+		"${symbol_name}" \
+		"${instr_offset}" \
+		"${instr_bytes}" \
+		"${instr_len}" \
+		"${data_offset}" \
+		"${data_bytes}" \
+		"${data_len}" \
+		"${CODE_LINE_B64}" \
+		"1" \
+		"0" \
+		"RAX"; #TODO: this is not working, it should set the register where the write call should look at data address.
+	return $?;
+}
+
+define_variable_from_exec()
+{
+	local cmd="$(echo -n "${code_line_elements[$(( 2 + deep-1 ))]}")"
+	# TODO for now positional args are good enough, but the correct is to have args and env as an array each;
+	local args=( );
+	local static_map=( );
+	for (( i=$((deep + 1)); i<$(( ${#code_line_elements[@]} + deep-1 )); i++ ));
+	do {
+		local arg_id="${code_line_elements[$i]}";
+		local arg_snippet="$( echo "$SNIPPETS" | grep "SYMBOL_TABLE,${arg_id}," )";
+		local arg_addr="$(echo "$arg_snippet" | cut -d, -f${SNIPPET_COLUMN_DATA_OFFSET} )";
+		local arg_is_static=0;
+		if is_static_data_snippet "${arg_snippet}"; then
+			# if arg is static, the call is different because we pass the address to the string itself
+			# instead of the address of the pointer to the string we have when it is dynamic
+			# I've choose doing this way because we do less instructions as we don't need to allocate additional
+			# bytes to create a pointer to the static string, we can just set the address to the register.
+			arg_is_static=1;
+		fi;
+		args[$((i-deep))]="$arg_addr";
+		static_map[$((i-deep))]=$arg_is_static;
+	};
+	done;
+	local data_bytes="";
+	local env=(); # memory address to the env
+	local pipe_struct_size=8; # 2 int array; int 4 bytes each
+	local pipe_buffer_size=$((16#100));# 256;
+	local ptr_to_buffer_size=8; # reserve the first 8 bytes to a pointer to the buffer data (currently 8 bytes ahead), so the concat code will not break trying to resolve a pointer
+	local pipe_buffer_addr=$(( dyn_data_offset + ptr_to_buffer_size ));
+	local pipe_addr=$(( pipe_buffer_addr + pipe_buffer_size ))
+	local args_addr="$(( pipe_addr + pipe_struct_size ))"; # the array address
+	local args_size=$(( 8 * ${#args[@]} + 8 )) # 8 to cmd, 8 for each argument and 8 to null to close the array
+	local env_addr=$(( args_addr + args_size ));
+	local env_size=8; 
+	env_size=0;
+	env_addr=0; # no support for env, set NULL
+	local argsparam="${args[@]}";
+	local staticmapparam="${static_map[@]}";
+	local data_len=$(( ptr_to_buffer_size + pipe_buffer_size + pipe_struct_size + args_size + env_size ));
+	local exec_result="$(system_call_exec "${args_addr}" "${argsparam}" "${staticmapparam}" "${env_addr}" "${pipe_addr}" "${pipe_buffer_addr}" "${pipe_buffer_size}")";
+	instr_bytes="$(echo "${exec_result}" | cut -d, -f1)";
+	instr_len="$(echo "${exec_result}" | cut -d, -f2)";
+	struct_parsed_snippet \
+		"SYMBOL_TABLE" \
+		"${symbol_name}" \
+		"${instr_offset}" \
+		"${instr_bytes}" \
+		"${instr_len}" \
+		"${dyn_data_offset}" \
+		"${data_bytes}" \
+		"${data_len}" \
+		"${CODE_LINE_B64}" \
+		"1";
+	return $?;
+}
+
+define_variable_from_test()
+{
+	#   defines a new symbol based on a boolean condition
+	local field_a="${code_line_elements[$(( 2 + deep-1 ))]}";
+	local field_data_a=$(get_b64_symbol_value "${field_a}" "${SNIPPETS}")
+	local field_a_addr=$(echo "$field_data_a" | cut -d, -f${B64_SYMBOL_VALUE_RETURN_ADDR})
+	local field_type_a=$(echo "${field_data_a}" | cut -d, -f${B64_SYMBOL_VALUE_RETURN_TYPE});
+	local field_a_v=$(echo "${field_data_a}" | cut -d, -f${B64_SYMBOL_VALUE_RETURN_OUT} | base64 -d)
+	local field_b="${code_line_elements[$(( 3 + deep-1 ))]}";
+	local field_data_b=$(get_b64_symbol_value "${field_b}" "${SNIPPETS}");
+	local field_b_addr=$(echo "$field_data_b" | cut -d, -f${B64_SYMBOL_VALUE_RETURN_ADDR})
+	local field_type_b=$(echo "${field_data_b}" | cut -d, -f${B64_SYMBOL_VALUE_RETURN_TYPE});
+	local field_b_v=$(echo "${field_data_b}" | cut -d, -f${B64_SYMBOL_VALUE_RETURN_OUT} | base64 -d)
+	local instr_bytes=$(compare "${field_a_v:=0}" "${field_b_v:=0}" "$field_type_a" "$field_type_b")
+	local instr_len=$(echo "$instr_bytes" | base64 -d | wc -c);
+	local data_bytes="";
+	local data_len=0;
+	struct_parsed_snippet \
+		"SYMBOL_TABLE" \
+		"${symbol_name}" \
+		"${instr_offset}" \
+		"${instr_bytes}" \
+		"${instr_len}" \
+		"${static_data_offset}" \
+		"${data_bytes}" \
+		"${data_len}" \
+		"${CODE_LINE_B64}" \
+		"1";
+	return $?;
+}
+
 define_variable(){
 	# All variables, constants, macros are symbols and should be managed by a symbol table
 	# It should have name type, scope and memory address
@@ -658,7 +861,7 @@ define_variable(){
 	# TODO implement global macro values, replacing code with values
 	#
 	# Constants should replace the code value before process the code.
-	# Constants should not keep in memory, instead should replace the vlaue hardcoded in bytecode.
+	# Constants should not keep in memory, instead should replace the value hardcoded in bytecode.
 	# Variables should recover the target address and size at runtime.
 	# A variable and constant are defined at the same way. The compiler should consider everything as constant.
 	# Once the code changes the variable value, it will be converted to variable.
@@ -675,138 +878,26 @@ define_variable(){
 	fi;
 	if [ "$sec_arg" == "?" ]; then # define a test
 	{
-		#   defines a new symbol based on a boolean condition
-		local field_a="${code_line_elements[$(( 2 + deep-1 ))]}";
-		local field_data_a=$(get_b64_symbol_value "${field_a}" "${SNIPPETS}")
-		local field_a_addr=$(echo "$field_data_a" | cut -d, -f${B64_SYMBOL_VALUE_RETURN_ADDR})
-		local field_type_a=$(echo "${field_data_a}" | cut -d, -f${B64_SYMBOL_VALUE_RETURN_TYPE});
-		local field_a_v=$(echo "${field_data_a}" | cut -d, -f${B64_SYMBOL_VALUE_RETURN_OUT} | base64 -d)
-		local field_b="${code_line_elements[$(( 3 + deep-1 ))]}";
-		local field_data_b=$(get_b64_symbol_value "${field_b}" "${SNIPPETS}");
-		local field_b_addr=$(echo "$field_data_b" | cut -d, -f${B64_SYMBOL_VALUE_RETURN_ADDR})
-		local field_type_b=$(echo "${field_data_b}" | cut -d, -f${B64_SYMBOL_VALUE_RETURN_TYPE});
-		local field_b_v=$(echo "${field_data_b}" | cut -d, -f${B64_SYMBOL_VALUE_RETURN_OUT} | base64 -d)
-		local instr_bytes=$(compare "${field_a_v:=0}" "${field_b_v:=0}" "$field_type_a" "$field_type_b")
-		local instr_len=$(echo "$instr_bytes" | base64 -d | wc -c);
-		local data_bytes="";
-		local data_len=0;
-		struct_parsed_snippet \
-			"SYMBOL_TABLE" \
-			"${symbol_name}" \
-			"${instr_offset}" \
-			"${instr_bytes}" \
-			"${instr_len}" \
-			"${static_data_offset}" \
-			"${data_bytes}" \
-			"${data_len}" \
-			"${CODE_LINE_B64}" \
-			"1";
-		return $?;
+		define_variable_from_test
+		return $?
 	}
 	fi;
 	if [[ "${sec_arg}" =~ \<=$ ]]; then # read from file into var
 	{
-		local file_name="${code_line_elements[$(( 2 + deep-1 ))]}";
-		local symbol_data=$(get_b64_symbol_value "${file_name}" "${SNIPPETS}")
-		# sys_open will create a new file descriptor.
-		local symbol_type=$(echo "${symbol_data}" | cut -d, -f${B64_SYMBOL_VALUE_RETURN_TYPE});
-		# TODO use a better place this is an insecure way, because on this page
-		# we have all code, so we can rewrite it.
-		local ptr_data_size=8;
-		local stat_addr=$(( dyn_data_offset + ptr_data_size ));
-		local stat_struct_size=144;
-		if [ "${symbol_type}" != "${SYMBOL_TYPE_STATIC}" ]; then
-			data_bytes="";
-			data_bytes_len=0; # no data to append. just registers used.
-			sym_dyn_data_size=$(get_sym_dyn_data_size "${input_symbol_name}" "${SNIPPETS}")
-			data_addr_v="$(( dyn_data_offset ))";
-			data_offset="${dyn_data_offset}";
-		else
-			data_offset="${static_data_offset}";
-		fi;
-		local filename_addr=$(get_symbol_addr "${file_name}" "$SNIPPETS")
-		# Reading file involve some steps.
-		# 1. Opening the file, if succeed, we have a file descriptor
-		#    in success the rax will have the fd
-		local open_code="$(system_call_open "${filename_addr}")";
-		# 2. fstat that fd, so we have the information on data size, to allocate properly the memory.
-		# TODO guarantee a valid writable memory location
-		local fstat_code="$(sys_fstat "${stat_addr}")";
-		# 	To do this we need to have some memory space to set the stat data struct.
-		# 	TODO decide if we should mmap every time, or have a program buffer to use.
-		# 3.a. in normal files, allocate memory with mmap using the fd.
-		local mmap_code="";
-		# 3.b. in case of virtual file like pipes or nodes(/proc/...) we can't map directly, but we still need to have a memory space to read the data in, so the fstat is still necessary. We should then use the sys_read to copy the data into memory.
-		# 4. So we can access the data directly using memory addresses.
-		local read_code="$(read_file "${symbol_type}" "${stat_addr}" "${data_offset}")"
-		# it should return the bytecode, the size
-		#fd="$(set_symbol_value "${symbol_value} fd" "${SYS_OPEN}")";
-		# We should create a new dynamic symbol to have the file descriptor number
-		#CODE="${CODE}$(sys_read $)"
-		instr_bytes="${open_code}${fstat_code}${mmap_code}${read_code}"
-		instr_len=$(echo -n "${instr_bytes}" | base64 -d | wc -c )
-		data_bytes="";
-		data_len="$(( stat_struct_size + ptr_data_size ))"; # Dynamic length, only at runtime we can know so give it the pointer size
-		struct_parsed_snippet \
-			"SYMBOL_TABLE" \
-			"${symbol_name}" \
-			"${instr_offset}" \
-			"${instr_bytes}" \
-			"${instr_len}" \
-			"${data_offset}" \
-			"${data_bytes}" \
-			"${data_len}" \
-			"${CODE_LINE_B64}" \
-			"1" \
-			"0" \
-			"RAX"; #TODO: this is not working, it should set the register where the write call should look at data address.
-		return $?;
+		define_variable_read_from_file
+		return $?
 	}
 	fi;
 	if [ "$sec_arg" == "+" ]; then # increment a variable
 	{
-		local symbol_value="${code_line_elements[$(( 2 + deep-1 ))]}"
-		instr_bytes="$(set_increment $dyn_data_offset $symbol_value)";
-		instr_len="$(echo "${instr_bytes}" | base64 -d | wc -c)";
-		data_bytes="";
-		data_len="8";
-		struct_parsed_snippet \
-			"SYMBOL_TABLE" \
-			"${symbol_name}" \
-			"${instr_offset}" \
-			"${instr_bytes}" \
-			"${instr_len}" \
-			"${dyn_data_offset}" \
-			"${data_bytes}" \
-			"${data_len}" \
-			"${CODE_LINE_B64}" \
-			"1";
-		return $?;
+		define_variable_increment
+		return $?
 	}
 	fi
 	if [[ "$sec_arg" =~ ^@[0-9]*$ ]]; then # capture the argument into variable
 	{
-		local arg_number="${sec_arg/@/}"
-		# create a new dynamic symbol called ${symbol_name}
-		local instr_bytes="$(get_arg $dyn_data_offset $arg_number)";
-		local instr_len=$(echo -n "${instr_bytes}" | base64 -d | wc -c );
-		# this address will receive the point to the arg variable set in rsp currently;
-		# a better solution would be not have this space in binary but in memory.
-		# but it is good enough for now. because we don't really have a dynamic memory now
-		local data_bytes="";
-		data_len="8"; # pointer size
-		struct_parsed_snippet \
-			"SYMBOL_TABLE" \
-			"${symbol_name}" \
-			"${instr_offset}" \
-			"${instr_bytes}" \
-			"${instr_len}" \
-			"${dyn_data_offset}" \
-			"${data_bytes}" \
-			"${data_len}" \
-			"${CODE_LINE_B64}" \
-			"1";
-		return $?;
+		define_variable_arg
+		return $?
 	}
 	fi
 	if [[ "$sec_arg" =~ ^@[$]$ ]]; then # capture the argument count into variable
@@ -836,58 +927,8 @@ define_variable(){
 	fi
 	if [ "$sec_arg" == "!" ]; then # exec and capture output into variable
 	{
-		local cmd="$(echo -n "${code_line_elements[$(( 2 + deep-1 ))]}")"
-		# TODO for now positional args are good enough, but the correct is to have args and env as an array each;
-		local args=( );
-		local static_map=( );
-		for (( i=$((deep + 1)); i<$(( ${#code_line_elements[@]} + deep-1 )); i++ ));
-		do {
-			local arg_id="${code_line_elements[$i]}";
-			local arg_snippet="$( echo "$SNIPPETS" | grep "SYMBOL_TABLE,${arg_id}," )";
-			local arg_addr="$(echo "$arg_snippet" | cut -d, -f${SNIPPET_COLUMN_DATA_OFFSET} )";
-			local arg_is_static=0;
-			if is_static_data_snippet "${arg_snippet}"; then
-				# if arg is static, the call is different because we pass the address to the string itself
-				# instead of the address of the pointer to the string we have when it is dynamic
-				# I've choose doing this way because we do less instructions as we don't need to allocate additional
-				# bytes to create a pointer to the static string, we can just set the address to the register.
-				arg_is_static=1;
-			fi;
-			args[$((i-deep))]="$arg_addr";
-			static_map[$((i-deep))]=$arg_is_static;
-		};
-		done;
-		local data_bytes="";
-		local env=(); # memory address to the env
-		local pipe_struct_size=8; # 2 int array; int 4 bytes each
-		local pipe_buffer_size=$((16#100));# 256;
-		local ptr_to_buffer_size=8; # reserve the first 8 bytes to a pointer to the buffer data (currently 8 bytes ahead), so the concat code will not break trying to resolve a pointer
-		local pipe_buffer_addr=$(( dyn_data_offset + ptr_to_buffer_size ));
-		local pipe_addr=$(( pipe_buffer_addr + pipe_buffer_size ))
-		local args_addr="$(( pipe_addr + pipe_struct_size ))"; # the array address
-		local args_size=$(( 8 * ${#args[@]} + 8 )) # 8 to cmd, 8 for each argument and 8 to null to close the array
-		local env_addr=$(( args_addr + args_size ));
-		local env_size=8; 
-		env_size=0;
-		env_addr=0; # no support for env, set NULL
-		local argsparam="${args[@]}";
-		local staticmapparam="${static_map[@]}";
-		local data_len=$(( ptr_to_buffer_size + pipe_buffer_size + pipe_struct_size + args_size + env_size ));
-		local exec_result="$(system_call_exec "${args_addr}" "${argsparam}" "${staticmapparam}" "${env_addr}" "${pipe_addr}" "${pipe_buffer_addr}" "${pipe_buffer_size}")";
-		instr_bytes="$(echo "${exec_result}" | cut -d, -f1)";
-		instr_len="$(echo "${exec_result}" | cut -d, -f2)";
-		struct_parsed_snippet \
-			"SYMBOL_TABLE" \
-			"${symbol_name}" \
-			"${instr_offset}" \
-			"${instr_bytes}" \
-			"${instr_len}" \
-			"${dyn_data_offset}" \
-			"${data_bytes}" \
-			"${data_len}" \
-			"${CODE_LINE_B64}" \
-			"1";
-		return $?;
+		define_variable_from_exec
+		return $?
 	}
 	fi;
 	if [ "${is_new_symbol}" == 1 -a "${#code_line_elements[@]}" == "$(( 2 + deep - 1 ))" ]; then
@@ -1294,7 +1335,13 @@ parse_snippet()
 	{
 		target="${code_line_elements[$(( 0 + deep-1 ))]}"
 		target_offset="$( echo "$SNIPPETS" | grep "SNIPPET,${target}," | cut -d, -f${SNIPPET_COLUMN_INSTR_OFFSET} )";
-		local call_bytes="$(call_procedure "$((target_offset + 2))" "${instr_offset}" )";
+		local jmp_size=2; # all procedures have a jmp instruction at begining. it can be 2 or 5 bytes. 2 if the procedure body is smaller than 128 bytes;
+		local target_instr_size="$( echo "$SNIPPETS" | grep "SNIPPET,${target}," | cut -d, -f${SNIPPET_COLUMN_INSTR_LEN} )";
+		debug "target[$target] size=[${target_instr_size}]";
+		if [ "${target_instr_size:=0}" -gt 127 ]; then 
+			jmp_size=5;
+		fi;
+		local call_bytes="$(call_procedure "$((target_offset + jmp_size))" "${instr_offset}" )";
 		local call_len="$(echo "${call_bytes}" | base64 -d | wc -c)";
 		struct_parsed_snippet \
 			"SNIPPET_CALL" \
