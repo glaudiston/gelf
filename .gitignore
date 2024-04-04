@@ -1,6 +1,7 @@
 *.swp
+*.o
 a.out
-debugger
+build
 elf
 build
 tests/

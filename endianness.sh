@@ -23,7 +23,7 @@ function printLittleEndian(){
 
 function printEndianValue(){
 	if ! is_valid_number "$1"; then 
-		error "INVALID NUMBER $1"
+		error "INVALID NUMBER \"$1\""
 		backtrace
 		return
 	fi
