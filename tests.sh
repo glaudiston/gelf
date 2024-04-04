@@ -78,7 +78,8 @@ EOF
 # a known bug is that the write autodetect the size by the \x00 byte;
 # so the read will stop at the first \x00 byte
 test_read_text_file(){
-	head /dev/random | xxd > .tmp.file;
+	local tmpfile=/dev/shm/gelf-test-$RANDOM
+	head /dev/random | xxd > $tmpfile;
 	chk=$(md5sum .tmp.file | cut -d " " -f1);
 	compile_test <<EOF
 file name:	./.tmp.file
@@ -90,6 +91,7 @@ exit	with no error
 EOF
 	o=$(run_test | md5sum | cut -d " " -f1);
 	expect $? 0 $chk "$o";
+	rm $tmpfile
 }
 
 test_read_virtual_file(){
