@@ -57,7 +57,6 @@ print_elf_file_header()
 		EI_CLASS=$ELFCLASS64
 	}
 
-	# TODO replace all printEndianValue to use print_with_value
 	EI_DATA="$(printEndianValue $(detect_endianness) ${SIZE_8BITS_1BYTE})" # get endianness from current bin
 	EI_VERSION="\x01";	# ELF VERSION 1 (current)
 	ELFOSABI_SYSV=0;
@@ -328,9 +327,11 @@ get_b64_symbol_value()
 	local symbol_name="$1";
 	local SNIPPETS=$2;
 	local input="ascii";
+	# empty value
 	if [ "$symbol_name" == "" ]; then
 		echo -n ",0,${SYMBOL_TYPE_HARD_CODED},0";
 	fi;
+	# hard coded number
 	if is_valid_number "$symbol_name"; then {
 		out=$(echo -n "$symbol_name" | base64 -w0);
 		outsize=$(echo -n "${out}" | base64 -d | wc -c)
@@ -339,7 +340,7 @@ get_b64_symbol_value()
 	}
 	fi;
 
-	# resolve variable
+	# procedure
 	local procedure_data="$( echo "$SNIPPETS" | grep "PROCEDURE_TABLE,${symbol_name}," | tail -1)";
 	if [ "${procedure_data}" != "" ]; then
 		local addr=$(echo "${procedure_data}" | cut -d, -f${SNIPPET_COLUMN_INSTR_OFFSET});
@@ -360,7 +361,7 @@ get_b64_symbol_value()
 			return;
 		}
 		fi;
-		error "Expected a integer or a valid variable/constant. But got [$symbol_name]"
+		error "Expected a integer or a valid variable/constant. But got [$symbol_name][$SNIPPETS]"
 		backtrace
 		return 1
 	}
@@ -761,14 +762,14 @@ define_variable_read_from_file()
 		"${CODE_LINE_B64}" \
 		"1" \
 		"0" \
-		"RAX"; #TODO: this is not working, it should set the register where the write call should look at data address.
+		"RAX"; #TODO: this is should set the register where the write call should look at data address. and it should be a variable, because this breaks cross arch(aarch does not have RAX).
 	return $?;
 }
 
 define_variable_from_exec()
 {
 	local cmd="$(echo -n "${code_line_elements[$(( 2 + deep-1 ))]}")"
-	# TODO for now positional args are good enough, but the correct is to have args and env as an array each;
+	# TODO for now positional args are good enough, but a better way is to have named args and env as an array or map each;
 	local args=( );
 	local static_map=( );
 	for (( i=$((deep + 1)); i<$(( ${#code_line_elements[@]} + deep-1 )); i++ ));
@@ -857,9 +858,6 @@ define_variable(){
 	# It should have name type, scope and memory address
 	# The compiler should updated that items in the first code read
 	#
-	# TODO implement scoped variables and constants
-	# TODO implement global macro values, replacing code with values
-	#
 	# Constants should replace the code value before process the code.
 	# Constants should not keep in memory, instead should replace the value hardcoded in bytecode.
 	# Variables should recover the target address and size at runtime.
@@ -927,8 +925,8 @@ define_variable(){
 	fi
 	if [ "$sec_arg" == "!" ]; then # exec and capture output into variable
 	{
-		define_variable_from_exec
-		return $?
+		define_variable_from_exec;
+		return $?;
 	}
 	fi;
 	if [ "${is_new_symbol}" == 1 -a "${#code_line_elements[@]}" == "$(( 2 + deep - 1 ))" ]; then
@@ -1025,6 +1023,23 @@ define_variable(){
 }
 
 parse_code_bloc_instr(){
+	local symbol_name='_init_';
+	local instr_bytes=$(init_bloc);
+	local instr_len=$(echo $instr_bytes | base64 -d | wc -c);
+	local data_bytes="";
+	local data_len=0;
+	struct_parsed_snippet \
+		"INSTRUCTION" \
+		"${symbol_name}" \
+		"${instr_offset}" \
+		"${instr_bytes}" \
+		"${instr_len}" \
+		"${dyn_data_offset}" \
+		"${data_bytes}" \
+		"${data_len}" \
+		"" \
+		"0";
+	instr_offset=$(( instr_offset + instr_len ));
 	bloc_inner_code="$(
 		echo "${code_bloc}" |
 		awk 'NR>2 {print prev}; {prev=$0};' |
@@ -1053,6 +1068,7 @@ parse_code_bloc(){
 		awk '{s+=$1}END{print s}'
 	)";
 	local bloc_source_lines_count=$(( innerlines +2 ))
+	debug "bloc_source_lines_count=[$bloc_source_lines_count]";
 	local instr_size_sum="$( echo "${instr_bytes}" |
 		base64 -d | wc -c |
 		awk '{s+=$1}END{print s}';
@@ -1080,7 +1096,7 @@ parse_code_bloc(){
 		awk '{s+=$1}END{print s}'
 	)";
 	out="$(struct_parsed_snippet \
-		"SNIPPET" \
+		"PROCEDURE_TABLE" \
 		"${SNIPPET_NAME}" \
 		"${instr_offset}" \
 		"${instr_bytes}" \
@@ -1097,7 +1113,7 @@ parse_code_bloc(){
 define_code_block(){
 	# TODO add identation validation
 	#
-	# TODO prepend a rip move over the end of this block, so this code will be executed only if a explicit goto or call is requested. 
+	# TODO prepend a jump move over the end of this block, so this code will be executed only if a explicit goto or call is requested. 
 	new_bloc="$(parse_code_bloc)";
 	local bloc_name=$(echo "$new_bloc" | cut -d, -f${SNIPPET_COLUMN_SUBNAME})
 	if [ "$SNIPPETS" == "" ]; then
@@ -1111,7 +1127,7 @@ define_code_block(){
 conditional_call(){
 	local test_symbol_name="${code_line_elements[$(( 0 + deep-1 ))]}";
 	local target="${code_line_elements[$(( 2 + deep-1 ))]}"
-	local target_offset="$( echo "$SNIPPETS" | grep "SNIPPET,${target}," | cut -d, -f${SNIPPET_COLUMN_INSTR_OFFSET} )";
+	local target_offset="$( echo "$SNIPPETS" | grep "PROCEDURE_TABLE,${target}," | cut -d, -f${SNIPPET_COLUMN_INSTR_OFFSET} )";
 	local arguments=(); # TODO implement args
 	local arguments_map=();
 	# TODO jump or call ?
@@ -1130,6 +1146,16 @@ conditional_call(){
 		"${data_len}" \
 		"${CODE_LINE_B64}" \
 		"1";
+}
+
+get_instr_offset()
+{
+	local previous_snippet="$1";
+	local previous_instr_offset=$(echo "${previous_snippet}" | cut -d, -f$SNIPPET_COLUMN_INSTR_OFFSET);
+	previous_instr_offset="${previous_instr_offset:=$((PH_VADDR_V + EH_SIZE + PH_SIZE))}"
+	local previous_instr_sum=$(echo "${previous_snippet}" | cut -d, -f$SNIPPET_COLUMN_INSTR_LEN);
+	local instr_offset="$(( ${previous_instr_offset} + previous_instr_sum ))";
+	echo -n "${instr_offset}";
 }
 # parse_snippet given a source code snippet echoes snippet struct to stdout
 # allowing a pipeline to read a full instruction or bloc at time;
@@ -1152,11 +1178,7 @@ parse_snippet()
 	local CODE_LINE_XXD="$( echo -n "${CODE_LINE}" | xxd --ps)";
 	local CODE_LINE_B64=$( echo -n "${CODE_LINE}" | base64 -w0);
 	local previous_snippet=$( echo "${SNIPPETS}" | tail -1 );
-	local previous_instr_offset=$(echo "${previous_snippet}" | cut -d, -f$SNIPPET_COLUMN_INSTR_OFFSET);
-	previous_instr_offset="${previous_instr_offset:=$((PH_VADDR_V + EH_SIZE + PH_SIZE))}"
-	local previous_instr_sum=$(echo "${previous_snippet}" | cut -d, -f$SNIPPET_COLUMN_INSTR_LEN);
-	local instr_offset="$(( ${previous_instr_offset} + previous_instr_sum ))";
-	local previous_snip_type=$(echo "${previous_snippet}" | cut -d, -f${SNIPPET_COLUMN_TYPE});
+	local instr_offset=$(get_instr_offset "${previous_snippet}");
 	local dyn_data_size=$(get_dynamic_data_size "$SNIPPETS");
 	local zero_data_offset=$(( PH_VADDR_V + EH_SIZE + PH_SIZE + INSTR_TOTAL_SIZE ));
 	local dynamic_data_offset=$(get_current_dynamic_data_offset "${SNIPPETS}" "${CODE_LINE_B64}")
@@ -1313,7 +1335,7 @@ parse_snippet()
 	if [[ "${code_line_elements[$(( 0 + deep-1 ))]}" == goto ]]; then
 	{
 		target="${code_line_elements[$(( 1 + deep-1 ))]}"
-		target_offset="$( echo "$SNIPPETS" | grep "SNIPPET,${target}," | cut -d, -f${SNIPPET_COLUMN_INSTR_OFFSET} )";
+		target_offset="$( echo "$SNIPPETS" | grep "PROCEDURE_TABLE,${target}," | cut -d, -f${SNIPPET_COLUMN_INSTR_OFFSET} )";
 		jmp_result="$(jump "$((target_offset + 2))" "${instr_offset}" )";
 		jmp_bytes="$(echo "${jmp_result}" | cut -d, -f1)";
 		jmp_len="$(echo "${jmp_result}" | cut -d, -f2)";
@@ -1334,9 +1356,9 @@ parse_snippet()
 	if echo "$SNIPPETS" | grep -q "${code_line_elements[$(( 0 + deep-1 ))]}"; then # function calling
 	{
 		target="${code_line_elements[$(( 0 + deep-1 ))]}"
-		target_offset="$( echo "$SNIPPETS" | grep "SNIPPET,${target}," | cut -d, -f${SNIPPET_COLUMN_INSTR_OFFSET} )";
+		target_offset="$( echo "$SNIPPETS" | grep "PROCEDURE_TABLE,${target}," | cut -d, -f${SNIPPET_COLUMN_INSTR_OFFSET} )";
 		local jmp_size=2; # all procedures have a jmp instruction at begining. it can be 2 or 5 bytes. 2 if the procedure body is smaller than 128 bytes;
-		local target_instr_size="$( echo "$SNIPPETS" | grep "SNIPPET,${target}," | cut -d, -f${SNIPPET_COLUMN_INSTR_LEN} )";
+		local target_instr_size="$( echo "$SNIPPETS" | grep "PROCEDURE_TABLE,${target}," | cut -d, -f${SNIPPET_COLUMN_INSTR_LEN} )";
 		debug "target[$target] size=[${target_instr_size}]";
 		if [ "${target_instr_size:=0}" -gt 127 ]; then 
 			jmp_size=5;
@@ -1453,6 +1475,19 @@ parse_snippets()
 	local deep="${6-0}";
 	local CODE_INPUT=$(cat);
 	let deep++;
+	local instr_offset="0"
+	local static_data_offset=0;
+	struct_parsed_snippet \
+		"INSTRUCTION" \
+		"_before_" \
+		"${instr_offset}" \
+		"" \
+		"0" \
+		"${static_data_offset}" \
+		"" \
+		"0" \
+		"" \
+		"0";
 	IFS='';
 	echo "${CODE_INPUT}" | while read CODE_LINE;
 	do
@@ -1473,7 +1508,7 @@ parse_snippets()
 # That includes NONE OF the data section (string table, the elf and program headers
 detect_instruction_size_from_code()
 {
-	cat $1 | grep -E "^(SNIPPET|INSTRUCTION|SNIPPET_CALL|SYMBOL_TABLE|PROCEDURE_TABLE)," |
+	cat $1 | grep -E "^(INSTRUCTION|SNIPPET_CALL|SYMBOL_TABLE|PROCEDURE_TABLE)," |
 	cut -d, -f${SNIPPET_COLUMN_INSTR_LEN} |
 	awk '{s+=$1}END{print s}'
 }

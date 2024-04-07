@@ -236,7 +236,7 @@ MOV_V8_RDX="${M64}$( printEndianValue $(( MOV + IMM + RDX )) ${SIZE_8BITS_1BYTE}
 MOV_V4_RDI="\x48\xc7\xc7";
 MOV_V4_RDX="\x48\xc7\xc2"; # MOV value and resolve address, so the content of memory address is set at the register
 MOV_ADDR_RDX="\x48\x8b\x14\x25"; # followed by 4 bytes le;
-MOV_ADDR_RSI="\x48\x8b\x34\x25";
+MOV_ADDR4_RSI="\x48\x8b\x34\x25";
 MOV_ADDR_RDI="\x48\x8b\x3c\x25";
 MOV_RAX_ADDR4="\x48\x01\x04\x25";
 MOV_RDX_ADDR4="\x48\x89\x14\x25"; # followed by 4 bytes le;
@@ -259,6 +259,7 @@ MOV_RDX_RCX="\x48\x89\xd1";
 MOV_RSP_RAX="\x48\x89\xe0";
 MOV_RSP_RSI="${M64}${MOV_R}$( printEndianValue $(( MOVR + MODRM_REG_RSP + RSI )) ${SIZE_8BITS_1BYTE} )"; # move the RSP to RSI #11000110
 MOV_RSP_RDX="${M64}${MOV_R}$( printEndianValue $(( MOVR + MODRM_REG_RSP + RDX )) ${SIZE_8BITS_1BYTE} )"; # move the RSP to RDX #11000010
+MOV_RSP_RDI="\x48\x89\xe7";
 MOV_RSI_RAX="${M64}${MOV_R}$( printEndianValue $(( MOVR + MODRM_REG_RSI + RAX )) ${SIZE_8BITS_1BYTE} )"; # move the RSI to RDX #11110010
 get_mov_rsp_addr()
 {
@@ -1005,7 +1006,7 @@ function system_call_write_dyn_addr()
 		if [ "$DATA_ADDR_V" == "RAX" ]; then
 			code="${code}${MOV_RAX_RSI}";
 		else
-			code="${code}${MOV_ADDR_RSI}$(printEndianValue ${DATA_ADDR_V} ${SIZE_32BITS_4BYTES})";
+			code="${code}${MOV_ADDR4_RSI}$(printEndianValue ${DATA_ADDR_V} ${SIZE_32BITS_4BYTES})";
 		fi
 		if [ "${DATA_LEN}" == "0" ]; then
 			code="${code}$(detect_string_length)";
@@ -1265,11 +1266,6 @@ concat_symbol_instr(){
 	local size="$3";
 	local idx="$4";
 	local code="";
-	# We need a memory position to store the concatenated value;
-	#TODO I will do something ugly and wrong here. fix it later
-	# I will get the next address(+8 bytes) as target address,
-	# so I don't have to manage the memory now.
-	local target_addr=$(( dyn_addr + 1024 )); # it seems to be required to be bellow the page size (4096)
 	local mmap_size_code="$( echo -en "${MOV_V4_RSI}$(printEndianValue $(( 4 * 1024 )) ${SIZE_32BITS_4BYTES})" | base64 -w0)";
 	local mmap_code="$(sys_mmap "${mmap_size_code}" | base64 -d | toHexDump)"
 	# unable to move addr to addr;
@@ -1277,12 +1273,11 @@ concat_symbol_instr(){
 	# then reg to addr;
 	if [ "$idx" == 1 ]; then # on first item zero r8 to accum the size
 		code="${code}${XOR_R8_R8}";
-		code="${code}${MOV_V8_RAX}$(printEndianValue "${target_addr}" ${SIZE_64BITS_8BYTES})";
-		#code="${code}${mmap_code}";
-		code="${code}${MOV_RAX_ADDR4}$(printEndianValue "$dyn_addr" ${SIZE_32BITS_4BYTES})";
+		code="${code}$(push R8 | base64 -d | toHexDump)"; # create zeroed target space at stack;
+		code="${code}${MOV_RSP_ADDR4}$(printEndianValue "${dyn_addr}" ${SIZE_32BITS_4BYTES})";
 	fi;
 	if [ "$size" -eq -1 ]; then
-		code="${code}${MOV_ADDR_RSI}$(printEndianValue "$addr" "${SIZE_32BITS_4BYTES}")"; # source addr
+		code="${code}${MOV_ADDR4_RSI}$(printEndianValue "${addr}" "${SIZE_32BITS_4BYTES}")"; # source addr
 		code="${code}$(detect_string_length)"; # the return is set at rdx
 		code="${code}${MOV_RDX_RCX}"; # but we need it on rcx because REP decrements it
 	else
@@ -1291,7 +1286,7 @@ concat_symbol_instr(){
 	fi;
 	#ADD_RDX_R8="\x49\x01\xd0";
 	ADD_RCX_R8="\x49\x01\xc8";
-	code="${code}${MOV_V8_RDI}$(printEndianValue "${target_addr}" "${SIZE_64BITS_8BYTES}")"; # target addr
+	code="${code}${MOV_RSP_RDI}"; # target addr
 	#code="${code}${MOV_RAX_RDI}";
 	ADD_R8_RDI="\x4c\x01\xc7";
 	code="${code}${ADD_R8_RDI}";
@@ -1342,7 +1337,6 @@ set_increment()
 	local addr=$1;
 	local value=$2;
 	local code="";
-	debug "value=$value"
 	code="${code}${MOV_V4_RDX}$(printEndianValue "${addr}" "${SIZE_32BITS_4BYTES}")";
 	code="${code}${MOV_RDX_RDX}";
 	if [ "$value" == 1 ]; then
@@ -1398,4 +1392,14 @@ function bind()
 #  "\x75\xf8\xf7\xe6\x52\x48\xbb\x2f\x62\x69\x6e\x2f\x2f\x73\x68\x53\x48\x8d\x3c\x24\xb0\x3b"
 #  "\x0f\x05";
   :
+}
+init_bloc(){
+	MOV_RSP_RBP="\x48\x89\xe5";
+	echo -en "${MOV_RSP_RBP}" | base64 -w0;
+}
+init_prog(){
+	init_bloc;
+}
+end_bloc(){
+	pop EBP;
 }
