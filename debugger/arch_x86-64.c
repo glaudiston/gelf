@@ -409,7 +409,7 @@ int mov_al(pid_t child, unsigned long addr)
 int jmp_short(pid_t child, unsigned long addr)
 {
 	long unsigned v = ptrace(PTRACE_PEEKTEXT, child, (void*)addr+1,0);
-	printf("%016lx: " ANSI_COLOR_WHITE "jmp .%i;" ANSI_COLOR_GRAY "\t\t\t# jump to 0x%x\n", addr, (char)v, regs.rip + (char)v + 2);// 2 instr bytes + 4 address bytes
+	printf("%016lx: " ANSI_COLOR_WHITE "jmp .%i;" ANSI_COLOR_GRAY "\t\t\t# jump short to 0x%x\n", addr, (char)v, regs.rip + (char)v + 2);// 2 instr bytes + 4 address bytes
 	return 0;
 }
 
