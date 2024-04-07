@@ -280,8 +280,8 @@ fn:	{
 }
 a:	1
 b:	2
-d:	fn	a	b
-d!
+d:	[]	fn	a	b
+c:	!	d
 write	a	c
 s:	0
 exit	s
