@@ -260,10 +260,17 @@ int main(int argc, char *argv[])
         exit(1);
     }
 
+    char *filename=argv[1];
+    if (access(filename, X_OK) == -1) {
+	fprintf(stderr, "The file does not exists or does not have the execute permission: %s", filename);
+	exit(1);
+    }
+
     int child_pid = fork(); fflush(stdout);
     if (child_pid == 0) { // child thread
         ptrace(PTRACE_TRACEME, 0, 0, NULL); // this is the child thread, allow it to be traced.
-        execvp(argv[1], &argv[1]); // replace this child forked thread with the binary to trace
+	char ** env = &argv[1];
+        execvp(filename, env); // replace this child forked thread with the binary to trace
     } else { // parent thread (pid has the child pid)
 	trace_watcher(child_pid);
     }

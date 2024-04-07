@@ -327,6 +327,11 @@ int mov_v_rbx(pid_t child, unsigned long addr)
 	return 0;
 }
 
+int push_r8(pid_t child, unsigned long addr)
+{
+	printf("%016lx: " ANSI_COLOR_WHITE "push %%r8;" ANSI_COLOR_GRAY "\t\t\t#", addr);
+	return TRUE + RSP;
+}
 int push_rbx(pid_t child, unsigned long addr)
 {
 	printf("%016lx: " ANSI_COLOR_WHITE "PUSH %%rbx;\n", addr);
@@ -637,6 +642,11 @@ struct bytecode_entry
 		.k = {0x0f, 0x8f},
 		.kl = 2,
 		.fn = jg_int,
+	},
+	{
+		.k = { 0x41, 0x50 },
+		.kl = 2,
+		.fn = push_r8
 	},
 	{
 		.k = {0x48,0x01,0x04,0x25},
