@@ -1,22 +1,24 @@
 #!/bin/gg
 #
-# Note: Early language versions has a bug that force all functions be defined before the first instruction.
 
 # : defines values to symbols (variables or constants / dynamic or static)
 stdout:	1
 stderr:	2
-# Arguments uses :: as definition
-# ::$ allows recover the number of arguments passed to the program or function
-#args::$
-binary name::	1
-file to read::	2
-read file:	{
-	file::	2
+# Arguments uses ...:	@n as definition
+# :	@$ allows recover the number of arguments passed to the program or function
+args:	@$
+write	stdout	args
+# var-name:	@i, where i is a positive integer, recover the argument position (i) into a variable (var-name)
+#write	stdout	args
+#binary name::	1
+#file to read::	2
+#read file:	{
+#	file::	2
 	#write	stderr	file
-	file contents:<=	file
+#	file contents:<=	file
 	#write	stdout	file contents
-	ret
-}
+#	ret
+#}
 # It can be recovered in gdb by using 
 # (gdb) print *((int*)($rsp))
 #msg:	arguments: args
@@ -27,8 +29,8 @@ read file:	{
 #bin name::	0
 #file name::	1
 #read file	file to read
-file contents:<=	file to read
-write	stdout	file contents
+#file contents:<=	file to read
+#write	stdout	file contents
 
 no error:	0
 exit	no error
