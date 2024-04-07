@@ -80,9 +80,9 @@ EOF
 test_read_text_file(){
 	local tmpfile=/dev/shm/gelf-test-$RANDOM
 	head /dev/random | xxd > $tmpfile;
-	chk=$(md5sum .tmp.file | cut -d " " -f1);
+	chk=$(md5sum $tmpfile | cut -d " " -f1);
 	compile_test <<EOF
-file name:	./.tmp.file
+file name:	$tmpfile
 f:	<=	file name
 stdout:	1
 write	stdout	f
