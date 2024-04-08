@@ -174,7 +174,10 @@ void trace_watcher(pid_t pid)
 			unsigned char second_byte = data << 16 >> 24;
 			unsigned char thirdbyte=data << 8 >> 24;
 			unsigned char fourthbyte=data >> 24;
-			printf("%016lx: unknown data: %016x, [\\x%x\\x%x\\x%x\\x%x] \n", addr, data, first_byte, second_byte, thirdbyte, fourthbyte);fflush(stdout);
+			char ndisasm[256];
+			sprintf(ndisasm, "/bin/sh -c 'echo -ne \"\\x%x\\x%x\\x%x\\x%x\" | ndisasm -b %i -'", first_byte, second_byte, thirdbyte, fourthbyte, 64);
+			printf("%016lx: unknown data: %016x, [\\x%x\\x%x\\x%x\\x%x]; using ndisasm: [%s]\n", addr, data, first_byte, second_byte, thirdbyte, fourthbyte, ndisasm);fflush(stdout);
+			system(ndisasm);
 			printNextData = 0;
 		}
 		data = ptrace(PTRACE_SINGLESTEP, pid, 0, NULL);
