@@ -1,7 +1,7 @@
 #include "debugger.h"
 
 #define BUFF_SIZE 256
-void print_current_address(pid_t child, void* regs)
+void get_registers(pid_t child, void* regs)
 {
 	unsigned data = ptrace(PTRACE_GETREGS, child, NULL, regs);
 	if ( data != 0 ) {
@@ -67,12 +67,16 @@ void printRegValue(pid_t child, unsigned long r, int deep)
 	lastbyte[0]='\n';
 	lastbyte[1]=0;
 	if (deep){
-        	sprintf(lastbyte, "<%i|", deep);
+		sprintf(lastbyte, "<%i|", deep);
 	}
 	unsigned long v = ptrace(PTRACE_PEEKTEXT, child, r, 0);
 	if ( v == 0xffffffffffffffff ) { // not a valid memory location
 		// numeric
 		printf(" <%i| H(0x%lx) == I(%i) == S(\"%s...\") %s", deep+1, r, r, &r, lastbyte);
+		return;
+	}
+	if ( v == r ){
+		printf(" <%i points itself: 0x%lx\n", deep +1, v);
 		return;
 	}
 	printRegValue(child, v, deep+1);
@@ -158,7 +162,7 @@ void trace_watcher(pid_t pid)
 		    running_forks--;
 		    return;
 		}
-		print_current_address(pid, &regs);
+		get_registers(pid, &regs);
 		addr = regs.rip;
 		printRelevantRegisters(pid, regs, printNextData);
 		printf(ANSI_COLOR_GRAY "PID(%i)",pid);fflush(stdout);
@@ -170,78 +174,8 @@ void trace_watcher(pid_t pid)
 			unsigned char second_byte = data << 16 >> 24;
 			unsigned char thirdbyte=data << 8 >> 24;
 			unsigned char fourthbyte=data >> 24;
-			switch (first_byte) {
-				case 0x4c:
-					if ( second_byte == 0x89 ) {
-						if ( thirdbyte == 0xc2 ) { // 0x4c89c7
-							printf("%016lx: mov %%r8, %%rdx # 0x%llx(%lli)\n", addr, regs.r8, regs.r8); fflush(stdout);
-						} else if (thirdbyte == 0xca ) {
-							printf("%016lx: MOV %%r9, %%rdx # 0x%llx\n", addr, regs.r9); fflush(stdout);
-						} else {
-							printf("%016lx: ??? mov, %%r9, %%rdx\n", addr); fflush(stdout);
-						}
-					}
-					break;
-				case 0xb8:
-					data = ptrace(PTRACE_PEEKTEXT, pid, (void*)addr+1, 0);
-					printf("%08lx: mov %x, %%eax\n", addr, data);fflush(stdout);
-					break;
-				case 0xba: // MOV eDX SIZE
-					data = ptrace(PTRACE_PEEKTEXT, pid,
-						(void*)addr+1, 0);
-					printf("%08lx: MOV %i, %%edx\n", addr, data); fflush(stdout);
-					printNextData = TRUE + RDX;
-					break;
-				case 0xbe: // 32 bit mov
-					data = ptrace(PTRACE_PEEKTEXT, pid, (void*)addr+1, 0);
-					printf("%08lx: mov %x, %%esi\n", addr, data);
-					straddr = data;
-					break;
-				case 0xbf:
-					data = ptrace(PTRACE_PEEKTEXT, pid, (void*)addr+1, 0);
-					printf("%08lx: mov 0x%08x, %%edi\n", addr, data); fflush(stdout);
-					break;
-				default:
-					// JNE
-					if ( ( data << 16 >> 16 ) == 0xea83 ) {
-						printf("%016lx: jne\n", addr);fflush(stdout);
-					}
-					// CMP RDX 00
-					if ( ( data << 16 >> 16 ) == 0x850f ) {
-						data = ptrace(PTRACE_PEEKTEXT, pid, (void*)addr+3, 0) << 8;
-						printf("%016lx: cmp rdx %x; #", addr, data);fflush(stdout);
-					}
-					// JG
-					else if ( ( data << 16 >> 16 ) == 0x8f0f ) {
-						data = ptrace(PTRACE_PEEKTEXT, pid, (void*)addr+2, 0) << 8;
-						int d = (data >> 8 + ( data << 8 >> 8 ));
-						unsigned char instr_size=6;
-						printf("%016lx: jg, %llx # jump %i bytes ahead\n", addr, instr_size + regs.rip + d, d);fflush(stdout);
-					}
-					// RET
-					else if ( first_byte == 0xc3 ) {
-						printf("%016lx: ret\n", addr); fflush(stdout);
-						printNextData = 0;
-					}
-					// JMP NEAR
-					else if ( first_byte == 0xe9 )
-					{
-						data = ptrace(PTRACE_PEEKTEXT, pid, (void*)addr+1, 0);
-						printf("%08lx: jmp near (%d) %x (%li)\n", addr, (signed int)data, data, sizeof(signed int) * 8);
-					}
-					// SYSCALL
-					else if ( ( data << 16 >> 16 ) == 0x050f )
-					{
-						printf("%016lx: syscall: %s", addr, syscall);fflush(stdout);
-						printNextData = 1;
-					}
-					else
-					{
-						printf("%016lx: unknown data: %016x, %06x \n", addr, data, data << 8 >> 8);fflush(stdout);
-						printNextData = 0;
-					}
-				break;
-			}
+			printf("%016lx: unknown data: %016x, [\\x%x\\x%x\\x%x\\x%x] \n", addr, data, first_byte, second_byte, thirdbyte, fourthbyte);fflush(stdout);
+			printNextData = 0;
 		}
 		data = ptrace(PTRACE_SINGLESTEP, pid, 0, NULL);
 		if ( data != 0 ) {

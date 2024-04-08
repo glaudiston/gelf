@@ -440,7 +440,6 @@ void detect_friendly_instruction(pid_t child, unsigned long addr, char * friendl
 			sprintf(friendly_instr, "sys_write(%lli, \"%s\"(%lx), %lli)", regs.rdi, buff, v, regs.rdx);
 			break;
 		case SYS_READ:
-			peek_string(child, (void*)regs.rsi, buff);
 			sprintf(friendly_instr, "sys_read(%lli, 0x%llx, %lli)", regs.rdi, regs.rsi, regs.rdx);
 			break;
 		case SYS_MMAP:
@@ -605,8 +604,8 @@ int rep_movsb(pid_t child, unsigned long addr)
 
 int rep(pid_t child, unsigned long addr)
 {
-	printf("%016lx: " ANSI_COLOR_WHITE "rep", addr);
-	return 0;
+	printf("%016lx: " ANSI_COLOR_WHITE "rep;" ANSI_COLOR_GRAY "\t\t# RCX(after)", addr);
+	return TRUE + RCX;
 }
 
 int call(pid_t child, unsigned long addr)
