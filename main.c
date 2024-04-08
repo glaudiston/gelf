@@ -8,5 +8,6 @@ int main(int argc, char *argv[]) {
   printf("sizeof Elf64_Off:\t%li\n", sizeof(Elf64_Off));
   printf("sizeof Elf64_Addr:\t%li\n", sizeof(Elf64_Addr));
   printf("sizeof Elf64_Xword:\t%li\n", sizeof(Elf64_Xword));
+  printf("sizeof long unsigned:\t%li\n",sizeof(long unsigned));
   return 0;
 }

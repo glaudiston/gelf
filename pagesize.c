@@ -1,3 +1,9 @@
+#include <stdio.h>
 #include <unistd.h>
 
-int main(void) { printf("%i", sysconf(_SC_PAGESIZE)); }
+int main() {
+    long page_size = sysconf(_SC_PAGESIZE);
+    printf("%ld", page_size);
+
+    return 0;
+}

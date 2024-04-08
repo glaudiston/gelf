@@ -1,7 +1,7 @@
 #include "debugger.h"
 
 #define BUFF_SIZE 256
-void print_current_address(pid_t child, void* regs)
+void get_registers(pid_t child, void* regs)
 {
 	unsigned data = ptrace(PTRACE_GETREGS, child, NULL, regs);
 	if ( data != 0 ) {
@@ -15,14 +15,22 @@ void peek_string(pid_t child, void *addr, char* out){
 		return;
 	int done=0;
 	int pos=0;
-	out[0]=0;
 	size_t l=0;
+	size_t sizeBefore=BUFF_SIZE/3;
 	size_t lastAllocSize=BUFF_SIZE;
+	size_t newSize = 0;
 	char ** data;
 	while(!done) {
+		out[pos]=0;
 		data = (char**) ptrace(PTRACE_PEEKTEXT, child, addr+pos, 0);
 		if ( data == (char**)0xffffffffffffffff )
 			break;
+		if ( pos+8+1 > lastAllocSize ) {
+			newSize = lastAllocSize + sizeBefore; // Fibonacci like size growth
+			out = realloc(out, newSize);
+			sizeBefore = lastAllocSize;
+			lastAllocSize = newSize;
+		}
 		sprintf(out,"%s%s", out, &data);
 		if (strlen((const char *)&data) < 8){
 			break;
@@ -59,7 +67,7 @@ void printRegValue(pid_t child, unsigned long r, int deep)
 	lastbyte[0]='\n';
 	lastbyte[1]=0;
 	if (deep){
-        	sprintf(lastbyte, "<%i|", deep);
+		sprintf(lastbyte, "<%i|", deep);
 	}
 	unsigned long v = ptrace(PTRACE_PEEKTEXT, child, r, 0);
 	if ( v == 0xffffffffffffffff ) { // not a valid memory location
@@ -67,9 +75,14 @@ void printRegValue(pid_t child, unsigned long r, int deep)
 		printf(" <%i| H(0x%lx) == I(%i) == S(\"%s...\") %s", deep+1, r, r, &r, lastbyte);
 		return;
 	}
+	if ( v == r ){
+		printf(" <%i points itself: 0x%lx\n", deep +1, v);
+		return;
+	}
 	printRegValue(child, v, deep+1);
 	char * buff = malloc(BUFF_SIZE);
 	peek_string(child, (void*)r, buff); // str?
+	buff[BUFF_SIZE]=0;
 	printf(" H(0x%lx) == S(\"%s\") %s", r, buff, lastbyte);
 	free(buff);
 }
@@ -106,49 +119,6 @@ int get_bytecode_fn(pid_t child, unsigned long addr, unsigned data)
 		}
 	}
 	return -1;
-}
-
-void printRelevantRegisters(pid_t pid, struct user_regs_struct regs, int printNextData)
-{
-	unsigned long v;
-	if ( printNextData ) {
-		switch (printNextData-1) {
-			case R15:
-				v = regs.r15; break;
-			case R14:
-				v = regs.r14; break;
-			case R13:
-				v = regs.r13; break;
-			case R12:
-				v = regs.r12; break;
-			case R11:
-				v = regs.r11; break;
-			case R10:
-				v = regs.r10; break;
-			case R9:
-				v = regs.r9; break;
-			case R8:
-				v = regs.r8; break;
-			case RDI:
-				v = regs.rdi; break;
-			case RSI:
-				v = regs.rsi; break;
-			case RBP:
-				v = regs.rbp; break;
-			case RSP:
-				v = regs.rsp; break;
-			case RBX:
-				v = regs.rbx; break;
-			case RDX:
-				v = regs.rdx; break;
-			case RCX:
-				v = regs.rcx; break;
-			default: // RAX
-				v = regs.rax; break;
-		}
-		printRegValue(pid, v, 0);
-		printNextData=0;
-	}
 }
 int running_forks = 1;
 void trace_watcher(pid_t pid)
@@ -192,10 +162,10 @@ void trace_watcher(pid_t pid)
 		    running_forks--;
 		    return;
 		}
-		print_current_address(pid, &regs);
+		get_registers(pid, &regs);
 		addr = regs.rip;
 		printRelevantRegisters(pid, regs, printNextData);
-		printf("PID(%i)",pid);fflush(stdout);
+		printf(ANSI_COLOR_GRAY "PID(%i)",pid);fflush(stdout);
 		uint32_t data = ptrace(PTRACE_PEEKTEXT, pid, (void*)addr, 0);
 		printNextData = get_bytecode_fn(pid, addr, data);
 		if ( printNextData == -1 ) {
@@ -204,84 +174,11 @@ void trace_watcher(pid_t pid)
 			unsigned char second_byte = data << 16 >> 24;
 			unsigned char thirdbyte=data << 8 >> 24;
 			unsigned char fourthbyte=data >> 24;
-			switch (first_byte) {
-				case 0x4c:
-					if ( second_byte == 0x89 ) {
-						if ( thirdbyte == 0xc2 ) { // 0x4c89c7
-							printf("%016lx: mov %%r8, %%rdx # 0x%llx(%lli)\n", addr, regs.r8, regs.r8); fflush(stdout);
-						} else if (thirdbyte == 0xca ) {
-							printf("%016lx: MOV %%r9, %%rdx # 0x%llx\n", addr, regs.r9); fflush(stdout);
-						} else {
-							printf("%016lx: ??? mov, %%r9, %%rdx\n", addr); fflush(stdout);
-						}
-					}
-					break;
-				case 0xb8:
-					data = ptrace(PTRACE_PEEKTEXT, pid, (void*)addr+1, 0);
-					printf("%08lx: mov %x, %%eax\n", addr, data);fflush(stdout);
-					break;
-				case 0xba: // MOV eDX SIZE
-					data = ptrace(PTRACE_PEEKTEXT, pid,
-						(void*)addr+1, 0);
-					printf("%08lx: MOV %i, %%edx\n", addr, data); fflush(stdout);
-					printNextData = TRUE + RDX;
-					break;
-				case 0xbe: // 32 bit mov
-					data = ptrace(PTRACE_PEEKTEXT, pid, (void*)addr+1, 0);
-					printf("%08lx: mov %x, %%esi\n", addr, data);
-					straddr = data;
-					break;
-				case 0xbf:
-					data = ptrace(PTRACE_PEEKTEXT, pid, (void*)addr+1, 0);
-					printf("%08lx: mov 0x%08x, %%edi\n", addr, data); fflush(stdout);
-					break;
-				default:
-					// JNE
-					if ( ( data << 16 >> 16 ) == 0xea83 ) {
-						printf("%016lx: jne\n", addr);fflush(stdout);
-					}
-					// CMP RDX 00
-					if ( ( data << 16 >> 16 ) == 0x850f ) {
-						data = ptrace(PTRACE_PEEKTEXT, pid, (void*)addr+3, 0) << 8;
-						printf("%016lx: cmp rdx %x; #", addr, data);fflush(stdout);
-					}
-					// JG
-					else if ( ( data << 16 >> 16 ) == 0x8f0f ) {
-						data = ptrace(PTRACE_PEEKTEXT, pid, (void*)addr+2, 0) << 8;
-						int d = (data >> 8 + ( data << 8 >> 8 ));
-						unsigned char instr_size=6;
-						printf("%016lx: jg, %llx # jump %i bytes ahead\n", addr, instr_size + regs.rip + d, d);fflush(stdout);
-					}
-					// RET
-					else if ( first_byte == 0xc3 ) {
-						printf("%016lx: ret\n", addr); fflush(stdout);
-						printNextData = 0;
-					}
-					// JMP SHORT
-					else if ( first_byte == 0xeb )
-					{
-						data = ptrace(PTRACE_PEEKTEXT, pid, (void*)addr+1, 0);
-						printf("%08lx: jmp short (%i) %x\n", addr, first_byte, data);
-					}
-					// JMP NEAR
-					else if ( first_byte == 0xe9 )
-					{
-						data = ptrace(PTRACE_PEEKTEXT, pid, (void*)addr+1, 0);
-						printf("%08lx: jmp near (%d) %x (%li)\n", addr, (signed int)data, data, sizeof(signed int) * 8);
-					}
-					// SYSCALL
-					else if ( ( data << 16 >> 16 ) == 0x050f )
-					{
-						printf("%016lx: syscall: %s", addr, syscall);fflush(stdout);
-						printNextData = 1;
-					}
-					else
-					{
-						printf("%016lx: unknown data: %016x, %06x \n", addr, data, data << 8 >> 8);fflush(stdout);
-						printNextData = 0;
-					}
-				break;
-			}
+			char ndisasm[256];
+			sprintf(ndisasm, "/bin/sh -c 'echo -ne \"\\x%x\\x%x\\x%x\\x%x\" | ndisasm -b %i -'", first_byte, second_byte, thirdbyte, fourthbyte, 64);
+			printf("%016lx: unknown data: %016x, [\\x%x\\x%x\\x%x\\x%x]; using ndisasm: [%s]\n", addr, data, first_byte, second_byte, thirdbyte, fourthbyte, ndisasm);fflush(stdout);
+			system(ndisasm);
+			printNextData = 0;
 		}
 		data = ptrace(PTRACE_SINGLESTEP, pid, 0, NULL);
 		if ( data != 0 ) {
@@ -300,13 +197,21 @@ int main(int argc, char *argv[])
         exit(1);
     }
 
+    char *filename=argv[1];
+    if (access(filename, X_OK) == -1) {
+	fprintf(stderr, "The file does not exists or does not have the execute permission: %s", filename);
+	exit(1);
+    }
+
     int child_pid = fork(); fflush(stdout);
     if (child_pid == 0) { // child thread
         ptrace(PTRACE_TRACEME, 0, 0, NULL); // this is the child thread, allow it to be traced.
-        execvp(argv[1], &argv[1]); // replace this child forked thread with the binary to trace
+	char ** env = &argv[1];
+        execvp(filename, env); // replace this child forked thread with the binary to trace
     } else { // parent thread (pid has the child pid)
 	trace_watcher(child_pid);
     }
 
+    printf(ANSI_COLOR_RESET);
     return 0;
 }

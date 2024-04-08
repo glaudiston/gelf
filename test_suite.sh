@@ -9,7 +9,7 @@ pass(){ msg $GREEN; }
 
 compile_test(){
 	mkdir -p tests
-	./make-elf.sh <(cat) tests/${FUNCNAME[1]}.elf 2>tests/${FUNCNAME[1]}.build-stderr;
+	./gelf <(cat) tests/${FUNCNAME[1]}.elf 2>tests/${FUNCNAME[1]}.build-stderr;
 	r=$?;
 	if [ $r -ne 0 ]; then
 		error	compilation failed. See tests/${FUNCNAME[1]}.build-stderr;
@@ -40,11 +40,29 @@ expect(){
 }
 
 run_all(){
-	cat $0 | grep -E "^test_[^(]*\(\)\{" | cut -d "(" -f1 | 
+	local test_list=$(cat $0 | grep -E "^test_[^(]*\(\)\{" | cut -d "(" -f1);
+	local test_count=$(echo "$test_list" | grep -c "");
+	local OUT_TEXT=$(echo "$test_list" | 
 		while read f; 
-		do echo -e " - $f\t...$($f)" & 
-		done
-		wait
+		do
+			{
+				TEST_OUT=$(echo -e " - $f\t...$($f)");
+				echo "$TEST_OUT";
+				echo "$TEST_OUT" >&2;
+			} &
+		done;
+		wait;
 		echo
+	);
+	local test_count_fail=$(echo "$OUT_TEXT" | grep FAIL | grep -c "");
+	local test_count_pass=$(echo "$OUT_TEXT" | grep PASS | grep -c "");
+	echo "$test_list" | while read l; do
+		echo -e "$OUT_TEXT" | grep -q "$l" || echo "WARNING: TEST RESULT MISSING FOR [$l] check if it is still running as zombie";
+	done
+	echo -e "
+Resume:
+	Total:\t$test_count
+	Passed:\t$test_count_pass
+	Failed:\t$test_count_fail"
 }
 run_all

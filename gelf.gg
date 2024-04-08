@@ -1,0 +1,21 @@
+# gelf
+#
+# This file will use the gelf syntax to generate the gelf elf file
+# gelf elf should be able to compile interpret, and support the development
+#
+# It expect to receive 2 arguments
+# arg 1: source file
+# arg 2: target file
+#
+source file name:	@1
+elf file name:	@2
+bash:	/bin/bash
+run:	-c
+ph_addr_v:	./ph_vaddr_v
+page header virtual address value:	!	ph_addr_v
+write elf:	. elf_fn.sh; write_elf 
+read from:	 < 
+script:	write elf	elf file name	read from	source file name
+!	bash	run	script
+succeed:	0
+exit	succeed

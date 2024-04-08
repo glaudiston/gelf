@@ -4,7 +4,7 @@
 #
 # the result shoulb be a csv line with:
 # 1 snippet_type
-#    EMPTY|INVALID|COMMENT|INSTRUCTION|SNIPPET|SNIPPET_CALL
+#    EMPTY|INVALID|COMMENT|INSTRUCTION|SNIPPET_CALL|...
 # 2 snippet_subname
 #    for snippet_type INSTRUCTION: sys_exit, sys_write
 #    for snippet_type SNIPPET: the block name
@@ -54,13 +54,13 @@ SNIPPET_PARSER_ERROR_INVALID_SNIPPET_UNSTRUCTION_OFFSET_INVALID=3
 
 struct_parsed_snippet(){
 	local snippet_type="$(eval echo -n \${$SNIPPET_COLUMN_TYPE})";
-	if ! [[ ${snippet_type} =~ (EMPTY|INVALID|COMMENT|INSTRUCTION|SNIPPET|SNIPPET_CALL|SYMBOL_TABLE|PROCEDURE_TABLE) ]]; then
+	if ! [[ ${snippet_type} =~ (EMPTY|INVALID|COMMENT|INSTRUCTION|SNIPPET_CALL|SYMBOL_TABLE|PROCEDURE_TABLE) ]]; then
 		error "Invalid snippet type: $@";
 		exit $SNIPPET_PARSER_ERROR_INVALID_SNIPPET_TYPE;
 	fi;
 
 	local snippet_subname="$(eval echo -n \${$SNIPPET_COLUMN_SUBNAME})";
-	if [ "${snippet_type}" == INSTRUCTION ] && ! [[ "${snippet_subname}" =~ (sys_exit|sys_write|sys_ret|sys_execve) ]];then
+	if [ "${snippet_type}" == INSTRUCTION ] && ! [[ "${snippet_subname}" =~ (sys_exit|sys_write|sys_ret|sys_execve|bytecode|_init_|_before_) ]];then
 		error "unsupported instruction $snippet_subname";
 		exit $SNIPPET_PARSER_ERROR_INVALID_SNIPPET_UNSUPPORTED_UNSTRUCTION;
 	fi;
@@ -106,16 +106,21 @@ struct_parsed_snippet(){
 	expected_source_lines_count=$((
 		$(
 			{
-				[ "$snippet_source_code" == "" ] && echo ||
-				echo "$snippet_source_code" | base64 -d ;
+				if [ "$snippet_source_code" == "" ]; then
+					:;
+				else
+					echo "$snippet_source_code" | base64 -d;
+				fi;
 			} |
-			grep -c "" || error "fail at SNIPPET_COLUMN_SOURCE_LINES_COUNT for [$snippet_source_code]"
+			grep -c "";
 		)
 	));
 	local snippet_source_lines_count="$(eval echo -n \${$SNIPPET_COLUMN_SOURCE_LINES_COUNT})";
 	if ! is_valid_number "$snippet_source_lines_count" ||
-	   [ "$snippet_source_lines_count" -ne "${expected_source_lines_count}" ] ; then
-	   error "at ${snippet_subname} the source lines count(${snippet_source_lines_count}) does not match the actual source lines(${expected_source_lines_count}): [$snippet_type][${snippet_source_code}]"
+	   [ "$snippet_source_lines_count" -ne "${expected_source_lines_count}" ];
+	then
+		debug "??? snippet_source_lines_count=[$snippet_source_lines_count]; expected_source_lines_count=[$expected_source_lines_count";
+		error "at ${snippet_subname} the source lines count(${snippet_source_lines_count}) does not match the actual source lines(${expected_source_lines_count}): [$snippet_type][${snippet_source_code}]";
 	fi;
 
 	local snippet_usages=0
