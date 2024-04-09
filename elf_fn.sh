@@ -339,15 +339,17 @@ get_b64_symbol_value()
 		return
 	}
 	fi;
-	debug "get value for symbol_name=[${symbol_name}]"
 	local symbol_data="$(echo "$SNIPPETS" | grep "SYMBOL_TABLE,${symbol_name}," | tail -1)";
 	# return default values for known internal words
 	if [ "${symbol_name}" == "input" ]; then
 	{
 		local symbol_instr="$( echo "$symbol_data" | cut -d, -f${SNIPPET_COLUMN_DATA_BYTES})";
-		out=$(echo -n "${symbol_instr}")
-		outsize=$(echo -n "${out}" | base64 -d | wc -c)
-		echo -n ${out},${outsize},${SYMBOL_TYPE_HARD_CODED}
+		local out=$(echo -n "${symbol_instr}");
+		if [ "$out" == "" ]; then
+			out=$(echo -n 'ascii' | base64 -w0);
+		fi;
+		local outsize="$(echo -n "${out}" | base64 -d | wc -c)";
+		echo -n "${out},${outsize},${SYMBOL_TYPE_HARD_CODED}";
 		return;
 	}
 	fi;
