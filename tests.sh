@@ -28,13 +28,15 @@ test_hello_world_base64(){
 	compile_test <<EOF
 input:	base64
 m:	aGVsbG8Jd29ybGQK
+input:	ascii
 stdout:	1
 write	stdout	m
 ok:	0
 exit	ok
 EOF
-	o=$(run_test)
-	expect $? 0 "hello	world" "$o";
+	o="$(run_test | xxd --ps)";
+	eo="68656c6c6f09776f726c640a";
+	expect $? 0 "$eo" "$o";
 }
 
 test_write_hard_coded_value(){

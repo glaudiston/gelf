@@ -23,9 +23,9 @@ run_test(){
 }
 
 expect(){
-	local r=$1;
-	local er=$2;
-	local eo=$3;
+	local r="$1";
+	local er="$2";
+	local eo="$3";
 	local o="$4";
 	if [ "$r" != "$er" ]; then
 		fail "expected [${er}] but got [$r] at exit code";
@@ -33,7 +33,7 @@ expect(){
 	fi;
 
 	if [ "$o" != "$eo" ]; then
-		fail "expected [$eo] but got [$o]";
+		fail "\n\texpected\t[$eo]\n\tbut got\t\t[$o]";
 		return 2;
 	fi;
 	pass;
