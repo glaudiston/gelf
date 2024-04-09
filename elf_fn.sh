@@ -339,22 +339,8 @@ get_b64_symbol_value()
 		return
 	}
 	fi;
-
-	# procedure
-	local procedure_data="$( echo "$SNIPPETS" | grep "PROCEDURE_TABLE,${symbol_name}," | tail -1)";
-	if [ "${procedure_data}" != "" ]; then
-		local addr=$(echo "${procedure_data}" | cut -d, -f${SNIPPET_COLUMN_INSTR_OFFSET});
-		echo -n ${out},${outsize},${SYMBOL_TYPE_PROCEDURE},${addr}
-		return 1;
-	fi
+	debug "get value for symbol_name=[${symbol_name}]"
 	local symbol_data="$(echo "$SNIPPETS" | grep "SYMBOL_TABLE,${symbol_name}," | tail -1)";
-	if [ "${symbol_data}" == "" ]; then
-	{
-		error "Expected a integer or a valid variable/constant. But got [$symbol_name][$SNIPPETS]"
-		backtrace
-		return 1
-	}
-	fi;
 	# return default values for known internal words
 	if [ "${symbol_name}" == "input" ]; then
 	{
@@ -363,6 +349,20 @@ get_b64_symbol_value()
 		outsize=$(echo -n "${out}" | base64 -d | wc -c)
 		echo -n ${out},${outsize},${SYMBOL_TYPE_HARD_CODED}
 		return;
+	}
+	fi;
+	# procedure
+	local procedure_data="$( echo "$SNIPPETS" | grep "PROCEDURE_TABLE,${symbol_name}," | tail -1)";
+	if [ "${procedure_data}" != "" ]; then
+		local addr=$(echo "${procedure_data}" | cut -d, -f${SNIPPET_COLUMN_INSTR_OFFSET});
+		echo -n ${out},${outsize},${SYMBOL_TYPE_PROCEDURE},${addr}
+		return 1;
+	fi
+	if [ "${symbol_data}" == "" ]; then
+	{
+		error "Expected a integer or a valid variable/constant. But got [$symbol_name][$SNIPPETS]"
+		backtrace
+		return 1
 	}
 	fi;
 	local symbol_value="$( echo "$symbol_data" | cut -d, -f${SNIPPET_COLUMN_DATA_BYTES})";
@@ -402,7 +402,10 @@ set_symbol_value()
 	local data_bytes="${symbol_value}";
 	local input="${symbol_value}";
 	if [ "${symbol_name}" != "input" ]; then
-		input=$(get_b64_symbol_value "input" "$SNIPPETS" | cut -d, -f${B64_SYMBOL_VALUE_RETURN_OUT} | base64 -d | tr -d '\0')
+		input=$(get_b64_symbol_value "input" "$SNIPPETS" | cut -d, -f${B64_SYMBOL_VALUE_RETURN_OUT} | base64 -d | tr -d '\0');
+		if [ "$input" == "" ]; then
+			error "failed to recover the input: symbol_name=$symbol_name; snip=\n$SNIPPETS";
+		fi;
 	fi;
 	if [ "${symbol_name}" != "input" -a "${input}" == "base64" ]; then
 		data_bytes="$(echo -ne "${symbol_value}")"; # with NULL Suffix
@@ -1064,14 +1067,13 @@ define_variable(){
 		return $?;
 	}
 	fi;
-	if [ "${is_new_symbol}" == 1 -a "${#code_line_elements[@]}" == "$(( 2 + deep - 1 ))" ]; then
+	if [ "${#code_line_elements[@]}" == "$(( 2 + deep - 1 ))" ]; then
 	{
 		# New symbol
 		symbol_value="$( echo -n "${CODE_LINE/*:	/}" )";
 		instr_bytes="";
 		instr_len=0;
 		data_bytes="$(set_symbol_value "${symbol_value}" "${SNIPPETS}")";
-		debug data bytes[$data_bytes]
 		data_len="$( echo -n "${data_bytes}" | base64 -d | wc -c)";
 		if is_hard_coded_value "${data_bytes}" "${symbol_name}"; then
 			data_len=0; # hard-coded values does not use data space
@@ -1092,8 +1094,6 @@ define_variable(){
 		return $?;
 	}
 	fi;
-	# redefine symbol
-	#####
 	# concat all symbols in a new one
 	define_concat_variable
 	return $?;
@@ -1145,7 +1145,6 @@ parse_code_bloc(){
 		awk '{s+=$1}END{print s}'
 	)";
 	local bloc_source_lines_count=$(( innerlines +2 ))
-	debug "bloc_source_lines_count=[$bloc_source_lines_count]";
 	local instr_size_sum="$( echo "${instr_bytes}" |
 		base64 -d | wc -c |
 		awk '{s+=$1}END{print s}';
@@ -1318,7 +1317,6 @@ parse_snippet()
 		local input_symbol_name="${code_line_elements[$(( WRITE_DATA_ELEM + deep-1 ))]}";
 		local out=${code_line_elements[$(( WRITE_OUTPUT_ELEM + deep-1 ))]};
 		# expected: STDOUT, STDERR, FD...
-		debug out[$out]
 		local data_output=$(get_b64_symbol_value "${out}" "${SNIPPETS}" | cut -d, -f${B64_SYMBOL_VALUE_RETURN_OUT} | base64 -d | tr -d '\0' );
 		# I think we can remove the parse_data_bytes and force the symbol have the data always
 		local symbol_data=$(get_b64_symbol_value "${input_symbol_name}" "${SNIPPETS}" )
@@ -1349,7 +1347,6 @@ parse_snippet()
 		else
 			data_addr_v="$( echo ${symbol_value} | base64 -d)"
 		fi;
-		debug "printing data [$data_addr_v] to [$data_output]"
 		local instr_bytes="$(system_call_write "${symbol_type}" "${data_output}" "$data_addr_v" "$data_bytes_len" "${instr_offset}")";
 		data_bytes="";
 		data_bytes_len=0;
@@ -1438,7 +1435,6 @@ parse_snippet()
 		target_offset="$( echo "$SNIPPETS" | grep "PROCEDURE_TABLE,${target}," | cut -d, -f${SNIPPET_COLUMN_INSTR_OFFSET} )";
 		local jmp_size=2; # all procedures have a jmp instruction at begining. it can be 2 or 5 bytes. 2 if the procedure body is smaller than 128 bytes;
 		local target_instr_size="$( echo "$SNIPPETS" | grep "PROCEDURE_TABLE,${target}," | cut -d, -f${SNIPPET_COLUMN_INSTR_LEN} )";
-		debug "target[$target] size=[${target_instr_size}]";
 		if [ "${target_instr_size:=0}" -gt 127 ]; then 
 			jmp_size=5;
 		fi;
