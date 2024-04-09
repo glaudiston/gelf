@@ -129,6 +129,7 @@ void trace_watcher(pid_t pid)
 	unsigned long addr = 0;
 	unsigned long straddr;
 	int once_set=0;
+	long int ic=0;
 	while ( running_forks ) {
 		waitpid(pid, &status, 0);
 		if (!once_set){
@@ -165,19 +166,29 @@ void trace_watcher(pid_t pid)
 		get_registers(pid, &regs);
 		addr = regs.rip;
 		printRelevantRegisters(pid, regs, printNextData);
-		printf(ANSI_COLOR_GRAY "PID(%i)",pid);fflush(stdout);
+		ic++;
+		printf(ANSI_COLOR_GRAY "IC(%li)PID(%i)",ic, pid);fflush(stdout);
 		uint32_t data = ptrace(PTRACE_PEEKTEXT, pid, (void*)addr, 0);
 		printNextData = get_bytecode_fn(pid, addr, data);
 		if ( printNextData == -1 ) {
 			// data is composed of 4 bytes in a little-endian, so:
 			unsigned char first_byte = data << 24 >> 24;
 			unsigned char second_byte = data << 16 >> 24;
-			unsigned char thirdbyte=data << 8 >> 24;
-			unsigned char fourthbyte=data >> 24;
+			unsigned char third_byte=data << 8 >> 24;
+			unsigned char fourth_byte=data >> 24;
+			uint32_t data2 = ptrace(PTRACE_PEEKTEXT, pid, (void*)addr+4, 0);
+			unsigned char fifth_byte = data2 << 24 >> 24;
+			unsigned char sixth_byte = data2 << 16 >> 24;
+			unsigned char seventh_byte=data2 << 8 >> 24;
+			unsigned char eigth_byte=data2 >> 24;
 			char ndisasm[256];
-			sprintf(ndisasm, "/bin/sh -c 'echo -ne \"\\x%x\\x%x\\x%x\\x%x\" | ndisasm -b %i -'", first_byte, second_byte, thirdbyte, fourthbyte, 64);
-			printf("%016lx: unknown data: %016x, [\\x%x\\x%x\\x%x\\x%x]; using ndisasm: [%s]\n", addr, data, first_byte, second_byte, thirdbyte, fourthbyte, ndisasm);fflush(stdout);
-			system(ndisasm);
+			sprintf(ndisasm, "/bin/sh -c 'echo $(echo -ne \"\\x%x\\x%x\\x%x\\x%x\\x%x\\x%x\\x%x\\x%x\" | ndisasm -b %i - | head -1 | tr -s \\  | cut -d \\  -f3-)'", 
+					first_byte, second_byte, third_byte, fourth_byte,
+					fifth_byte, sixth_byte, seventh_byte, eigth_byte, 64);
+			printf("%016lx: [%02x%02x %02x%02x %02x%02x %02x%02x]; ndisasm: ", addr,
+					first_byte, second_byte, third_byte, fourth_byte, 
+					fifth_byte, sixth_byte, seventh_byte, eigth_byte);fflush(stdout);
+			system(ndisasm);fflush(stdout);
 			printNextData = 0;
 		}
 		data = ptrace(PTRACE_SINGLESTEP, pid, 0, NULL);
