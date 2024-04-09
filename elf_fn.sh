@@ -925,54 +925,27 @@ define_variable_from_test()
 }
 
 define_array_variable(){
-	local dyn_args=0;
-	local static_value="";
 	local instr_bytes="";
-	local data_addr=""; # target concatenated data_addr
 	for (( i=$((deep + 1)); i<${#code_line_elements[@]}; i++ ));
 	do
 		local symbol_name=$(echo -n "${code_line_elements[$(( i - deep+1 ))]}");
 		local symbol_data=$(get_b64_symbol_value "${symbol_name}" "${SNIPPETS}" )
-		local symbol_type=$(echo "${symbol_data}" | cut -d, -f${B64_SYMBOL_VALUE_RETURN_TYPE});
-		local symbol_value=$(echo "$symbol_data" | cut -d, -f${B64_SYMBOL_VALUE_RETURN_OUT});
 		local symbol_addr="$(echo "${symbol_data}" | cut -d, -f${B64_SYMBOL_VALUE_RETURN_ADDR})";
-		local symbol_len="$(echo "${symbol_data}" | cut -d, -f${B64_SYMBOL_VALUE_RETURN_SIZE})";
-		local sym_dyn_data_size=$(get_sym_dyn_data_size "${symbol_name}" "${SNIPPETS}")
-		if [ "${symbol_type}" == "${SYMBOL_TYPE_STATIC}" ]; then
-			static_value="$( echo "${static_value}${symbol_value}" | base64 -d | base64 -w0 )";
-			instr_bytes="${instr_bytes}$(concat_symbol_instr "${symbol_addr}" "${dyn_data_offset}" "${symbol_len}" "$i")";
-		else
-			dyn_args="$(( dyn_args + 1 ))";
-			sym_dyn_data_size=$(get_sym_dyn_data_size "${symbol_name}" "${SNIPPETS}")
-			instr_bytes="${instr_bytes}$(concat_symbol_instr "$(( symbol_addr ))" "${dyn_data_offset}" "-1" "$i")";
+		local symbol_type=$(echo "${symbol_data}" | cut -d, -f${B64_SYMBOL_VALUE_RETURN_TYPE});
+		local symbol_value=$(echo "$symbol_data" | cut -d, -f${B64_SYMBOL_VALUE_RETURN_OUT} |base64 -d);
+		if [ "${symbol_type}" == $SYMBOL_TYPE_PROCEDURE ]; then
+			# TODO detect the jump size
+			local jump_size=2; # instruction length of the jump over before the code
+			symbol_addr=$(( symbol_addr + jump_size ));
 		fi;
+		instr_bytes="${instr_bytes}$(array_add "${dyn_data_offset}" "$((i-deep-1))" "${symbol_addr}" "$symbol_type" "$symbol_value")";
 	done;
-	# if all arguments are static, we can merge them at build time
+	local array_size=$(( ${#code_line_elements[@]} - (deep + 1) ));
+	instr_bytes="${instr_bytes}$(array_end "${dyn_data_offset}" "$array_size")";
 	local symbol_name=$(echo -n "${code_line_elements[$(( 0 + deep-1 ))]}" | cut -d: -f1);
-	if [ "${dyn_args}" -eq 0 ]; then
-	{
-		local instr_bytes="";
-		local instr_len=0;
-		local data_bytes="${static_value}";
-		local data_len=$(echo -n "$data_bytes" | base64 -d | wc -c);
-		struct_parsed_snippet \
-			"SYMBOL_TABLE" \
-			"${symbol_name}" \
-			"${instr_offset}" \
-			"${instr_bytes}" \
-			"${instr_len}" \
-			"${static_data_offset}" \
-			"${data_bytes}" \
-			"${data_len}" \
-			"${CODE_LINE_B64}" \
-			"1";
-		return $?
-	}
-	fi;
-	# if at least one are dynamic we need to set instructions
 	local instr_len=$(echo -n "$instr_bytes" | base64 -d | wc -c);
 	local data_bytes="";
-	local data_len=8;
+	local data_len=$(( array_size * 8 ));
 	struct_parsed_snippet \
 		"SYMBOL_TABLE" \
 		"${symbol_name}" \
@@ -1059,7 +1032,13 @@ define_variable(){
 	fi;
 	if [ "$sec_arg" == "!" ]; then # exec and capture output into variable
 	{
-		define_variable_from_exec;
+		# TODO: if the first array position is a function
+		local array_symbol="${code_line_elements[$((2 + deep - 1))]}";
+		if is_function $array_symbol; then
+			define_variable_from_fn;
+		else
+			define_variable_from_exec;
+		fi;
 		return $?;
 	}
 	fi;

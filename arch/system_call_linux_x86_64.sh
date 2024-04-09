@@ -1105,7 +1105,7 @@ function system_call_wait4()
 	local sys_wait4=61;
 	local code="";
 	code="${code}${MOV_V4_RAX}$(printEndianValue ${sys_wait4} ${SIZE_32BITS_4BYTES})"
-	# printEndianValues seems buggy with negative values
+	# printEndianValue seems buggy with negative values
 	#wait_code="${wait_code}${MOV_V4_RDI}$(printEndianValue -1 ${SIZE_32BITS_4BYTES}) ";# pid_t pid
 	# so lets change to decrement rdi
 	code="${code}${XOR_RDI_RDI}${DEC_RDI}";
@@ -1280,6 +1280,13 @@ concat_symbol_instr(){
 		code="${code}${MOV_ADDR4_RSI}$(printEndianValue "${addr}" "${SIZE_32BITS_4BYTES}")"; # source addr
 		code="${code}$(detect_string_length)"; # the return is set at rdx
 		code="${code}${MOV_RDX_RCX}"; # but we need it on rcx because REP decrements it
+	elif [ "$size" -eq -2 ]; then # procedure pointer
+		code="${code}${MOV_ADDR4_RSI}$(printEndianValue "${addr}" "${SIZE_32BITS_4BYTES}")"; # source addr
+		# TODO: how to manage to con
+		#code="${code}${}"; # the return is set at rdx
+		code="${code}${MOV_RDX_RCX}"; # but we need it on rcx because REP decrements it
+		echo -en "${code}" | base64 -w0
+		return;
 	else
 		code="${code}${MOV_V4_RSI}$(printEndianValue "$addr" "${SIZE_32BITS_4BYTES}")"; # source addr
 		code="${code}${MOV_V4_RCX}$(printEndianValue "$size" ${SIZE_32BITS_4BYTES})"
@@ -1402,4 +1409,30 @@ init_prog(){
 }
 end_bloc(){
 	pop EBP;
+}
+
+array_add(){
+	local array_addr="$1";
+	local array_size="$2";
+	local item_addr="$3";
+	local item_type="$4";
+	local item_value="$5";
+	local code="";
+	debug array_add for $item_addr $item_value
+	if [ "$item_addr" == "" ]; then
+		code="${code}$(push_v_stack $item_value | base64 -d | toHexDump)";
+		code="${code}${MOV_RSP_RAX}";
+	else
+		code="${code}${MOV_V4_RAX}$(printEndianValue "${item_addr}" $SIZE_32BITS_4BYTES)";
+	fi;
+	code="${code}${MOV_RAX_ADDR4}$(printEndianValue $((array_addr + array_size * 8)) $SIZE_32BITS_4BYTES)";
+	echo -ne "${code}" | base64 -w0;
+}
+array_end(){
+	local array_addr="$1";
+	local array_size="$2";
+	local code="";
+	code="${code}${XOR_RAX_RAX}";
+	code="${code}${MOV_RAX_ADDR4}$(printEndianValue $(( array_addr + array_size * 8)) $SIZE_32BITS_4BYTES)";
+	echo -ne "${code}" | base64 -w0;
 }

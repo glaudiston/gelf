@@ -282,14 +282,12 @@ fn:	{
 }
 a:	1
 b:	2
-d:	[]	fn	a	b
-c:	!	d
-write	a	c
-s:	0
-exit	s
+c:	[]	fn	a	b
+d:	!	c
+exit	d
 EOF
 	o=$(run_test)
-	expect $? 0
+	expect $? 3
 }
 
 test_check_var_is_not_empty(){
