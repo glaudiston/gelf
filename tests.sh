@@ -358,6 +358,25 @@ EOF
 	expect $? 0
 }
 
+test_recursive_call(){
+	compile_test <<EOF
+end:	{
+	exit	0
+}
+loop:	{
+	v:	+	1
+	t:	?	v	5
+	t	?=	end
+	loop
+}
+loop
+err:	1
+exit	err
+EOF
+	o=$(run_test)
+	expect $? 0
+}
+
 test_start_code(){
 	compile_test <<EOF
 stdout:	1
@@ -374,6 +393,31 @@ exit	ok
 EOF
 	o=$(run_test)
 	expect $? 0 "ab" "$o"
+}
+
+test_fibonacci_generate(){
+	compile_test <<EOF
+stdout:	1
+fib:	{
+	prev:	@1
+	last:	@2
+	limit:	@3
+	fibn:	+	prev	last
+	cont:	?	fibn	limit
+	cont	?>=	write	stdout	fibn
+	next:	[]	fib	last	fibn	limit
+	next!
+	ret
+}
+a:	0
+b:	1
+c:	1000
+fib	a	b	c
+ok:	0
+exit	ok
+EOF
+	o=$(run_test)
+	expect $? 0
 }
 
 . ./test_suite.sh

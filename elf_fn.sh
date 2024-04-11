@@ -1229,11 +1229,30 @@ parse_code_bloc_instr(){
 }
 
 parse_code_bloc(){
+	local SNIPPETS="$1";
 	local instr_bytes="";
 	SNIPPET_NAME="$(echo "${CODE_LINE}" |cut -d: -f1 | tr -d '\t')";
 	code_bloc="$(echo "${CODE_LINE}"; read_code_bloc "${deep}")";
 	bloc_outer_code_b64="$(echo -n "${code_bloc}" | base64 -w0 )";
+	local instr_size=0;
+	local data_bytes="";
+	local data_size=0;
+	local bloc_snip_preview="$(struct_parsed_snippet \
+		"PROCEDURE_TABLE" \
+		"${SYMBOL_TYPE_PROCEDURE}" \
+		"${SNIPPET_NAME}" \
+		"${instr_offset}" \
+		"${instr_bytes}" \
+		"${instr_size}" \
+		"${static_data_offset}" \
+		"${data_bytes}" \
+		"${data_size}" \
+		"" \
+		"0";
+	)";
+	SNIPPETS="$(echo -en "${SNIPPETS}\n${bloc_snip_preview}")";
 	recursive_parse=$(parse_code_bloc_instr);
+	SNIPPETS="$1";
 	instr_bytes=$(echo "$recursive_parse"  |
 		cut -d, -f$SNIPPET_COLUMN_INSTR_BYTES
 	);
@@ -1255,7 +1274,9 @@ parse_code_bloc(){
 	jump_bytecode=$(jump "$target_addr" "$current_addr");
 	jump_bytecode_len=$(echo $jump_bytecode | base64 -d| wc -c);
 	instr_offset=$(( instr_offset + jump_bytecode_len ));
+	SNIPPETS="$(echo -en "${SNIPPETS}\n${bloc_snip_preview}")";
 	recursive_parse=$(parse_code_bloc_instr); # parse again with the correct instruction displacement
+	SNIPPETS="$1";
 	instr_bytes=$(echo "$recursive_parse"  |
 		cut -d, -f$SNIPPET_COLUMN_INSTR_BYTES
 	);
@@ -1288,7 +1309,7 @@ define_code_block(){
 	# TODO add identation validation
 	#
 	# TODO prepend a jump move over the end of this block, so this code will be executed only if a explicit goto or call is requested. 
-	new_bloc="$(parse_code_bloc)";
+	new_bloc="$(parse_code_bloc "$SNIPPETS")";
 	local bloc_name=$(echo "$new_bloc" | cut -d, -f${SNIPPET_COLUMN_SUBNAME})
 	if [ "$SNIPPETS" == "" ]; then
 		SNIPPETS="$( echo "$new_bloc")";
@@ -1404,7 +1425,7 @@ parse_snippet()
 	local SNIPPETS="$6";
 	local deep="$7";
 
-	# Bash imposes a threat here. The array parse syntax ( ${CODE_LINE} ) loses spaces.
+	# Bash issue here. The array parse syntax ( ${CODE_LINE} ) loses spaces.
 	# to overcome that I need to write a hack
 	local code_line_elements;# =( ${CODE_LINE} );
 	# array hack: because ( ${CODE_LINE} ) will trim spaces.
