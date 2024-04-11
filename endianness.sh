@@ -14,6 +14,9 @@ function printBigEndian(){
 function printLittleEndian(){
 	local VALUE="$1"
 	local SIZE="$2"
+	if [ "$SIZE" == "" ]; then
+		error empty size, using default 64 bits
+	fi;
 	printBigEndian "$VALUE" "$SIZE" |
 		tr '\\' '\n' |
 		tac |

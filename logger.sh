@@ -10,17 +10,17 @@ backtrace(){
 function debug()
 {
 	local IFS='	'
-	echo "[DEBUG] $@" >&2
+	echo -e "[DEBUG] $@" >&2
 }
 
 function warn()
 {
 	local IFS='	'
-	echo "[WARN] $@" >&2
+	echo -e "[WARN] $@" >&2
 }
 
 function error()
 {
-	echo "[ERROR] $@" >&2
+	echo -e "[ERROR] $@" >&2
 	backtrace >&2
 }

@@ -28,17 +28,18 @@
 #
 # useful constants:
 SNIPPET_COLUMN_TYPE=1;
-SNIPPET_COLUMN_SUBNAME=2;
-SNIPPET_COLUMN_INSTR_OFFSET=3;
-SNIPPET_COLUMN_INSTR_BYTES=4;
-SNIPPET_COLUMN_INSTR_LEN=5;
-SNIPPET_COLUMN_DATA_OFFSET=6;
-SNIPPET_COLUMN_DATA_BYTES=7;
-SNIPPET_COLUMN_DATA_LEN=8;
-SNIPPET_COLUMN_SOURCE_CODE=9;
-SNIPPET_COLUMN_SOURCE_LINES_COUNT=10;
-SNIPPET_COLUMN_USAGE_COUNT=11;
-SNIPPET_COLUMN_RETURN=12;
+SNIPPET_COLUMN_SYMBOL_TYPE=2;
+SNIPPET_COLUMN_SUBNAME=3;
+SNIPPET_COLUMN_INSTR_OFFSET=4;
+SNIPPET_COLUMN_INSTR_BYTES=5;
+SNIPPET_COLUMN_INSTR_LEN=6;
+SNIPPET_COLUMN_DATA_OFFSET=7;
+SNIPPET_COLUMN_DATA_BYTES=8;
+SNIPPET_COLUMN_DATA_LEN=9;
+SNIPPET_COLUMN_SOURCE_CODE=10;
+SNIPPET_COLUMN_SOURCE_LINES_COUNT=11;
+SNIPPET_COLUMN_USAGE_COUNT=12;
+SNIPPET_COLUMN_RETURN=13;
 
 SNIPPET_PARSER_ERROR_INVALID_SNIPPET_TYPE=1
 SNIPPET_PARSER_ERROR_INVALID_SNIPPET_UNSUPPORTED_UNSTRUCTION=2
@@ -58,6 +59,8 @@ struct_parsed_snippet(){
 		error "Invalid snippet type: $@";
 		exit $SNIPPET_PARSER_ERROR_INVALID_SNIPPET_TYPE;
 	fi;
+	
+	local snippet_symbol_type="$(eval echo -n \${$SNIPPET_COLUMN_SYMBOL_TYPE})";
 
 	local snippet_subname="$(eval echo -n \${$SNIPPET_COLUMN_SUBNAME})";
 	if [ "${snippet_type}" == INSTRUCTION ] && ! [[ "${snippet_subname}" =~ (sys_exit|sys_write|sys_ret|sys_execve|bytecode|_init_|_before_) ]];then
@@ -77,7 +80,7 @@ struct_parsed_snippet(){
 	local expected_instr_len="$(
 		echo -n "$snippet_instruction_bytes" | base64 -d | wc -c || error 
 	)";
-	if [ "${snippet_instruction_len}" -ne "$expected_instr_len" ]; then
+	if ! [ "${snippet_instruction_len}" -eq "$expected_instr_len" ]; then
 		error "at ${snippet_subname} the instruction len and the instruction bytes does not match, expected ${expected_instr_len} but got ${snippet_instruction_len}"
 		exit 4;
 	fi;
@@ -129,6 +132,7 @@ struct_parsed_snippet(){
 
 	local snippet_result="";
 	snippet_result="${snippet_result}${snippet_type}";
+	snippet_result="${snippet_result},${snippet_symbol_type}";
 	snippet_result="${snippet_result},${snippet_subname}";
 	snippet_result="${snippet_result},${snippet_instruction_offset}";
 	snippet_result="${snippet_result},${snippet_instruction_bytes}";

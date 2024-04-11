@@ -48,9 +48,6 @@
 # 1 flag register: used to support arithmetic functions and debugging.
 #  EFLAG(32)
 #  RFLAG(64)
-# Instruction Pointer: Address of the next instruction to execute.
-#  EIP(32)
-#  RIP(64)
 #
 #Here is a table of all the registers in x86_64 with their sizes:
 #	RegVal	64bit	32bit	16bit	8bit
@@ -58,7 +55,7 @@
 #	001	RCX	ECX	CX	CL
 #	010	RDX	EDX	DX	DL
 #	011	RBX	EBX	BX	BL
-#	100	RSP	ESP	SP	SPL
+#	100	RSP	ESP	SP	SPL	Processor controlled pointing to Stack Pointer
 #	101	RBP	EBP	BP	BPL
 #	110	RSI	ESI	SI	SIL
 #	111	RDI	EDI	DI	DIL
@@ -70,12 +67,10 @@
 #	101	R13	R13D	R13W	R13B
 #	110	R14	R14D	R14W	R14B
 #	111	R15	R15D	R15W	R15B
+#		RIP	EIP			Instruction Pointer: Address of the next instruction to execute.
 #
-# Note that the smallers registers uses the same space as the bigger ones, but some of the registers have smaller sub-registers 
-# that can be accessed, such as the lower 32 bits of a 64-bit register, 
-# or the lower 16 or 8 bits of a 32-bit or 64-bit register. 
-# These sub-registers are commonly used in instruction encoding 
-# and can be useful for optimizing code.
+# Note that the smallers registers uses the same space as the bigger ones.
+# These sub-registers are commonly used in instruction encoding and can be useful for optimizing code.
 #
 # Register Name	Size (bits)	Description
 # XMM0 - XMM15	128	Extended Multimedia Register (Streaming SIMD Extensions)
@@ -293,6 +288,8 @@ get_mov_rsi_addr()
 MOV_RSP_ADDR4=$(get_mov_rsp_addr);
 MOV_RSI_ADDR4=$(get_mov_rsi_addr);
 MOV_RSI_RDX="${M64}${MOV_R}$( printEndianValue $(( MOVR + MODRM_REG_RSI + RDX )) ${SIZE_8BITS_1BYTE} )"; # move the RSI to RDX #11110010
+SUB_V1_RAX="\x48\x83\xe8";
+ADD_V1_RAX="\x48\x83\xc0";
 ADD_AL="\x04";
 ADD_SHORT="\x83"; # ADD 8 or 16 bit operand (depend on ModR/M opcode first bit(most significant (bit 7)) been zero) and the ModR/M opcode
 INC_RDX="\x48\xff\xc2";
@@ -1067,11 +1064,15 @@ function system_call_write()
 function system_call_exit()
 {
 	local exit_code="$1"
-	local BIN_CODE="";
-	BIN_CODE="${BIN_CODE}${MOV_V4_RAX}$(printEndianValue $SYS_EXIT $SIZE_32BITS_4BYTES)";
-	BIN_CODE="${BIN_CODE}${MOV_V4_RDI}$(printEndianValue ${exit_code:=0} $SIZE_32BITS_4BYTES)"
-	BIN_CODE="${BIN_CODE}${SYSCALL}"
-	echo -en "${BIN_CODE}" | base64 -w0;
+	local symbol_type="$2";
+	local code="";
+	code="${code}${MOV_V4_RAX}$(printEndianValue $SYS_EXIT $SIZE_32BITS_4BYTES)";
+	code="${code}${MOV_V4_RDI}$(printEndianValue ${exit_code:=0} $SIZE_32BITS_4BYTES)"
+	if [ "$symbol_type" != $SYMBOL_TYPE_HARD_CODED ]; then
+		code="${code}${MOV_RDI_RDI}";
+	fi;
+	code="${code}${SYSCALL}"
+	echo -en "${code}" | base64 -w0;
 }
 
 function system_call_fork()
@@ -1232,10 +1233,15 @@ function get_arg_count()
 	# # TODO HOW TO ALLOCATE A DYNAMIC VARIABLE IN MEMORY?
 	# 	This function should receive the variable position (hex) to set 
 	# 	This function should copy the pointer value currently set at RSP and copy it to the address
-	local ADDR="$1"; # memory where to put the argc count
-	local CODE="";
-	CODE="${CODE}${MOV_RSP_ADDR4}$(printEndianValue $ADDR $SIZE_32BITS_4BYTES)";
-	echo -en "${CODE}" | base64 -w0;
+	local addr="$1"; # memory where to put the argc count
+	local code="";
+	MOV_RSP_R14="\x49\x89\xe6";
+	ADD_R15_R14="\x4d\x01\xfe";
+	code="${code}${MOV_RSP_R14}";
+	code="${code}${ADD_R15_R14}";
+	MOV_R14_ADDR4="\x4c\x89\x34\x25";
+	code="${code}${MOV_R14_ADDR4}$(printEndianValue $addr $SIZE_32BITS_4BYTES)";
+	echo -en "${code}" | base64 -w0;
 }
 
 function get_arg()
@@ -1343,6 +1349,7 @@ set_increment()
 {
 	local addr=$1;
 	local value=$2;
+	local value_type=$3;
 	local code="";
 	code="${code}${MOV_V4_RDX}$(printEndianValue "${addr}" "${SIZE_32BITS_4BYTES}")";
 	code="${code}${MOV_RDX_RDX}";
@@ -1351,9 +1358,15 @@ set_increment()
 	elif [ "$value" -gt -128 -a "$value" -lt 128 ]; then
 		ADD_V1_RDX="\x48\x83\xC2";
 		code="${code}${ADD_V1_RDX}$(printEndianValue "${value}" "${SIZE_8BITS_1BYTE}")";
-	else
+	elif [ "$value_type" == $SYMBOL_TYPE_HARD_CODED ]; then
 		ADD_V4_RDX="\x48\x81\xC2";
-		code="${code}${ADD_V4_RDX}$(printEndianValue "${value}" "${SIZE_32BITS_4BYTE}")";
+		code="${code}${ADD_V4_RDX}$(printEndianValue "${value}" "${SIZE_32BITS_4BYTES}")";
+	else
+		code="${code}${XOR_RSI_RSI}";
+		code="${code}${MOV_V4_RSI}$(printEndianValue "${value}" "${SIZE_32BITS_4BYTES}")";
+		code="${code}${MOV_RSI_RSI}";
+		ADD_RSI_RDX="\x48\x01\xF2";
+		code="${code}${ADD_RSI_RDX}";
 	fi;
 	code="${code}${MOV_RDX_ADDR4}$(printEndianValue "${addr}" "${SIZE_32BITS_4BYTES}")"
 	echo -en "${code}" | base64 -w0
@@ -1401,8 +1414,12 @@ function bind()
   :
 }
 init_bloc(){
+	local code="";
 	MOV_RSP_RBP="\x48\x89\xe5";
-	echo -en "${MOV_RSP_RBP}" | base64 -w0;
+	MOV_V1_R15="\x49\xc7\xc7";
+	#code="${code}${MOV_V1_R15}$(printEndianValue 8 $SIZE_8BITS_1BYTE)";
+	#code="${code}${MOV_RSP_RBP}";
+	echo -en "${code}" | base64 -w0;
 }
 init_prog(){
 	init_bloc;
@@ -1418,21 +1435,30 @@ array_add(){
 	local item_type="$4";
 	local item_value="$5";
 	local code="";
-	debug array_add for $item_addr $item_value
 	if [ "$item_addr" == "" ]; then
 		code="${code}$(push_v_stack $item_value | base64 -d | toHexDump)";
-		code="${code}${MOV_RSP_RAX}";
 	else
 		code="${code}${MOV_V4_RAX}$(printEndianValue "${item_addr}" $SIZE_32BITS_4BYTES)";
+		code="${code}$(push RAX | base64 -d | toHexDump)";
 	fi;
-	code="${code}${MOV_RAX_ADDR4}$(printEndianValue $((array_addr + array_size * 8)) $SIZE_32BITS_4BYTES)";
 	echo -ne "${code}" | base64 -w0;
 }
 array_end(){
 	local array_addr="$1";
 	local array_size="$2";
 	local code="";
-	code="${code}${XOR_RAX_RAX}";
-	code="${code}${MOV_RAX_ADDR4}$(printEndianValue $(( array_addr + array_size * 8)) $SIZE_32BITS_4BYTES)";
+	code="${code}${MOV_RSP_RAX}";
+	code="${code}${ADD_V1_RAX}$(printEndianValue $(( array_size * 8 -8)) $SIZE_8BITS_1BYTE)";
+	code="${code}${MOV_RAX_ADDR4}$(printEndianValue "$array_addr" $SIZE_32BITS_4BYTES)";
+	code="${code}$(push_v_stack $array_size | base64 -d | toHexDump)";
 	echo -ne "${code}" | base64 -w0;
+}
+sys_geteuid(){
+	local addr="$1";
+	local code="";
+	local SYS_GETEUID=107;
+	code="${code}${MOV_V4_RAX}$(printEndianValue "$SYS_GETEUID" $SIZE_32BITS_4BYTES)"
+	code="${code}${SYSCALL}";
+	code="${code}${MOV_RAX_ADDR4}$(printEndianValue "${addr}" $SIZE_32BITS_4BYTES)";
+	echo -en "${code}" | base64 -w0;
 }

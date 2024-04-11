@@ -63,7 +63,7 @@ print_elf_file_header()
 	ELFOSABI_HPUX=1;
 	EI_OSABI="\x00";	# Operation System Applications Binary Interface (UNIX - System V-NONE)
 	EI_ABIVERSION="\x00";
-	EI_PAD="$(printEndianValue 0)"; # reserved non used pad bytes
+	EI_PAD="$(printEndianValue 0 $SIZE_64BITS_8BYTES)"; # reserved non used pad bytes
 	ET_EXEC=2;	# Executable file
 	EI_ETYPE="$(printEndianValue $ET_EXEC $Elf64_Half)";		# DYN (Shared object file) code 3
 	EI_MACHINE="$(printEndianValue $EM $Elf64_Half)";
@@ -305,7 +305,7 @@ get_symbol_addr()
 {
 	local symbol_name="$1"
 	local SNIPPETS=$2;
-	local symbol_addr="$(echo "$SNIPPETS" | grep "SYMBOL_TABLE,${symbol_name}," | tail -1 | cut -d, -f${SNIPPET_COLUMN_DATA_OFFSET})";
+	local symbol_addr="$(echo "$SNIPPETS" | grep "SYMBOL_TABLE,[^,]*,${symbol_name}," | tail -1 | cut -d, -f${SNIPPET_COLUMN_DATA_OFFSET})";
 	echo "${symbol_addr}";
 }
 
@@ -313,7 +313,7 @@ get_symbol_usages()
 {
 	local symbol_name="$1"
 	local SNIPPETS=$2;
-	local symbol_addr="$(echo "$SNIPPETS" | grep "SYMBOL_TABLE,${symbol_name}," | tail -1 | cut -d, -f${SNIPPET_COLUMN_USAGE_COUNT})";
+	local symbol_addr="$(echo "$SNIPPETS" | grep "SYMBOL_TABLE,[^,]*,${symbol_name}," | tail -1 | cut -d, -f${SNIPPET_COLUMN_USAGE_COUNT})";
 	echo "${symbol_addr}";
 }
 
@@ -322,6 +322,7 @@ B64_SYMBOL_VALUE_RETURN_OUT=1;
 B64_SYMBOL_VALUE_RETURN_SIZE=2;
 B64_SYMBOL_VALUE_RETURN_TYPE=3;
 B64_SYMBOL_VALUE_RETURN_ADDR=4;
+B64_SYMBOL_VALUE_RETURN_SOURCE_CODE=5;
 get_b64_symbol_value()
 {
 	local symbol_name="$1";
@@ -339,7 +340,7 @@ get_b64_symbol_value()
 		return
 	}
 	fi;
-	local symbol_data="$(echo "$SNIPPETS" | grep "SYMBOL_TABLE,${symbol_name}," | tail -1)";
+	local symbol_data="$(echo "$SNIPPETS" | grep "SYMBOL_TABLE,[^,]*,${symbol_name}," | tail -1)";
 	# return default values for known internal words
 	if [ "${symbol_name}" == "input" ]; then
 	{
@@ -354,14 +355,21 @@ get_b64_symbol_value()
 	}
 	fi;
 	# procedure
-	local procedure_data="$( echo "$SNIPPETS" | grep "PROCEDURE_TABLE,${symbol_name}," | tail -1)";
+	local procedure_data="$( echo "$SNIPPETS" | grep "PROCEDURE_TABLE,[^,]*,${symbol_name}," | tail -1)";
 	if [ "${procedure_data}" != "" ]; then
 		local addr=$(echo "${procedure_data}" | cut -d, -f${SNIPPET_COLUMN_INSTR_OFFSET});
 		echo -n ${out},${outsize},${SYMBOL_TYPE_PROCEDURE},${addr}
 		return 1;
-	fi
+	fi;
 	if [ "${symbol_data}" == "" ]; then
 	{
+		# check syscalls that returns data
+		if [ "$symbol_name" == "sys_geteuid" ]; then
+			out=$(echo -n "$symbol_name" | base64 -w0);
+			outsize=$(echo -n "${out}" | base64 -d | wc -c)
+			echo -n ${out},${outsize},${SYMBOL_TYPE_SYSCALL}
+			return 1;
+		fi;
 		error "Expected a integer or a valid variable/constant. But got [$symbol_name][$SNIPPETS]"
 		backtrace
 		return 1
@@ -369,8 +377,10 @@ get_b64_symbol_value()
 	fi;
 	local symbol_value="$( echo "$symbol_data" | cut -d, -f${SNIPPET_COLUMN_DATA_BYTES})";
 	local symbol_len="$( echo "$symbol_data" | cut -d, -f${SNIPPET_COLUMN_DATA_LEN})";
+	local symbol_type="$( echo "$symbol_data" | cut -d, -f${SNIPPET_COLUMN_SYMBOL_TYPE})";
 	local symbol_addr="$( echo "$symbol_data" | cut -d, -f${SNIPPET_COLUMN_DATA_OFFSET})";
-	if [ "${symbol_value}" == "" ];then
+	local symbol_source_code="$( echo "$symbol_data" | cut -d, -f${SNIPPET_COLUMN_SOURCE_CODE})";
+	if [ "${symbol_value}" == "" ]; then # dynamic or hard-coded?
 	{
 		if [ "${symbol_len}" == 0 ]; then
 			echo -n ",0,${SYMBOL_TYPE_HARD_CODED}"
@@ -378,6 +388,10 @@ get_b64_symbol_value()
 		fi;
 		# Empty values will be only accessible at runtime, eg: args, arg count...
 		out=$(echo -n "${symbol_addr}" | base64 -w0)
+		if [ "${symbol_type}" == "$SYMBOL_TYPE_ARRAY" ]; then
+			echo -n ${out},${symbol_len},${symbol_type},${symbol_addr},${symbol_source_code}
+			return
+		fi
 		outsize=8; # memory_addr_size; TODO: this is platform specific, in x64 is 8 bytes
 		echo -n ${out},${outsize},${SYMBOL_TYPE_DYNAMIC},${symbol_addr}
 		return;
@@ -667,17 +681,18 @@ define_variable_increment()
 	local symbol_value="";
 	local instr_bytes="";
 	for ((i=third_arg_idx; i<last_arg_idx; i++)); do
-		symbol_id="${code_line_elements[$(( 2 + deep-1 ))]}";
+		symbol_id="${code_line_elements[${i}]}";
 		symbol_data=$(get_b64_symbol_value "${symbol_id}" "${SNIPPETS}")
 		symbol_type=$(echo "${symbol_data}" | cut -d, -f${B64_SYMBOL_VALUE_RETURN_TYPE});
 		symbol_value=$(echo "$symbol_data" | cut -d, -f${B64_SYMBOL_VALUE_RETURN_OUT} | base64 -d);
-		instr_bytes="${instr_bytes}$(set_increment $dyn_data_offset $symbol_value)";
+		instr_bytes="${instr_bytes}$(set_increment $dyn_data_offset $symbol_value $symbol_type)";
 	done
 	local instr_len="$(echo "${instr_bytes}" | base64 -d | wc -c)";
 	local data_bytes="";
 	local data_len="8";
 	struct_parsed_snippet \
 		"SYMBOL_TABLE" \
+		"${SYMBOL_TYPE_PROCEDURE}" \
 		"${symbol_name}" \
 		"${instr_offset}" \
 		"${instr_bytes}" \
@@ -703,6 +718,7 @@ define_variable_arg()
 	data_len="8"; # pointer size
 	struct_parsed_snippet \
 		"SYMBOL_TABLE" \
+		"${SYMBOL_TYPE_PROCEDURE}" \
 		"${symbol_name}" \
 		"${instr_offset}" \
 		"${instr_bytes}" \
@@ -760,6 +776,7 @@ define_variable_read_from_file()
 	data_len="$(( stat_struct_size + ptr_data_size ))"; # Dynamic length, only at runtime we can know so give it the pointer size
 	struct_parsed_snippet \
 		"SYMBOL_TABLE" \
+		"${SYMBOL_TYPE_PROCEDURE}" \
 		"${symbol_name}" \
 		"${instr_offset}" \
 		"${instr_bytes}" \
@@ -783,7 +800,7 @@ define_variable_from_exec()
 	for (( i=$((deep + 1)); i<$(( ${#code_line_elements[@]} + deep-1 )); i++ ));
 	do {
 		local arg_id="${code_line_elements[$i]}";
-		local arg_snippet="$( echo "$SNIPPETS" | grep "SYMBOL_TABLE,${arg_id}," )";
+		local arg_snippet="$( echo "$SNIPPETS" | grep "SYMBOL_TABLE,[^,]*,${arg_id}," )";
 		local arg_addr="$(echo "$arg_snippet" | cut -d, -f${SNIPPET_COLUMN_DATA_OFFSET} )";
 		local arg_is_static=0;
 		if is_static_data_snippet "${arg_snippet}"; then
@@ -818,6 +835,7 @@ define_variable_from_exec()
 	instr_len="$(echo "${exec_result}" | cut -d, -f2)";
 	struct_parsed_snippet \
 		"SYMBOL_TABLE" \
+		"${SYMBOL_TYPE_PROCEDURE}" \
 		"${symbol_name}" \
 		"${instr_offset}" \
 		"${instr_bytes}" \
@@ -863,6 +881,7 @@ define_concat_variable(){
 		local data_len=$(echo -n "$data_bytes" | base64 -d | wc -c);
 		struct_parsed_snippet \
 			"SYMBOL_TABLE" \
+			"${SYMBOL_TYPE_PROCEDURE}" \
 			"${symbol_name}" \
 			"${instr_offset}" \
 			"${instr_bytes}" \
@@ -881,6 +900,7 @@ define_concat_variable(){
 	local data_len=8;
 	struct_parsed_snippet \
 		"SYMBOL_TABLE" \
+		"${SYMBOL_TYPE_PROCEDURE}" \
 		"${symbol_name}" \
 		"${instr_offset}" \
 		"${instr_bytes}" \
@@ -912,6 +932,7 @@ define_variable_from_test()
 	local data_len=0;
 	struct_parsed_snippet \
 		"SYMBOL_TABLE" \
+		"${SYMBOL_TYPE_PROCEDURE}" \
 		"${symbol_name}" \
 		"${instr_offset}" \
 		"${instr_bytes}" \
@@ -926,7 +947,7 @@ define_variable_from_test()
 
 define_array_variable(){
 	local instr_bytes="";
-	for (( i=$((deep + 1)); i<${#code_line_elements[@]}; i++ ));
+	for (( i=$(( ${#code_line_elements[@]} -1 )); i>$((deep + 1)); i-- ));
 	do
 		local symbol_name=$(echo -n "${code_line_elements[$(( i - deep+1 ))]}");
 		local symbol_data=$(get_b64_symbol_value "${symbol_name}" "${SNIPPETS}" )
@@ -940,7 +961,7 @@ define_array_variable(){
 		fi;
 		instr_bytes="${instr_bytes}$(array_add "${dyn_data_offset}" "$((i-deep-1))" "${symbol_addr}" "$symbol_type" "$symbol_value")";
 	done;
-	local array_size=$(( ${#code_line_elements[@]} - (deep + 1) ));
+	local array_size=$(( ${#code_line_elements[@]} - (deep + 1) -1));
 	instr_bytes="${instr_bytes}$(array_end "${dyn_data_offset}" "$array_size")";
 	local symbol_name=$(echo -n "${code_line_elements[$(( 0 + deep-1 ))]}" | cut -d: -f1);
 	local instr_len=$(echo -n "$instr_bytes" | base64 -d | wc -c);
@@ -948,6 +969,96 @@ define_array_variable(){
 	local data_len=$(( array_size * 8 ));
 	struct_parsed_snippet \
 		"SYMBOL_TABLE" \
+		"${SYMBOL_TYPE_ARRAY}" \
+		"${symbol_name}" \
+		"${instr_offset}" \
+		"${instr_bytes}" \
+		"${instr_len}" \
+		"${dyn_data_offset}" \
+		"${data_bytes}" \
+		"${data_len}" \
+		"${CODE_LINE_B64}" \
+		"1";
+	return $?;
+}
+
+is_function_symbol(){
+	local YES=0;
+	local NO=1;
+	local symbol_name="$1";
+	local symbol_data=$(get_b64_symbol_value "${symbol_name}" "${SNIPPETS}");
+	local symbol_type=$(echo "${symbol_data}" | cut -d, -f${B64_SYMBOL_VALUE_RETURN_TYPE});
+	if [ "$symbol_type" == "$SYMBOL_TYPE_PROCEDURE" ]; then
+		return $YES
+	fi
+	return $NO
+}
+# is_function_call: given a symbol name of type array, check the first array item if it is a procedure that can be executed with a direct bytecode call
+is_function_call(){
+	local YES=0;
+	local NO=1;
+	local symbol_name="$1";
+	local SNIPPETS="$2";
+	local symbol_data=$(get_b64_symbol_value "${symbol_name}" "${SNIPPETS}" )
+	local symbol_type=$(echo "${symbol_data}" | cut -d, -f${B64_SYMBOL_VALUE_RETURN_TYPE});
+	local symbol_value=$(echo "$symbol_data" | cut -d, -f${B64_SYMBOL_VALUE_RETURN_OUT});
+	local symbol_addr="$(echo "${symbol_data}" | cut -d, -f${B64_SYMBOL_VALUE_RETURN_ADDR})";
+	local symbol_len="$(echo "${symbol_data}" | cut -d, -f${B64_SYMBOL_VALUE_RETURN_SIZE})";
+	local symbol_source_code="$(echo "${symbol_data}" | cut -d, -f${B64_SYMBOL_VALUE_RETURN_SOURCE_CODE})";
+	if [ "$symbol_type" == $SYMBOL_TYPE_SYSCALL ]; then
+		return $YES;
+	fi;
+	if [ "$symbol_type" == $SYMBOL_TYPE_PROCEDURE ]; then
+		return $YES;
+	fi;
+	if [ "$symbol_type" == $SYMBOL_TYPE_ARRAY ]; then
+		# check if the first item at the array is a function
+		first_array_arg=$(echo $symbol_source_code | base64 -d| cut -d: -f2- | cut -f3);
+		if is_function_symbol "$first_array_arg"; then
+			return $YES;
+		fi
+	fi;
+	if is_function_symbol "$symbol_name"; then
+		$YES
+	fi;
+	return $NO;
+}
+
+define_variable_from_fn(){
+	local target="${code_line_elements[$(( 2 + deep-1 ))]}";
+	if [[ "$target" == sys_geteuid ]]; then
+	{
+		instr_bytes="$(sys_geteuid "${dyn_data_offset}")";
+		data_len=8;
+		data_bytes="";
+	}
+	elif is_function_symbol "$target"; then
+	{
+		target_offset="$( echo "$SNIPPETS" | grep "PROCEDURE_TABLE,[^,]*,${target}," | cut -d, -f${SNIPPET_COLUMN_INSTR_OFFSET} )";
+		local jmp_size=2; # all procedures have a jmp instruction at begining. it can be 2 or 5 bytes. 2 if the procedure body is smaller than 128 bytes;
+		local target_instr_size="$( echo "$SNIPPETS" | grep "PROCEDURE_TABLE,[^,]*,${target}," | cut -d, -f${SNIPPET_COLUMN_INSTR_LEN} )";
+		if [ "${target_instr_size:=0}" -gt 127 ]; then 
+			jmp_size=5;
+		fi;
+		instr_bytes="$(call_procedure "$((target_offset + jmp_size))" "${instr_offset}" )";
+		error "fn call not implemented";
+	}
+	else
+	{
+		local target_data="$( echo "$SNIPPETS" | grep "SYMBOL_TABLE,${SYMBOL_TYPE_ARRAY},${target}," )";
+		# check if the first item at the array is a function
+		local symbol_source_code=$(echo $target_data | cut -d, -f${SNIPPET_COLUMN_SOURCE_CODE});
+		local target_fn=$(echo $symbol_source_code | base64 -d| cut -d: -f2- | cut -f3);
+		local target_fn_data="$(echo "$SNIPPETS" | grep "PROCEDURE_TABLE,[^,]*,${target_fn},")";
+		target_addr=$(echo $target_fn_data | cut -d, -f${SNIPPET_COLUMN_INSTR_OFFSET});
+		target_addr=$(( target_addr + 2)); # ignore jump bytecode
+		instr_bytes="$(call_procedure "${target_addr}" "${instr_offset}")";
+	}
+	fi;
+	instr_len="$(echo $instr_bytes | base64 -d | wc -c)";
+	struct_parsed_snippet \
+		"SYMBOL_TABLE" \
+		"${SYMBOL_TYPE_PROCEDURE}" \
 		"${symbol_name}" \
 		"${instr_offset}" \
 		"${instr_bytes}" \
@@ -974,7 +1085,7 @@ define_variable(){
 	local symbol_name="$( echo -n "${code_line_elements[$(( 0 + deep-1 ))]/:*/}" )"
 	#local symbol_name="$(echo -n "${symbol_name/:*/}")";
 	local sec_arg="$(echo -n "${code_line_elements[$(( 1 + deep-1 ))]}")"
-	local symbol_data="$(echo "$SNIPPETS" | grep "SYMBOL_TABLE,${symbol_name}," | tail -1)";
+	local symbol_data="$(echo "$SNIPPETS" | grep "SYMBOL_TABLE,[^,]*,${symbol_name}," | tail -1)";
 	local is_new_symbol=0;
 	if [ "${symbol_data}" == "" ]; then 
 	{
@@ -1018,6 +1129,7 @@ define_variable(){
 		data_len="8"; # pointer size
 		struct_parsed_snippet \
 			"SYMBOL_TABLE" \
+			"${SYMBOL_TYPE_PROCEDURE}" \
 			"${symbol_name}" \
 			"${instr_offset}" \
 			"${instr_bytes}" \
@@ -1034,7 +1146,7 @@ define_variable(){
 	{
 		# TODO: if the first array position is a function
 		local array_symbol="${code_line_elements[$((2 + deep - 1))]}";
-		if is_function $array_symbol; then
+		if is_function_call $array_symbol "${SNIPPETS}"; then
 			define_variable_from_fn;
 		else
 			define_variable_from_exec;
@@ -1056,13 +1168,16 @@ define_variable(){
 		instr_len=0;
 		data_bytes="$(set_symbol_value "${symbol_value}" "${SNIPPETS}")";
 		data_len="$( echo -n "${data_bytes}" | base64 -d | wc -c)";
+		local symbol_type=${SYMBOL_TYPE_DYNAMIC}
 		if is_hard_coded_value "${data_bytes}" "${symbol_name}"; then
 			data_len=0; # hard-coded values does not use data space
+			symbol_type=${SYMBOL_TYPE_HARD_CODED}
 		fi;
 		# if this is not the first static variable, we need to append 1 to the static_data_offset,
 		# because it should be an \x00(null byte) between static data.
 		struct_parsed_snippet \
 			"SYMBOL_TABLE" \
+			"${symbol_type}" \
 			"${symbol_name}" \
 			"${instr_offset}" \
 			"${instr_bytes}" \
@@ -1088,6 +1203,7 @@ parse_code_bloc_instr(){
 	local data_len=0;
 	struct_parsed_snippet \
 		"INSTRUCTION" \
+		"${SYMBOL_TYPE_PROCEDURE} "\
 		"${symbol_name}" \
 		"${instr_offset}" \
 		"${instr_bytes}" \
@@ -1154,6 +1270,7 @@ parse_code_bloc(){
 	)";
 	out="$(struct_parsed_snippet \
 		"PROCEDURE_TABLE" \
+		"${SYMBOL_TYPE_PROCEDURE}" \
 		"${SNIPPET_NAME}" \
 		"${instr_offset}" \
 		"${instr_bytes}" \
@@ -1184,7 +1301,7 @@ define_code_block(){
 conditional_call(){
 	local test_symbol_name="${code_line_elements[$(( 0 + deep-1 ))]}";
 	local target="${code_line_elements[$(( 2 + deep-1 ))]}"
-	local target_offset="$( echo "$SNIPPETS" | grep "PROCEDURE_TABLE,${target}," | cut -d, -f${SNIPPET_COLUMN_INSTR_OFFSET} )";
+	local target_offset="$( echo "$SNIPPETS" | grep "PROCEDURE_TABLE,[^,]*,${target}," | cut -d, -f${SNIPPET_COLUMN_INSTR_OFFSET} )";
 	local arguments=(); # TODO implement args
 	local arguments_map=();
 	# TODO jump or call ?
@@ -1194,6 +1311,7 @@ conditional_call(){
 	local data_len=0;
 	struct_parsed_snippet \
 		"SNIPPET_CALL" \
+		"${SYMBOL_TYPE_PROCEDURE}" \
 		"je" \
 		"${instr_offset}" \
 		"${instr_bytes}" \
@@ -1213,6 +1331,65 @@ get_instr_offset()
 	local previous_instr_sum=$(echo "${previous_snippet}" | cut -d, -f$SNIPPET_COLUMN_INSTR_LEN);
 	local instr_offset="$(( ${previous_instr_offset} + previous_instr_sum ))";
 	echo -n "${instr_offset}";
+}
+
+snippet_write()
+{
+	local WRITE_OUTPUT_ELEM=1;
+	local WRITE_DATA_ELEM=2;
+	local input_symbol_name="${code_line_elements[$(( WRITE_DATA_ELEM + deep-1 ))]}";
+	local out=${code_line_elements[$(( WRITE_OUTPUT_ELEM + deep-1 ))]};
+	# expected: STDOUT, STDERR, FD...
+	local data_output=$(get_b64_symbol_value "${out}" "${SNIPPETS}" | cut -d, -f${B64_SYMBOL_VALUE_RETURN_OUT} | base64 -d | tr -d '\0' );
+	# I think we can remove the parse_data_bytes and force the symbol have the data always
+	local symbol_data=$(get_b64_symbol_value "${input_symbol_name}" "${SNIPPETS}" )
+	local symbol_type=$(echo "${symbol_data}" | cut -d, -f${B64_SYMBOL_VALUE_RETURN_TYPE});
+	local symbol_value=$(echo "$symbol_data" | cut -d, -f${B64_SYMBOL_VALUE_RETURN_OUT});
+	local symbol_addr="$(echo "${symbol_data}" | cut -d, -f${B64_SYMBOL_VALUE_RETURN_ADDR})";
+	local data_bytes=$(echo -n "${symbol_value}"| cut -d, -f1);
+	local data_bytes_len="$(echo -n "${symbol_data}"| cut -d, -f2)";
+	local data_addr_v=$(echo "${symbol_data}" | cut -d, -f${B64_SYMBOL_VALUE_RETURN_ADDR});
+	if [ "${symbol_type}" != "${SYMBOL_TYPE_STATIC}" ]; then
+	{
+		data_bytes_len=0; # no data to append. just registers used.
+		if [ "${symbol_type}" == "${SYMBOL_TYPE_PROCEDURE}" ]; then
+		{
+			data_bytes="";
+			local procedure_addr=$(echo "$symbol_data" | cut -d, -f${B64_SYMBOL_VALUE_RETURN_ADDR});
+			data_addr_v="${procedure_addr}"; # point to the procedure address
+		}
+		fi;
+	}
+	fi;
+	# TODO: detect if using dyn data addr and pass it 
+	local input_symbol_return="$( echo "$SNIPPETS" | grep "SYMBOL_TABLE,[^,]*,${input_symbol_name}," | cut -d, -f${SNIPPET_COLUMN_RETURN} )";
+	if [ "${input_symbol_return}" != "" ]; then
+		data_addr_v="${input_symbol_return}";
+	elif [ "${data_addr_v}" != "" ]; then
+		data_addr_v="$(( data_addr_v ))";
+	else
+		data_addr_v="$( echo ${symbol_value} | base64 -d)"
+	fi;
+	local instr_bytes="$(system_call_write "${symbol_type}" "${data_output}" "$data_addr_v" "$data_bytes_len" "${instr_offset}")";
+	data_bytes="";
+	data_bytes_len=0;
+	#if [ "${symbol_type}" == "${SYMBOL_TYPE_HARD_CODED}" ]; then
+	#	data_bytes_len=8; # actually we need to calculate how many bytes we need to print using the hardcoded value
+	#fi;
+	local instr_size="$(echo -e "$instr_bytes" | base64 -d | wc -c)";
+	struct_parsed_snippet \
+		"INSTRUCTION" \
+		"${SYMBOL_TYPE_PROCEDURE}" \
+		"sys_write" \
+		"${instr_offset}" \
+		"${instr_bytes}" \
+		"${instr_size}" \
+		"${dyn_data_offset}" \
+		"${data_bytes}" \
+		"${data_bytes_len}" \
+		"${CODE_LINE_B64}" \
+		"1";
+	return $?;
 }
 # parse_snippet given a source code snippet echoes snippet struct to stdout
 # allowing a pipeline to read a full instruction or bloc at time;
@@ -1247,6 +1424,7 @@ parse_snippet()
 	{
 		struct_parsed_snippet \
 			"EMPTY" \
+			"${SYMBOL_TYPE_HARD_CODED}" \
 			"" \
 			"${instr_offset}" \
 			"" \
@@ -1263,6 +1441,7 @@ parse_snippet()
 	{
 		struct_parsed_snippet \
 			"COMMENT" \
+			"${SYMBOL_TYPE_HARD_CODED}" \
 			"" \
 			"${instr_offset}" \
 			"" \
@@ -1293,59 +1472,7 @@ parse_snippet()
 	fi;
 	if [[ "${code_line_elements[$(( 0 + deep-1 ))]}" == write ]]; then
 	{
-		local WRITE_OUTPUT_ELEM=1;
-		local WRITE_DATA_ELEM=2;
-		local input_symbol_name="${code_line_elements[$(( WRITE_DATA_ELEM + deep-1 ))]}";
-		local out=${code_line_elements[$(( WRITE_OUTPUT_ELEM + deep-1 ))]};
-		# expected: STDOUT, STDERR, FD...
-		local data_output=$(get_b64_symbol_value "${out}" "${SNIPPETS}" | cut -d, -f${B64_SYMBOL_VALUE_RETURN_OUT} | base64 -d | tr -d '\0' );
-		# I think we can remove the parse_data_bytes and force the symbol have the data always
-		local symbol_data=$(get_b64_symbol_value "${input_symbol_name}" "${SNIPPETS}" )
-		local symbol_type=$(echo "${symbol_data}" | cut -d, -f${B64_SYMBOL_VALUE_RETURN_TYPE});
-		local symbol_value=$(echo "$symbol_data" | cut -d, -f${B64_SYMBOL_VALUE_RETURN_OUT});
-		local symbol_addr="$(echo "${symbol_data}" | cut -d, -f${B64_SYMBOL_VALUE_RETURN_ADDR})";
-		local data_bytes=$(echo -n "${symbol_value}"| cut -d, -f1);
-		local data_bytes_len="$(echo -n "${symbol_data}"| cut -d, -f2)";
-		local data_addr_v=$(echo "${symbol_data}" | cut -d, -f${B64_SYMBOL_VALUE_RETURN_ADDR});
-		if [ "${symbol_type}" != "${SYMBOL_TYPE_STATIC}" ]; then
-		{
-			data_bytes_len=0; # no data to append. just registers used.
-			if [ "${symbol_type}" == "${SYMBOL_TYPE_PROCEDURE}" ]; then
-			{
-				data_bytes="";
-				local procedure_addr=$(echo "$symbol_data" | cut -d, -f${B64_SYMBOL_VALUE_RETURN_ADDR});
-				data_addr_v="${procedure_addr}"; # point to the procedure address
-			}
-			fi;
-		}
-		fi;
-		# TODO: detect if using dyn data addr and pass it 
-		local input_symbol_return="$( echo "$SNIPPETS" | grep "SYMBOL_TABLE,${input_symbol_name}," | cut -d, -f${SNIPPET_COLUMN_RETURN} )";
-		if [ "${input_symbol_return}" != "" ]; then
-			data_addr_v="${input_symbol_return}";
-		elif [ "${data_addr_v}" != "" ]; then
-			data_addr_v="$(( data_addr_v ))";
-		else
-			data_addr_v="$( echo ${symbol_value} | base64 -d)"
-		fi;
-		local instr_bytes="$(system_call_write "${symbol_type}" "${data_output}" "$data_addr_v" "$data_bytes_len" "${instr_offset}")";
-		data_bytes="";
-		data_bytes_len=0;
-		#if [ "${symbol_type}" == "${SYMBOL_TYPE_HARD_CODED}" ]; then
-		#	data_bytes_len=8; # actually we need to calculate how many bytes we need to print using the hardcoded value
-		#fi;
-		local instr_size="$(echo -e "$instr_bytes" | base64 -d | wc -c)";
-		struct_parsed_snippet \
-			"INSTRUCTION" \
-			"sys_write" \
-			"${instr_offset}" \
-			"${instr_bytes}" \
-			"${instr_size}" \
-			"${dyn_data_offset}" \
-			"${data_bytes}" \
-			"${data_bytes_len}" \
-			"${CODE_LINE_B64}" \
-			"1";
+		snippet_write;
 		return $?;
 	}
 	fi;
@@ -1357,6 +1484,7 @@ parse_snippet()
 		instr_size="$(echo $bytecode_return | cut -d, -f2)"
 		struct_parsed_snippet \
 			"INSTRUCTION" \
+			"${SYMBOL_TYPE_SYSCALL}" \
 			"sys_ret" \
 			"${instr_offset}" \
 			"${instr_bytes}" \
@@ -1371,12 +1499,15 @@ parse_snippet()
 	fi;
 	if [[ "${code_line_elements[$(( 0 + deep-1 ))]}" == exit ]]; then
 	{
-		local exit_value=$(get_b64_symbol_value "${code_line_elements[$(( 1 + deep-1 ))]}" "${SNIPPETS}" | cut -d, -f${B64_SYMBOL_VALUE_RETURN_OUT} | base64 -d | tr -d '\00' )
-
-		local instr_bytes="$(system_call_exit ${exit_value})";
+		local symbol_id="${code_line_elements[$(( 1 + deep-1 ))]}";
+		local symbol_data=$(get_b64_symbol_value "${symbol_id}" "${SNIPPETS}");
+		local symbol_type=$(echo "${symbol_data}" | cut -d, -f${B64_SYMBOL_VALUE_RETURN_TYPE});
+		local symbol_value=$(echo "$symbol_data" | cut -d, -f${B64_SYMBOL_VALUE_RETURN_OUT} | base64 -d | tr -d '\00' );
+		local instr_bytes="$(system_call_exit "${symbol_value}" "${symbol_type}" )";
 		instr_len=$(echo "${instr_bytes}" | base64 -d | wc -c);
 		struct_parsed_snippet \
 			"INSTRUCTION" \
+			"${SYMBOL_TYPE_SYSCALL}" \
 			"sys_exit" \
 			"${instr_offset}" \
 			"${instr_bytes}" \
@@ -1392,12 +1523,13 @@ parse_snippet()
 	if [[ "${code_line_elements[$(( 0 + deep-1 ))]}" == goto ]]; then
 	{
 		target="${code_line_elements[$(( 1 + deep-1 ))]}"
-		target_offset="$( echo "$SNIPPETS" | grep "PROCEDURE_TABLE,${target}," | cut -d, -f${SNIPPET_COLUMN_INSTR_OFFSET} )";
+		target_offset="$( echo "$SNIPPETS" | grep "PROCEDURE_TABLE,[^,]*,${target}," | cut -d, -f${SNIPPET_COLUMN_INSTR_OFFSET} )";
 		jmp_result="$(jump "$((target_offset + 2))" "${instr_offset}" )";
 		jmp_bytes="$(echo "${jmp_result}" | cut -d, -f1)";
 		jmp_len="$(echo "${jmp_result}" | cut -d, -f2)";
 		struct_parsed_snippet \
 			"SNIPPET_CALL" \
+			"${SYMBOL_TYPE_PROCEDURE}" \
 			"jmp" \
 			"${instr_offset}" \
 			"${jmp_bytes}" \
@@ -1413,9 +1545,9 @@ parse_snippet()
 	if echo "$SNIPPETS" | grep -q "${code_line_elements[$(( 0 + deep-1 ))]}"; then # function calling
 	{
 		target="${code_line_elements[$(( 0 + deep-1 ))]}"
-		target_offset="$( echo "$SNIPPETS" | grep "PROCEDURE_TABLE,${target}," | cut -d, -f${SNIPPET_COLUMN_INSTR_OFFSET} )";
+		target_offset="$( echo "$SNIPPETS" | grep "PROCEDURE_TABLE,[^,]*,${target}," | cut -d, -f${SNIPPET_COLUMN_INSTR_OFFSET} )";
 		local jmp_size=2; # all procedures have a jmp instruction at begining. it can be 2 or 5 bytes. 2 if the procedure body is smaller than 128 bytes;
-		local target_instr_size="$( echo "$SNIPPETS" | grep "PROCEDURE_TABLE,${target}," | cut -d, -f${SNIPPET_COLUMN_INSTR_LEN} )";
+		local target_instr_size="$( echo "$SNIPPETS" | grep "PROCEDURE_TABLE,[^,]*,${target}," | cut -d, -f${SNIPPET_COLUMN_INSTR_LEN} )";
 		if [ "${target_instr_size:=0}" -gt 127 ]; then 
 			jmp_size=5;
 		fi;
@@ -1423,6 +1555,7 @@ parse_snippet()
 		local call_len="$(echo "${call_bytes}" | base64 -d | wc -c)";
 		struct_parsed_snippet \
 			"SNIPPET_CALL" \
+			"${SYMBOL_TYPE_PROCEDURE}" \
 			"call" \
 			"${instr_offset}" \
 			"${call_bytes}" \
@@ -1443,7 +1576,7 @@ parse_snippet()
 		for (( i=$deep; i<$(( ${#code_line_elements[@]} + deep-1 )); i++ ));
 		do {
 			local arg_id="${code_line_elements[$i]}";
-			local arg_snippet="$( echo "$SNIPPETS" | grep "SYMBOL_TABLE,${arg_id}," )";
+			local arg_snippet="$( echo "$SNIPPETS" | grep "SYMBOL_TABLE,[^,]*,${arg_id}," )";
 			local arg_addr="$(echo "$arg_snippet" | cut -d, -f${SNIPPET_COLUMN_DATA_OFFSET} )";
 			local arg_is_static=0;
 			if is_static_data_snippet "${arg_snippet}"; then
@@ -1473,6 +1606,7 @@ parse_snippet()
 		instr_len="$(echo "${exec_result}" | cut -d, -f2)";
 		struct_parsed_snippet \
 			"INSTRUCTION" \
+			"${SYMBOL_TYPE_SYSCALL}" \
 			"sys_execve" \
 			"${instr_offset}" \
 			"${instr_bytes}" \
@@ -1493,6 +1627,7 @@ parse_snippet()
 		local data_len="";
 		struct_parsed_snippet \
 			"INSTRUCTION" \
+			"${SYMBOL_TYPE_PROCEDURE}" \
 			"bytecode" \
 			"${instr_offset}" \
 			"${instr_bytes}" \
@@ -1508,6 +1643,7 @@ parse_snippet()
 	error "invalid code line instruction: [$CODE_LINE_B64][${code_line_elements[$(( 0 + deep-1 ))]}]";
 	struct_parsed_snippet \
 		"INVALID" \
+		"${SYMBOL_TYPE_HARD_CODED}" \
 		"" \
 		"${instr_offset}" \
 		"" \
@@ -1535,6 +1671,7 @@ parse_snippets()
 	local static_data_offset=0;
 	struct_parsed_snippet \
 		"INSTRUCTION" \
+		"${SYMBOL_TYPE_PROCEDURE}" \
 		"_before_" \
 		"${instr_offset}" \
 		"" \
