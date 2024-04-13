@@ -1371,8 +1371,8 @@ get_instr_offset()
 
 snippet_write()
 {
-	local WRITE_OUTPUT_ELEM=1;
-	local WRITE_DATA_ELEM=2;
+	local WRITE_OUTPUT_ELEM=2;
+	local WRITE_DATA_ELEM=3;
 	local input_symbol_name="${code_line_elements[$(( WRITE_DATA_ELEM + deep-1 ))]}";
 	local out=${code_line_elements[$(( WRITE_OUTPUT_ELEM + deep-1 ))]};
 	# expected: STDOUT, STDERR, FD...
@@ -1430,6 +1430,31 @@ snippet_write()
 
 do_call(){
 	local third_elem="${code_line_elements[$(( 2 + deep-1 ))]}";
+	if [[ "$second_elem" == ret ]]; then
+	{
+		do_ret;
+		return;
+	}
+	fi;
+	if [[ "$second_elem" == goto ]]; then
+	{
+		do_goto;
+		return;
+	}
+	fi;
+	# system calls related code
+	if [[ "$second_elem" == sys_write ]]; then
+	{
+		snippet_write;
+		return;
+	}
+	fi;
+	if [[ "$second_elem" == sys_exit ]]; then
+	{
+		do_exit;
+		return;
+	}
+	fi;
 	local target="$second_elem";
 	local target_data=$(get_b64_symbol_value "${target}" "${SNIPPETS}");
 	local target_type=$(echo "${target_data}" | cut -d, -f${B64_SYMBOL_VALUE_RETURN_TYPE});
@@ -1552,7 +1577,7 @@ direct_bytecode(){
 	return
 }
 do_goto(){
-	target="$second_elem"
+	target="$third_elem"
 	target_offset="$( echo "$SNIPPETS" | grep "PROCEDURE_TABLE,[^,]*,${target}," | cut -d, -f${SNIPPET_COLUMN_INSTR_OFFSET} )";
 	jmp_result="$(jump "$((target_offset + 2))" "${instr_offset}" )";
 	jmp_bytes="$(echo "${jmp_result}" | cut -d, -f1)";
@@ -1572,7 +1597,7 @@ do_goto(){
 	return;
 }
 do_ret(){
-	local symbol_id="$second_elem";
+	local symbol_id="$third_elem";
 	local instr_bytes="";
 	if [ "${symbol_id}" != "" ]; then
 		local symbol_data=$(get_b64_symbol_value "${symbol_id}" "${SNIPPETS}");
@@ -1597,7 +1622,7 @@ do_ret(){
 		"1";
 }
 do_exit(){
-	local symbol_id="$second_elem";
+	local symbol_id="$third_elem";
 	local symbol_data=$(get_b64_symbol_value "${symbol_id}" "${SNIPPETS}");
 	local symbol_type=$(echo "${symbol_data}" | cut -d, -f${B64_SYMBOL_VALUE_RETURN_TYPE});
 	local symbol_value=$(echo "$symbol_data" | cut -d, -f${B64_SYMBOL_VALUE_RETURN_OUT} | base64 -d | tr -d '\00' );
@@ -1706,32 +1731,6 @@ parse_snippet()
 	{
 		do_define;
 		return
-	}
-	fi;
-	debug "first_elem=[$first_elem]"
-	if [[ "$first_elem" == ret ]]; then
-	{
-		do_ret;
-		return;
-	}
-	fi;
-	if [[ "$first_elem" == goto ]]; then
-	{
-		do_goto;
-		return;
-	}
-	fi;
-	# system calls related code
-	if [[ "$first_elem" == sys_write ]]; then
-	{
-		snippet_write;
-		return;
-	}
-	fi;
-	if [[ "$first_elem" == sys_exit ]]; then
-	{
-		do_exit;
-		return;
 	}
 	fi;
 	# user defined calls
