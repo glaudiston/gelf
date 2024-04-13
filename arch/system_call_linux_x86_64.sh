@@ -701,6 +701,19 @@ function call_procedure()
 {
 	local TARGET="$1";
 	local CURRENT="$2";
+	local ARGS_TYPE="$3";
+	local retval_addr="$4";
+	local code="";
+	MOV_V4_R14="\x49\xC7\xC6";
+	XOR_R15_R15="\x4D\x31\xFF";
+	if [ "$ARGS_TYPE" == $SYMBOL_TYPE_ARRAY ]; then
+		local array_code="$XOR_R15_R15";
+		ADD_V1_R15="\x49\x83\xC7";
+		array_code="${array_code}${ADD_V1_R15}$(printEndianValue 8 $SIZE_8BITS_1BYTE)";
+		code="${code}${array_code}";
+		array_code_size="$(echo -en "$array_code" | wc -c)";
+		CURRENT=$((CURRENT + array_code_size)); # append current bytecode size
+	fi;
 	# call procedure (in same segment)
 	# we don't have a short call in x64.
 	# direct has a 32bit displacement to receive the near relative address
@@ -714,7 +727,11 @@ function call_procedure()
 		local OPCODE_CALL_NEAR="\xe8"; #direct call with 32bit displacement
 		local NEAR_ADDR_V="$(printEndianValue $RELATIVE $SIZE_32BITS_4BYTES)"; # call addr
 		local BYTES="${OPCODE_CALL_NEAR}${NEAR_ADDR_V}";
-		echo -en "$BYTES" | base64 -w0;
+		code="${code}${BYTES}";
+		if [ "$retval_addr" != "" ]; then
+			code="${code}${MOV_RDI_ADDR4}$(printEndianValue $retval_addr $SIZE_32BITS_4BYTES)";
+		fi;
+		echo -en "$code" | base64 -w0;
 		return;
 	fi;
 	error "call not implemented for this address size: CURRENT: $CURRENT, TARGET: $TARGET, RELATIVE: $RELATIVE";
@@ -724,7 +741,11 @@ function call_procedure()
 	SUB_RSP="${M64}${SUB_IMMSE8}${MODRM}\x28" # sub rsp, x28
 	addr="$(( 16#000100b8 ))"
 	BYTES="\xe8${CALL_ADDR}";
-	echo -en "$BYTES" | base64 -w0;
+	code="${code}${BYTES}";
+	if [ "$retval_addr" != "" ]; then
+		code="${code}${MOV_RDI_ADDR4}$(printEndianValue $retval_addr $SIZE_32BITS_4BYTES)";
+	fi;
+	echo -en "$code" | base64 -w0;
 }
 
 function push_v_stack()
@@ -747,6 +768,9 @@ function push_stack()
 
 function bytecode_ret()
 {
+	local symbol_value="$1";
+	local symbol_type="$2";
+	local code="";
 	# Types for return
 	# Near return (same segment)
 	local NEAR_RET="\xc3";
@@ -760,9 +784,15 @@ function bytecode_ret()
 	# 
 
 	#local LEAVE="\xc9"; #seems leave breaks in a segfault
+	if [ "$symbol_value" != "" ]; then
+		code="${code}${MOV_V4_RDI}$(printEndianValue ${symbol_value:=0} $SIZE_32BITS_4BYTES)"
+		if [ "$symbol_type" != $SYMBOL_TYPE_HARD_CODED ]; then
+			code="${code}${MOV_RDI_RDI}";
+		fi;
+	fi;
 	# run RET
-	local bytecode_ret_len=1;
-	echo -en $(echo -en "${NEAR_RET}" | base64 -w0 ),${bytecode_ret_len};
+	code="${code}${NEAR_RET}";
+	echo -en "${code}" | base64 -w0;
 }
 
 function pop_stack()
@@ -1003,6 +1033,7 @@ function system_call_write_dyn_addr()
 		if [ "$DATA_ADDR_V" == "RAX" ]; then
 			code="${code}${MOV_RAX_RSI}";
 		else
+			#MOV_ADDR4_RSI="\x48\xc7\xc6"
 			code="${code}${MOV_ADDR4_RSI}$(printEndianValue ${DATA_ADDR_V} ${SIZE_32BITS_4BYTES})";
 		fi
 		if [ "${DATA_LEN}" == "0" ]; then
@@ -1209,7 +1240,6 @@ function system_call_exec()
 
 	code="${pipe_code}${fork_code}${dup2_child}${exec_code}${wait_code}${read_pipe}";
 	echo -en "${code}" | base64 -w0;
-	echo -en ",$(echo -en "${code}" | wc -c )";
 }
 
 # The base pointer integer value is by convention the argc(argument count)
@@ -1253,6 +1283,9 @@ function get_arg()
 	CODE="${CODE}${MOV_RSP_RSI}";
 	# ADD RSI 8
 	CODE="${CODE}${ADD_RSI}$(printEndianValue $(( 8 * (1 + ARGN) )) ${SIZE_8BITS_1BYTE})";
+	ADD_R15_RAX="\x4C\x01\xF8";
+	ADD_R15_RSI="\x4C\x01\xFE";
+	CODE="${CODE}${ADD_R15_RSI}";
 	# RESOLVE RSI (Copy pointer address content to RSI)
 	CODE="${CODE}${MOV_RSI_RSI}";
 	# MOV RSI ADDR
@@ -1447,9 +1480,11 @@ array_end(){
 	local array_addr="$1";
 	local array_size="$2";
 	local code="";
+	# save the array addr outside the stack(in the main memory)
 	code="${code}${MOV_RSP_RAX}";
 	code="${code}${ADD_V1_RAX}$(printEndianValue $(( array_size * 8 -8)) $SIZE_8BITS_1BYTE)";
 	code="${code}${MOV_RAX_ADDR4}$(printEndianValue "$array_addr" $SIZE_32BITS_4BYTES)";
+	# put the array size in the stack
 	code="${code}$(push_v_stack $array_size | base64 -d | toHexDump)";
 	echo -ne "${code}" | base64 -w0;
 }

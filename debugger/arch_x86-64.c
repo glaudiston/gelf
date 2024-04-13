@@ -74,10 +74,10 @@ int mov_addr_rsi(pid_t child, unsigned long addr)
 	char buff[256];
 	peek_string(child, (void*)vv, buff); // str?
 	if ( strlen(buff) > 0 ) {
-		printf("%016lx: " ANSI_COLOR_WHITE "mov 0x%08lx, %%rsi;" ANSI_COLOR_GRAY "\t# (0x%lx == &(%s))\n", addr, v, vv, buff);fflush(stdout);
+		printf("%016lx: " ANSI_COLOR_WHITE "mov [0x%08lx], %%rsi;" ANSI_COLOR_GRAY "\t# (0x%lx == &(%s))\n", addr, v, vv, buff);fflush(stdout);
 	} else {
 		long unsigned vvv = ptrace(PTRACE_PEEKTEXT, child, (void*)vv, 0);
-		printf("%016lx: " ANSI_COLOR_WHITE "mov 0x%08lx, %%rsi;" ANSI_COLOR_GRAY "\t# (0x%lx == &(%lx))\n", addr, v, vv, vvv);fflush(stdout);
+		printf("%016lx: " ANSI_COLOR_WHITE "mov [0x%08lx], %%rsi;" ANSI_COLOR_GRAY "\t# (0x%lx == &(%lx))\n", addr, v, vv, vvv);fflush(stdout);
 	}
 	return 0;
 }

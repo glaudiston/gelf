@@ -63,7 +63,7 @@ struct_parsed_snippet(){
 	local snippet_symbol_type="$(eval echo -n \${$SNIPPET_COLUMN_SYMBOL_TYPE})";
 
 	local snippet_subname="$(eval echo -n \${$SNIPPET_COLUMN_SUBNAME})";
-	if [ "${snippet_type}" == INSTRUCTION ] && ! [[ "${snippet_subname}" =~ (sys_exit|sys_write|sys_ret|sys_execve|bytecode|_init_|_before_) ]];then
+	if [ "${snippet_type}" == INSTRUCTION ] && ! [[ "${snippet_subname}" =~ (sys_exit|sys_write|sys_execve|bytecode|_init_|_before_|ret) ]];then
 		error "unsupported instruction $snippet_subname";
 		exit $SNIPPET_PARSER_ERROR_INVALID_SNIPPET_UNSUPPORTED_UNSTRUCTION;
 	fi;

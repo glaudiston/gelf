@@ -16,6 +16,7 @@ page header virtual address value:	!	ph_addr_v
 write elf:	. elf_fn.sh; write_elf 
 read from:	 < 
 script:	write elf	elf file name	read from	source file name
-!	bash	run	script
+command:	[]	bash	run	script
+command
 succeed:	0
 exit	succeed
