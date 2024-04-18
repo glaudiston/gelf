@@ -6,7 +6,7 @@
 test_sys_exit_code(){
 	compile_test <<EOF
 :	v	42
-sys_exit	v
+!	sys_exit	v
 EOF
 	run_test
 	expect $? 42
@@ -16,9 +16,9 @@ test_hello_world(){
 	compile_test <<EOF
 :	stdout	1
 :	m	hello world
-sys_write	stdout	m
+!	sys_write	stdout	m
 :	with no error	0
-sys_exit	with no error
+!	sys_exit	with no error
 EOF
 	o=$(run_test);
 	expect $? 0 "hello world" "$o";
@@ -30,9 +30,9 @@ test_hello_world_base64(){
 :	m	aGVsbG8Jd29ybGQK
 :	input	ascii
 :	stdout	1
-sys_write	stdout	m
+!	sys_write	stdout	m
 :	ok	0
-sys_exit	ok
+!	sys_exit	ok
 EOF
 	o="$(run_test | xxd --ps)";
 	eo="68656c6c6f09776f726c640a";
@@ -43,9 +43,9 @@ test_sys_write_hard_coded_value(){
 	compile_test <<EOF
 :	stdout	1
 :	v	65536
-sys_write	stdout	v
+!	sys_write	stdout	v
 :	with no error	0
-sys_exit	with no error
+!	sys_exit	with no error
 EOF
 	o=$(run_test | xxd);
 	eo="$(echo -n 0000010000000000 | xxd --ps -r | xxd)"; # little endian value of 65536 (64bit)
@@ -56,9 +56,9 @@ test_arg_count(){
 	compile_test <<EOF
 :	stdout	1
 :	c	@$
-sys_write	stdout	c
+!	sys_write	stdout	c
 :	with no error	0
-sys_exit	with no error
+!	sys_exit	with no error
 EOF
 	o=$(run_test abc def|xxd --ps);
 	expect $? 0 03 "$o"
@@ -68,9 +68,9 @@ test_sys_write_out_arg(){
 	compile_test <<EOF
 :	stdout	1
 :	a	@1
-sys_write	stdout	a
+!	sys_write	stdout	a
 :	with no error	0
-sys_exit	with no error
+!	sys_exit	with no error
 EOF
 	o=$(run_test abc def);
 	expect $? 0 abc "$o";
@@ -87,9 +87,9 @@ test_read_text_file(){
 :	file name	$tmpfile
 :	f	<=	file name
 :	stdout	1
-sys_write	stdout	f
+!	sys_write	stdout	f
 :	with no error	0
-sys_exit	with no error
+!	sys_exit	with no error
 EOF
 	o=$(run_test | md5sum | cut -d " " -f1);
 	expect $? 0 $chk "$o";
@@ -102,9 +102,9 @@ test_read_virtual_file(){
 :	file name	/proc/sys/vm/mmap_min_addr
 :	f	<=	file name
 :	stdout	1
-sys_write	stdout	f
+!	sys_write	stdout	f
 :	with no error	0
-sys_exit	with no error
+!	sys_exit	with no error
 EOF
 	o=$(run_test);
 	expect $? 0 $chk "$o";
@@ -115,7 +115,7 @@ test_exec(){
 :	cmd	/usr/bin/whoami
 !	cmd
 :	ok	0
-sys_exit	ok
+!	sys_exit	ok
 EOF
 	chk=$(whoami)
 	o=$(run_test)
@@ -129,9 +129,9 @@ test_exec_capture_stdout(){
 :	s	command output: 
 :	t	s	v
 :	stdout	1
-sys_write	stdout	t
+!	sys_write	stdout	t
 :	success	0
-sys_exit	success
+!	sys_exit	success
 EOF
 	eo=$(echo -n "command output: "; /usr/bin/whoami)
 	o=$(run_test)
@@ -145,7 +145,7 @@ test_exec_with_input_args(){
 :	arg b	@3
 !	cmd	arg a	arg b
 :	succeed	0
-sys_exit	succeed
+!	sys_exit	succeed
 EOF
 	cmd="/usr/bin/ls";
 	arg_a="-1";
@@ -163,7 +163,7 @@ test_exec_with_static_args(){
 :	args	-u
 !	cmd	args
 :	success	0
-sys_exit	success
+!	sys_exit	success
 EOF
 	chk=$(id -u)
 	o=$(run_test)
@@ -176,9 +176,9 @@ test_concat_static_symbols(){
 :	b	def
 :	c	a	b
 :	out	1
-sys_write	out	c
+!	sys_write	out	c
 :	d	0
-sys_exit	d
+!	sys_exit	d
 EOF
 	o=$(run_test)
 	expect $? 0 "abcdef" "$o"
@@ -190,9 +190,9 @@ test_concat_dyn_symbols(){
 :	b	@2
 :	c	a	b
 :	out	1
-sys_write	out	c
+!	sys_write	out	c
 :	d	0
-sys_exit	d
+!	sys_exit	d
 EOF
 	o=$(run_test "abc" "def")
 	expect $? 0 "abcdef" "$o"
@@ -205,9 +205,9 @@ test_concat_stat_dyn_symbols(){
 :	b	@2
 :	c	s	a	b
 :	out	1
-sys_write	out	c
+!	sys_write	out	c
 :	d	0
-sys_exit	d
+!	sys_exit	d
 EOF
 	o=$(run_test "abc" "def")
 	expect $? 0 "xptoabcdef" "$o"
@@ -220,9 +220,9 @@ test_concat_dyn_stat_symbols(){
 :	b	@2
 :	c	b	s	a
 :	out	1
-sys_write	out	c
+!	sys_write	out	c
 :	d	0
-sys_exit	d
+!	sys_exit	d
 EOF
 	o=$(run_test "abc" "def")
 	expect $? 0 "defxptoabc" "$o"
@@ -235,7 +235,7 @@ test_exec_concat(){
 :	c	a	b
 !	c	c
 :	succeed	0
-sys_exit	succeed
+!	sys_exit	succeed
 EOF
 	o=$(run_test ls)
 	# known bug space inside arguments are trimed
@@ -262,11 +262,11 @@ test_fn(){
 	compile_test <<EOF
 :	fn	{
 	:	r1	1
-	sys_exit	r1
+	!	sys_exit	r1
 }
 !	fn
 :	r2	2
-sys_exit	r2
+!	sys_exit	r2
 EOF
 	o=$(run_test)
 	expect $? 1
@@ -278,13 +278,13 @@ test_fn_args(){
 	:	af	@1
 	:	bf	@2
 	:	cf	+	af	bf
-	ret	cf
+	!	ret	cf
 }
 :	a	1
 :	b	2
 :	c	[]	fn	a	b
 :	d	!	c
-sys_exit	d
+!	sys_exit	d
 EOF
 	o=$(run_test)
 	expect $? 3
@@ -294,14 +294,14 @@ test_check_var_is_not_empty(){
 	compile_test <<EOF
 :	ok	{
 	:	suc	1
-	sys_exit	suc
+	!	sys_exit	suc
 }
 :	value	@1
 :	empty	
 :	test	?	value	empty
 !	test	?=	ok
 :	err	2
-sys_exit	err
+!	sys_exit	err
 EOF
 	o=$(run_test abc)
 	expect $? 2
@@ -311,14 +311,14 @@ test_check_var_is_empty(){
 	compile_test <<EOF
 :	ok	{
 	:	suc	1
-	sys_exit	suc
+	!	sys_exit	suc
 }
 :	value	@1
 :	empty	
 :	test	?	value	empty
 !	test	?=	ok
 :	err	2
-sys_exit	err
+!	sys_exit	err
 EOF
 	o=$(run_test)
 	expect $? 1
@@ -328,13 +328,13 @@ test_condition(){
 	compile_test <<EOF
 :	success	{
 	:	r0	0
-	sys_exit	r0
+	!	sys_exit	r0
 }
 :	r1	1
 :	r2	1
 :	test	?	r1	r2
 !	test	?=	success
-sys_exit	r1
+!	sys_exit	r1
 EOF
 	o=$(run_test)
 	expect $? 0
@@ -343,7 +343,7 @@ EOF
 test_loop(){
 	compile_test <<EOF
 :	end	{
-	sys_exit	0
+	!	sys_exit	0
 }
 :	loop	{
 	:	v	+	1
@@ -352,7 +352,7 @@ test_loop(){
 }
 !	loop
 :	err	1
-sys_exit	err
+!	sys_exit	err
 EOF
 	o=$(run_test)
 	expect $? 0
@@ -361,7 +361,7 @@ EOF
 test_recursive_call(){
 	compile_test <<EOF
 :	end	{
-	sys_exit	0
+	!	sys_exit	0
 }
 :	loop	{
 	:	v	+	1
@@ -371,7 +371,7 @@ test_recursive_call(){
 }
 !	loop
 :	err	1
-sys_exit	err
+!	sys_exit	err
 EOF
 	o=$(run_test)
 	expect $? 0
@@ -381,15 +381,15 @@ test_start_code(){
 	compile_test <<EOF
 :	stdout	1
 :	a	a
-sys_write	stdout	a
+!	sys_write	stdout	a
 :	f	{
 	:	err	1
-	sys_exit	err
+	!	sys_exit	err
 }
 :	b	b
-sys_write	stdout	b
+!	sys_write	stdout	b
 :	ok	0
-sys_exit	ok
+!	sys_exit	ok
 EOF
 	o=$(run_test)
 	expect $? 0 "ab" "$o"
@@ -405,10 +405,10 @@ test_fibonacci_generate(){
 	:	fibn	+	prev	last
 	:	toStop	?	fibn	limit
 	!	toStop	?>	ret
-	sys_write	stdout	fibn
+	#!	sys_write	stdout	fibn
 	:	f	[]	fib	last	fibn	limit
 	!	f
-	ret
+	!	ret
 }
 :	a	0
 :	b	1
@@ -416,10 +416,35 @@ test_fibonacci_generate(){
 :	d	[]	fib	a	b	c
 !	d
 :	ok	0
-sys_exit	ok
+!	sys_exit	ok
 EOF
 	o=$(run_test)
 	expect $? 0
+}
+
+test_sys_geteuid(){
+	compile_test <<EOF
+:	stdout	1
+:	uid	!	sys_geteuid
+:	a	[]	i2s	uid
+:	textuid	!	a
+!	sys_write	stdout	textuid
+:	ok	0
+!	sys_exit	ok
+EOF
+	o=$(run_test);
+	expect $? 0;
+}
+
+test_ilog10(){
+	local n=$RANDOM;
+	local l=$(echo "scale=0; l($n)" | bc -l)
+	compile_test <<EOF
+:	x:	.ilog	10	$n
+!	sys_exit	x
+EOF
+	o=$(run_test);
+	expect $? $l;
 }
 
 . ./test_suite.sh
