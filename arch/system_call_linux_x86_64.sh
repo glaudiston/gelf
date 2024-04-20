@@ -50,24 +50,24 @@
 #  RFLAG(64)
 #
 #Here is a table of all the registers in x86_64 with their sizes:
-#	RegVal	64bit	32bit	16bit	8bit
-#	000	RAX	EAX	AX	AL
-#	001	RCX	ECX	CX	CL
-#	010	RDX	EDX	DX	DL
-#	011	RBX	EBX	BX	BL
-#	100	RSP	ESP	SP	SPL	Processor controlled pointing to Stack Pointer
-#	101	RBP	EBP	BP	BPL
-#	110	RSI	ESI	SI	SIL
-#	111	RDI	EDI	DI	DIL
-#	000	R8	R8D	R8W	R8B
-#	001	R9	R9D	R9W	R9B
-#	010	R10	R10D	R10W	R10B
-#	011	R11	R11D	R11W	R11B
-#	100	R12	R12D	R12W	R12B
-#	101	R13	R13D	R13W	R13B
-#	110	R14	R14D	R14W	R14B
-#	111	R15	R15D	R15W	R15B
-#		RIP	EIP			Instruction Pointer: Address of the next instruction to execute.
+#	regval	64bit	32bit	16bit	8bit
+#	000	rax	eax	ax	al
+#	001	rcx	ecx	cx	cl
+#	010	rdx	edx	dx	dl
+#	011	rbx	ebx	bx	bl
+#	100	rsp	esp	sp	spl	processor controlled pointing to stack pointer
+#	101	rbp	ebp	bp	bpl
+#	110	rsi	esi	si	sil
+#	111	rdi	edi	di	dil
+#	000	r8	r8d	r8w	r8b
+#	001	r9	r9d	r9w	r9b
+#	010	r10	r10d	r10w	r10b
+#	011	r11	r11d	r11w	r11b
+#	100	r12	r12d	r12w	r12b
+#	101	r13	r13d	r13w	r13b
+#	110	r14	r14d	r14w	r14b
+#	111	r15	r15d	r15w	r15b
+#		rip	eip			instruction pointer: address of the next instruction to execute.
 #
 # Note that the smallers registers uses the same space as the bigger ones.
 # These sub-registers are commonly used in instruction encoding and can be useful for optimizing code.
@@ -231,6 +231,7 @@ MOV_V8_RDX="${M64}$( printEndianValue $(( MOV + IMM + RDX )) ${SIZE_8BITS_1BYTE}
 MOV_V4_RDI="\x48\xc7\xc7";
 MOV_V4_RDX="\x48\xc7\xc2"; # MOV value and resolve address, so the content of memory address is set at the register
 MOV_ADDR_RDX="\x48\x8b\x14\x25"; # followed by 4 bytes le;
+MOV_ADDR4_RAX="\x48\x8b\x04\x25";
 MOV_ADDR4_RSI="\x48\x8b\x34\x25";
 MOV_ADDR_RDI="\x48\x8b\x3c\x25";
 MOV_RAX_ADDR4="\x48\x01\x04\x25";
@@ -238,7 +239,7 @@ MOV_RDX_ADDR4="\x48\x89\x14\x25"; # followed by 4 bytes le;
 REP="\xf3"; # repeat until rcx
 MOVSB="\xa4"; # move 64bits(8 bytes) from %rsi addr to %rdi addr
 MOVSQ="\x48\xa5"; # move 64bits(8 bytes) from %rsi addr to %rdi addr
-MOV_RSI="${M64}$( printEndianValue $(( MOV + IMM + RSI )) ${SIZE_8BITS_1BYTE} )"; # 48 be
+MOV_V8_RSI="${M64}$( printEndianValue $(( MOV + IMM + RSI )) ${SIZE_8BITS_1BYTE} )"; # 48 be
 MOV_V4_RSI="\x48\xc7\xc6";
 #debug MOV_RSI=$MOV_RSI
 MOV_V8_RDI="${M64}$( printEndianValue $(( MOV + IMM + RDI )) ${SIZE_8BITS_1BYTE} )"; # 48 bf; #if not prepended with M64(x48) expect 32 bit register (edi: 4 bytes)
@@ -289,14 +290,69 @@ MOV_RSP_ADDR4=$(get_mov_rsp_addr);
 MOV_RSI_ADDR4=$(get_mov_rsi_addr);
 MOV_RSI_RDX="${M64}${MOV_R}$( printEndianValue $(( MOVR + MODRM_REG_RSI + RDX )) ${SIZE_8BITS_1BYTE} )"; # move the RSI to RDX #11110010
 SUB_V1_RAX="\x48\x83\xe8";
-ADD_V1_RAX="\x48\x83\xc0";
-ADD_AL="\x04";
+
+is_register(){
+	local v="$1";
+	if [ "$(eval echo '${'${v^^}'}')" == "" ]; then
+		return 1
+	fi;
+	return 0;
+}
+
+# add: given a value or a register on r1, add it to r2
+# r1: can be a register id, a integer value or a address value
+# 	input: register or "[address]" or integer value
+# 	output: not changed
+# r2: register result of add r1 and r2
+# 	input: register
+# 	output: added r1 and r2
 ADD_SHORT="\x83"; # ADD 8 or 16 bit operand (depend on ModR/M opcode first bit(most significant (bit 7)) been zero) and the ModR/M opcode
+add(){
+	local r1="$1";
+	local r2="$2";
+	local code="";
+	debug "[1] add $r1 $r2";
+	if [ "$r2" = "AL" ]; then
+		ADD_AL="\x04";
+		code="${code}${ADD_AL}$(printEndianValue "$r1" ${SIZE_8BITS_1BYTE})";
+		echo -en "${code}" | base64 -w0;
+		return
+	fi;
+	if is_register "$r1"; then
+	{
+		debug "[2]";
+		if is_register "$r2"; then
+			code="ADD";
+			echo -en "${code}" | base64 -w0;
+			return;
+		fi;
+	}
+	elif is_valid_number "$r1"; then
+	{
+		debug "[3]"
+		if is_register "$r2"; then
+			if [ $r1 -lt 128 ]; then
+				r=$(( MODRM_MOD_DISPLACEMENT_REG + ${r2^^} ))
+				code="${code}${M64}${ADD_SHORT}$(printEndianValue $r $SIZE_8BITS_1BYTE)";
+				code="${code}$(printEndianValue $r1 $SIZE_8BITS_1BYTE)";
+				debug "add $@: $(echo -en "$code" | base64 -w0)"
+				echo -en "${code}" | base64 -w0;
+				return;
+			fi;
+		fi;
+	}
+	else
+	{
+		error "mem ref not implemented yet"
+	}
+	fi;
+	error "not implemented: add $@"
+}
+
+ADD_V1_RAX="\x48\x83\xc0";
 INC_RDX="\x48\xff\xc2";
 DEC_RDI="\x48\xff\xcf";
-ADD_MODRM_RSI="$(printEndianValue $(( MODRM_MOD_DISPLACEMENT_REG + RSI )) $SIZE_8BITS_1BYTE)";
 ADD_MODRM_RSP="$(printEndianValue $(( MODRM_MOD_DISPLACEMENT_REG + RSP )) $SIZE_8BITS_1BYTE)";
-ADD_RSI="${M64}${ADD_SHORT}${ADD_MODRM_RSI}";
 ADD_RSP="${M64}${ADD_SHORT}${ADD_MODRM_RSP}";
 ADD_RDX_MODRM="$(printEndianValue $(( MODRM_MOD_DISPLACEMENT_REG + RDX )) $SIZE_8BITS_1BYTE)";
 ADD_RDX="${M64}${ADD_SHORT}${ADD_RDX_MODRM}";
@@ -355,6 +411,11 @@ XOR_RDI_RDI="\x48\x31\xff";
 XOR_R8_R8="\x4d\x31\xc0";
 XOR_R10_R10="\x4d\x31\xd2";
 
+# CMP
+CMP="${M64}\x83"; # only if most significant bit(bit 7) of the next byte is 1 and depending on opcode(bits 6-3) And ModR/M opcode
+CMP_RAX_V1="${CMP}$( printEndianValue $(( MODRM_MOD_DISPLACEMENT_REG + MODRM_OPCODE_CMP + RAX )) $SIZE_8BITS_1BYTE)";
+CMP_RSI_V1="${CMP}$( printEndianValue $(( MODRM_MOD_DISPLACEMENT_REG + MODRM_OPCODE_CMP + RSI )) $SIZE_8BITS_1BYTE)";
+
 # JMP
 # We have some types of jump
 # Relative jumps (short and near):
@@ -363,7 +424,6 @@ JMP_V4="\xe9"; # followed by a 32-bit signed integer(-2147483648 to 2147483647).
 # Jump to the full virtual address
 JMP_RAX="\xff";
 JMP_RDI="\xe0";
-CMP="${M64}\x83"; # only if most significant bit(bit 7) of the next byte is 1 and depending on opcode(bits 6-3) And ModR/M opcode
 JNE="\x0f\x85"; # The second byte "85" is the opcode for the JNE(Jump if Not Equal) same of JNZ(Jump if Not Zero) instruction. The following four bytes "06 00 00 00" represent the signed 32-bit offset from the current instruction to the target label.
 JZ="\x0f\x84";
 JG="\x0F\x8F"; # Jump if Greater than zero
@@ -474,7 +534,7 @@ sys_fstat()
 		CODE="${CODE}${MOV_RAX_R8}";
 	fi;
  	# RSI: Pointer to a struct stat (will be filled with file information)
- 	CODE="${CODE}${MOV_RSI}$(printEndianValue ${stat_addr})";
+ 	CODE="${CODE}${MOV_V8_RSI}$(printEndianValue ${stat_addr} $SIZE_64BITS_8BYTES)";
 	# RAX: fstat
 	CODE="${CODE}${MOV_V4_RAX}$(printEndianValue $SYS_FSTAT ${SIZE_32BITS_4BYTES})";
  	CODE="${CODE}${SYSCALL}";
@@ -490,11 +550,10 @@ function get_read_size()
 	local target_register="$2";
 	local st_size=16#30;
 	local code="";
-	code="${code}${MOV_RSI}$(printEndianValue $(( STAT_ADDR + st_size )) ${SIZE_64BITS_8BYTES})";
+	code="${code}${MOV_V8_RSI}$(printEndianValue $(( STAT_ADDR + st_size )) ${SIZE_64BITS_8BYTES})";
 	code="${code}${MOV_RSI_RSI}"; # resolve pointer to address
-	local default_value_code="${MOV_RSI}$(printEndianValue $PAGESIZE)"
-	local ModRMCmpRSI="$( printEndianValue $(( MODRM_MOD_DISPLACEMENT_REG + MODRM_OPCODE_CMP + RSI )) $SIZE_8BITS_1BYTE)";
-	code="${code}${CMP}${ModRMCmpRSI}\x00"; # 64bit cmp rsi, 00
+	local default_value_code="${MOV_V8_RSI}$(printEndianValue "$PAGESIZE" $SIZE_64BITS_8BYTES)"
+	code="${code}${CMP_RSI_V1}\x00"; # 64bit cmp rsi, 00
 	local BYTES_TO_JUMP="$(printEndianValue $(echo -en "${default_value_code}" | wc -c) $SIZE_32BITS_4BYTES)";
 	code="${code}${JG}${BYTES_TO_JUMP}";
 	code="${code}${default_value_code}";
@@ -553,7 +612,8 @@ function sys_mmap()
 	#    mov rsi, size  ; length
 	#
 	# recover size
-	local mmap_size_code="$(echo "$size" | base64 -d | toHexDump)";
+	debug "sys_mmap size=$size"
+	local mmap_size_code="$(echo "$size" | b64_to_hex_dump)";
 	# CODE="${CODE}${MOV_RSI}$(printEndianValue ${mmap_size} ${SIZE_64BITS_8BYTES})";
 	#if pagesize > size {
 	#	pagesize
@@ -598,15 +658,14 @@ function sys_mmap()
 	CODE="${CODE}${MOV_V8_RAX}$(printEndianValue $SYS_MMAP ${SIZE_64BITS_8BYTES})";
 	CODE="${CODE}${SYSCALL}";
 	# test rax to detect failure
-	local ModRM="$( printEndianValue $(( MODRM_MOD_DISPLACEMENT_REG + MODRM_OPCODE_CMP + RAX )) $SIZE_8BITS_1BYTE)";
-	CODE="${CODE}${CMP}${ModRM}\x00"; # 64bit cmp rax, 00
+	CODE="${CODE}${CMP_RAX_V1}\x00"; # 64bit cmp rax, 00
 	# if it fails do mmap with  MAP_ANONYMOUS
 	local ANON_MMAP_CODE="${MOV_V8_R10}$(printEndianValue $(( MAP_PRIVATE + MAP_ANONYMOUS )) ${SIZE_64BITS_8BYTES})";
 	ANON_MMAP_CODE="${ANON_MMAP_CODE}${MOV_V8_RAX}$(printEndianValue $SYS_MMAP ${SIZE_64BITS_8BYTES})";
 	ANON_MMAP_CODE="${ANON_MMAP_CODE}${SYSCALL}";
 	# then we need to read the data to that location
 	ANON_MMAP_CODE="${ANON_MMAP_CODE}${MOV_R8_RDI}";
-	ANON_MMAP_CODE="${ANON_MMAP_CODE}$(system_call_read "" "rsi" | base64 -d | toHexDump)"; # TODO not sure the best choice here. We should do it better
+	ANON_MMAP_CODE="${ANON_MMAP_CODE}$(system_call_read "" "rsi" | b64_to_hex_dump)"; # TODO not sure the best choice here. We should do it better
 	# if rax > 0 jump over this code block
 	# rax will be less than zero on failure
 	ANON_MMAP_CODE="${ANON_MMAP_CODE}${MOV_RAX_R9}";
@@ -753,7 +812,7 @@ function push_v_stack()
 	local value="$1";
 	local code="";
 	code="${code}${MOV_V4_RAX}$(printEndianValue "${value}" "${SIZE_32BITS_4BYTES}")";
-	code="${code}$(push RAX | base64 -d | toHexDump)";
+	code="${code}$(push RAX | b64_to_hex_dump)";
 	echo -en "${code}" | base64 -w0
 }
 
@@ -813,7 +872,7 @@ function system_call_open()
 	CODE="${CODE}${MOV_V8_RDI}${FILENAME_ADDR}";
 	# TODO best to use xor when setting rsi to 0
 	# mov rsi, 'r' ; Open mode
-	CODE="${CODE}${MOV_RSI}$(printEndianValue $(( 16#0 )) "${SIZE_64BITS_8BYTES}")"; # mode=r (x72)
+	CODE="${CODE}${MOV_V8_RSI}$(printEndianValue $(( 16#0 )) "${SIZE_64BITS_8BYTES}")"; # mode=r (x72)
 	# xor rdx, rdx ; File permissions (ignored when opening)
 	#CODE="${CODE}${XOR}${RDX}${RDX}"
 	CODE="${CODE}${SYSCALL}";
@@ -850,7 +909,7 @@ function read_file()
 	if [ "${TYPE}" == "${SYMBOL_TYPE_STATIC}" -o "${TYPE}" == "${SYMBOL_TYPE_HARD_CODED}" ]; then
 		# do we have a buffer to read into? should we use it in a mmap?
 		# now we create a buffer with mmap using this fd in RAX.
-		CODE="${CODE}$(sys_mmap "${DATA_LEN}" | base64 -d | toHexDump)";
+		CODE="${CODE}$(sys_mmap "${DATA_LEN}" | b64_to_hex_dump)";
 		CODE="${CODE}${MOV_RAX_ADDR4}$(printEndianValue "$targetMemory" $SIZE_32BITS_4BYTES)";
 		# TODO test sys_mmap return at rax, and if fails(<0) then mmap without the fd
 		# TODO once mmap set, if the source file is read only we can just close it.
@@ -864,7 +923,7 @@ function read_file()
 	elif [ "${TYPE}" == ${SYMBOL_TYPE_DYNAMIC} ]; then
 		if [ "$(echo -n "${DATA_ADDR_V}" | base64 -d | cut -d, -f1 | base64 -w0)" == "$( echo -n ${ARCH_CONST_ARGUMENT_ADDRESS} | base64 -w0)" ]; then
 			# now we create a buffer with mmap using this fd in RAX.
-			CODE="${CODE}$(sys_mmap | base64 -d | toHexDump)";
+			CODE="${CODE}$(sys_mmap | b64_to_hex_dump)";
 			# collect $RAX (memory location returned from mmap)
 			# use it as argument to write out.
 			CODE="${MOV_RAX_ADDR4}$(printEndianValue "$targetMemory" $SIZE_32BITS_4BYTES)";
@@ -905,7 +964,7 @@ function system_call_read()
 		#use rax
 		CODE="${CODE}${MOV_RAX_RSI}";
 	else
-		CODE="${CODE}${MOV_RSI}$(printEndianValue "$DATA_ADDR" "$SIZE_64BITS_8BYTES" )";
+		CODE="${CODE}${MOV_V8_RSI}$(printEndianValue "$DATA_ADDR" "$SIZE_64BITS_8BYTES" )";
 	fi;
 	CODE="${CODE}${MOV_V8_RAX}$(printEndianValue $SYS_READ $SIZE_64BITS_8BYTES)";
 	CODE="${CODE}${SYSCALL}";
@@ -922,7 +981,7 @@ function system_call_write_addr()
 	local CODE="";
 	CODE="${CODE}${MOV_V8_RAX}$(printEndianValue $SYS_WRITE $SIZE_64BITS_8BYTES)";
 	CODE="${CODE}${MOV_V8_RDI}$(printEndianValue $OUT $SIZE_64BITS_8BYTES)";
-	CODE="${CODE}${MOV_RSI}${DATA_ADDR}";
+	CODE="${CODE}${MOV_V8_RSI}${DATA_ADDR}";
 	CODE="${CODE}${MOV_V8_RDX}$(printEndianValue "${DATA_LEN}" $SIZE_64BITS_8BYTES)";
 	CODE="${CODE}${SYSCALL}";
 	echo -en "${CODE}" | base64 -w0;
@@ -941,7 +1000,6 @@ function detect_argsize()
 	CODE="${CODE}${MOV_RSI_RDX}";
 	# increment RDX by 8
 	ARGUMENT_DISPLACEMENT=$(printEndianValue 8 ${SIZE_8BITS_1BYTE})
-	#ADD_RDX="${M64}${ADD_SHORT}\xC2"
 	CODE="${CODE}${ADD_RDX}${ARGUMENT_DISPLACEMENT}";
 	# mov to the real address (not pointer to address)
 	ModRM=$( printEndianValue $(( MODRM_MOD_DISPLACEMENT_REG + MODRM_REG_RSI + RDX )) ${SIZE_8BITS_1BYTE} )
@@ -998,57 +1056,24 @@ function system_call_write_dyn_addr()
 	local DATA_ADDR_V="$2";
 	local DATA_LEN="$3";
 	local CODE="";
-	if [ "$(echo -n "${DATA_ADDR_V}" | cut -d, -f1 | base64 -w0)" == "$( echo -n ${ARCH_CONST_ARGUMENT_ADDRESS} | base64 -w0)" ]; then
-	{
-		local CODE="";
-		CODE="${CODE}${MOV_V8_RAX}$(printEndianValue $SYS_WRITE $SIZE_64BITS_8BYTES)";
-		CODE="${CODE}${MOV_V8_RDI}$(printEndianValue $OUT $SIZE_64BITS_8BYTES)";
-
-		CODE="${CODE}$(detect_argsize)";
-
-		local LAST_ARG_CODE="";
-		LAST_ARG_CODE="${LAST_ARG_CODE}${MOV_RSP_RDX}";
-		ARGUMENT_DISPLACEMENT=$(printEndianValue $(( 8 * argument_number + 16 )) ${SIZE_8BITS_1BYTE})
-		LAST_ARG_CODE="${LAST_ARG_CODE}${ADD_RDX}${ARGUMENT_DISPLACEMENT}";
-		LAST_ARG_CODE="${LAST_ARG_CODE}${MOV_RDX_RDX}";
-		LAST_ARG_CODE="${LAST_ARG_CODE}${SUB_RDX_RSI}";
-
-		local ModRM="$( printEndianValue $(( MODRM_MOD_DISPLACEMENT_REG + MODRM_OPCODE_CMP + RDX )) $SIZE_8BITS_1BYTE)";
-		CODE="${CODE}${CMP}${ModRM}\x00"; # 64bit cmp rdx, 00
-		BYTES_TO_JUMP="$(printEndianValue $(echo -en "${LAST_ARG_CODE}" | wc -c) $SIZE_32BITS_4BYTES)";
-		# If is not the last argument, we are good, jump over
-		CODE="${CODE}${JG}${BYTES_TO_JUMP}";
-		CODE="${CODE}${LAST_ARG_CODE}";
-		# so here we want to look at first env address to subtract it and find out the last argument size
-		MODRM=$( printEndianValue $(( MODRM_MOD_DISPLACEMENT_REG + MODRM_OPCODE_SUB + RDX)) $SIZE_8BITS_1BYTE );
-		SUB_RDX_1="${SUB_IMMSE8}${MODRM}\x01";
-		CODE="${CODE}${SUB_RDX_1}";
-		CODE="${CODE}${SYSCALL}";
-		echo -en "${CODE}" | base64 -w0;
-	}
+	# otherwise we expect all instruction already be in the data_addr_v as base64
+	local code="";
+	if [ "$DATA_ADDR_V" == "RAX" ]; then
+		code="${code}${MOV_RAX_RSI}";
 	else
-	{
-		# otherwise we expect all instruction already be in the data_addr_v as base64
-		local code="";
-		if [ "$DATA_ADDR_V" == "RAX" ]; then
-			code="${code}${MOV_RAX_RSI}";
-		else
-			#MOV_ADDR4_RSI="\x48\xc7\xc6"
-			code="${code}${MOV_ADDR4_RSI}$(printEndianValue ${DATA_ADDR_V} ${SIZE_32BITS_4BYTES})";
-		fi
-		if [ "${DATA_LEN}" == "0" ]; then
-			code="${code}$(detect_string_length)";
-		else
-			local MOV_V_RDX="${MOV_V8_RDX}$(printEndianValue "${DATA_LEN}" ${SIZE_64BITS_8BYTES})";
-			code="${code}${MOV_V_RDX}";
-		fi;
-		code="${code}${MOV_V8_RDI}$(printEndianValue $OUT $SIZE_64BITS_8BYTES)";
-		code="${code}${MOV_V8_RAX}$(printEndianValue $SYS_WRITE $SIZE_64BITS_8BYTES)";
-		code="${code}${SYSCALL}";
-		echo -ne "${code}" | base64 -w0;
-		return;
-	}
+		code="${code}${MOV_ADDR4_RSI}$(printEndianValue ${DATA_ADDR_V} ${SIZE_32BITS_4BYTES})";
+	fi
+	if [ "${DATA_LEN}" == "0" ]; then
+		code="${code}$(detect_string_length)";
+	else
+		local MOV_V_RDX="${MOV_V8_RDX}$(printEndianValue "${DATA_LEN}" ${SIZE_64BITS_8BYTES})";
+		code="${code}${MOV_V_RDX}";
 	fi;
+	code="${code}${MOV_V8_RDI}$(printEndianValue $OUT $SIZE_64BITS_8BYTES)";
+	code="${code}${MOV_V8_RAX}$(printEndianValue $SYS_WRITE $SIZE_64BITS_8BYTES)";
+	code="${code}${SYSCALL}";
+	echo -ne "${code}" | base64 -w0;
+	return;
 }
 
 function system_call_write()
@@ -1063,13 +1088,13 @@ function system_call_write()
 		echo -n "$(system_call_write_addr "${OUT}" "${DATA_ADDR_V}" "${DATA_LEN}")";
 	elif [ "${TYPE}" == "${SYMBOL_TYPE_HARD_CODED}" ]; then
 	{
-		code="${code}$(push_v_stack "${DATA_ADDR_V}" | base64 -d | toHexDump)";
+		code="${code}$(push_v_stack "${DATA_ADDR_V}" | b64_to_hex_dump)";
 		code="${code}${MOV_V4_RAX}$(printEndianValue $SYS_WRITE $SIZE_32BITS_4BYTES)";
 		code="${code}${MOV_V4_RDI}$(printEndianValue $OUT $SIZE_32BITS_4BYTES)";
 		code="${code}${MOV_RSP_RSI}";
 		code="${code}${MOV_V4_RDX}$(printEndianValue "8" $SIZE_32BITS_4BYTES)";
 		code="${code}${SYSCALL}";
-		code="${code}$(pop RAX | base64 -d | toHexDump)";
+		code="${code}$(pop RAX | b64_to_hex_dump)";
 		echo -ne "${code}" | base64 -w0;
 	}
 	elif [ "${TYPE}" == "${SYMBOL_TYPE_DYNAMIC}" ]; then
@@ -1079,7 +1104,7 @@ function system_call_write()
 	elif [ "$TYPE" == "${SYMBOL_TYPE_PROCEDURE}" ]; then
 	{
 		local code="";
-		code="${CODE}$(call_procedure ${DATA_ADDR_V} ${CURRENT_RIP} | base64 -d | toHexDump)";
+		code="${CODE}$(call_procedure ${DATA_ADDR_V} ${CURRENT_RIP} | b64_to_hex_dump)";
 		code="${code}${MOV_V8_RAX}$(printEndianValue $SYS_WRITE $SIZE_64BITS_8BYTES)";
 		code="${code}${MOV_R9_RDX}"
 		code="${code}${MOV_V8_RDI}$(printEndianValue $OUT $SIZE_64BITS_8BYTES)";
@@ -1114,11 +1139,6 @@ function system_call_fork()
 	CODE="${CODE}${SYSCALL}";
 	echo -en "${CODE}" | base64 -w0;
 	echo -en ",$(echo -en "${CODE}" | wc -c )";
-}
-
-function toHexDump()
-{
-	xxd --ps | sed "s/\(..\)/\\\\x\1/g" | tr -d '\n'
 }
 
 function system_call_pipe()
@@ -1181,7 +1201,7 @@ function system_call_exec()
 	if [ "$pipe_addr" != "" ]; then
 		pipe_in="$pipe_addr";
 		pipe_out="$((pipe_addr + 4))";
-		dup2_child="$(system_call_dup2 "$pipe_out" "$stdout" | base64 -d | toHexDump)";
+		dup2_child="$(system_call_dup2 "$pipe_out" "$stdout" | b64_to_hex_dump)";
 		# read_pipe will run on the parent pid.
 		read_pipe="${read_pipe}${MOV_V4_RAX}$(printEndianValue "${SYS_READ}" "${SIZE_32BITS_4BYTES}")";
 		read_pipe="${read_pipe}${MOV_V4_RDI}$(printEndianValue "${pipe_in}" "${SIZE_32BITS_4BYTES}")${MOV_EDI_EDI}"; # fd
@@ -1211,7 +1231,7 @@ function system_call_exec()
 		exec_code="${exec_code}${MOV_RDI_RDI}";
 	fi;
 
-	exec_code="${exec_code}${MOV_RSI}$(printEndianValue ${PTR_ARGS:=0} ${SIZE_64BITS_8BYTES})"
+	exec_code="${exec_code}${MOV_V8_RSI}$(printEndianValue ${PTR_ARGS:=0} ${SIZE_64BITS_8BYTES})"
 
 	exec_code="${exec_code}${MOV_V8_RDX}$(printEndianValue ${PTR_ENV:=0} ${SIZE_64BITS_8BYTES})" # const char *const envp[]
 
@@ -1222,21 +1242,20 @@ function system_call_exec()
 	
 	local pipe_code="";
 	if [ "$pipe_addr" != "" ]; then
-		local pipe_code=$(system_call_pipe "${pipe_addr}"| base64 -d | toHexDump);
+		local pipe_code=$(system_call_pipe "${pipe_addr}"| b64_to_hex_dump);
 	fi;
 	# start fork code
-	local fork_code="$(system_call_fork | cut -d, -f1 | base64 -d | toHexDump)";
+	local fork_code="$(system_call_fork | cut -d, -f1 | b64_to_hex_dump)";
 	# TODO: CMP ? then (0x3d) rAx, lz
 	local TWOBYTE_INSTRUCTION_PREFIX="\0f"; # The first byte "0F" is the opcode for the two-byte instruction prefix that indicates the following instruction is a conditional jump.
-	local ModRM="$( printEndianValue $(( MODRM_MOD_DISPLACEMENT_REG + MODRM_OPCODE_CMP + RAX )) $SIZE_8BITS_1BYTE)";
-	fork_code="${fork_code}${CMP}${ModRM}\x00"; # 64bit cmp rax, 00
+	fork_code="${fork_code}${CMP_RAX_V1}\x00"; # 64bit cmp rax, 00
 	# rax will be zero on child, on parent will be the pid of the forked child
 	# so if non zero (on parent) we will jump over the sys_execve code to not run it twice,
 	# and because it will exit after run
 	CODE_TO_JUMP="$(printEndianValue "$(echo -en "${dup2_child}${exec_code}" | wc -c)" ${SIZE_32BITS_4BYTES})" # 45 is the number of byte instructions of the syscall sys_execve (including the MOV (%rdi), %rdi.
 	fork_code="${fork_code}${JNE}${CODE_TO_JUMP}"; # The second byte "85" is the opcode for the JNE instruction. The following four bytes "06 00 00 00" represent the signed 32-bit offset from the current instruction to the target label.
 	# end fork code
-	local wait_code="$(system_call_wait4 | base64 -d | toHexDump)";
+	local wait_code="$(system_call_wait4 | b64_to_hex_dump)";
 
 	code="${pipe_code}${fork_code}${dup2_child}${exec_code}${wait_code}${read_pipe}";
 	echo -en "${code}" | base64 -w0;
@@ -1282,7 +1301,7 @@ function get_arg()
 	# MOV %RSP %RSI
 	CODE="${CODE}${MOV_RSP_RSI}";
 	# ADD RSI 8
-	CODE="${CODE}${ADD_RSI}$(printEndianValue $(( 8 * (1 + ARGN) )) ${SIZE_8BITS_1BYTE})";
+	CODE="${CODE}$(add $(( 8 * (1 + ARGN) )) rsi | b64_to_hex_dump)";
 	ADD_R15_RAX="\x4C\x01\xF8";
 	ADD_R15_RSI="\x4C\x01\xFE";
 	CODE="${CODE}${ADD_R15_RSI}";
@@ -1306,13 +1325,13 @@ concat_symbol_instr(){
 	local idx="$4";
 	local code="";
 	local mmap_size_code="$( echo -en "${MOV_V4_RSI}$(printEndianValue $(( 4 * 1024 )) ${SIZE_32BITS_4BYTES})" | base64 -w0)";
-	local mmap_code="$(sys_mmap "${mmap_size_code}" | base64 -d | toHexDump)"
+	local mmap_code="$(sys_mmap "${mmap_size_code}" | b64_to_hex_dump)"
 	# unable to move addr to addr;
 	# so let's mov addr to a reg,
 	# then reg to addr;
 	if [ "$idx" == 1 ]; then # on first item zero r8 to accum the size
 		code="${code}${XOR_R8_R8}";
-		code="${code}$(push R8 | base64 -d | toHexDump)"; # create zeroed target space at stack;
+		code="${code}$(push R8 | b64_to_hex_dump)"; # create zeroed target space at stack;
 		code="${code}${MOV_RSP_ADDR4}$(printEndianValue "${dyn_addr}" ${SIZE_32BITS_4BYTES})";
 	fi;
 	if [ "$size" -eq -1 ]; then
@@ -1424,7 +1443,7 @@ function bind()
 	code="${code}${MOV_RAX_RDX}";
 	code="${code}${MOV_RAX_RSI}";
 	code="${code}\x48\x8d\x3d\x04\x00\x00\x00";# lea rdi,[rel 0xb]
-	code="${code}${ADD_AL}${SYS_EXECVE}"
+	code="${code}$(add ${SYS_EXECVE} AL | b64_to_hex_dump)";
 	code="${code}${SYSCALL}";
 	code="${code}\x2f\x62\x69\x6e\x2f\x73\x68\x00\xcc\x90\x90\x90";
 #  https://github.com/0x00pf/0x00sec_code/blob/master/mem_inject/infect.
@@ -1469,10 +1488,10 @@ array_add(){
 	local item_value="$5";
 	local code="";
 	if [ "$item_addr" == "" ]; then
-		code="${code}$(push_v_stack $item_value | base64 -d | toHexDump)";
+		code="${code}$(push_v_stack $item_value | b64_to_hex_dump)";
 	else
 		code="${code}${MOV_V4_RAX}$(printEndianValue "${item_addr}" $SIZE_32BITS_4BYTES)";
-		code="${code}$(push RAX | base64 -d | toHexDump)";
+		code="${code}$(push RAX | b64_to_hex_dump)";
 	fi;
 	echo -ne "${code}" | base64 -w0;
 }
@@ -1485,7 +1504,7 @@ array_end(){
 	code="${code}${ADD_V1_RAX}$(printEndianValue $(( array_size * 8 -8)) $SIZE_8BITS_1BYTE)";
 	code="${code}${MOV_RAX_ADDR4}$(printEndianValue "$array_addr" $SIZE_32BITS_4BYTES)";
 	# put the array size in the stack
-	code="${code}$(push_v_stack $array_size | base64 -d | toHexDump)";
+	code="${code}$(push_v_stack $array_size | b64_to_hex_dump)";
 	echo -ne "${code}" | base64 -w0;
 }
 sys_geteuid(){
@@ -1497,3 +1516,117 @@ sys_geteuid(){
 	code="${code}${MOV_RAX_ADDR4}$(printEndianValue "${addr}" $SIZE_32BITS_4BYTES)";
 	echo -en "${code}" | base64 -w0;
 }
+
+
+div10(){
+	local code="";
+	# 0xcccccccd is the float value for 0.1;
+	# ba cd cc cc cc       	mov    $0xcccccccd,%edx
+	local float_by_10="\xcd\xcc\xcc\xcc";
+	MOV_V4_EDX="\xba";
+	code="${code}${MOV_V4_EDX}${float_by_10}";
+	# 48 0f af c2          	imul   %rdx,%rax
+	IMUL_RDX_RAX="\x48\x0f\xaf\xc2";
+	code="${code}${IMUL_RDX_RAX}";
+	echo -ne "$code" | base64 -w0;
+}
+
+mod10(){
+	local code="";
+	code="${code}$(div10 | b64_to_hex_dump)";
+	# shr    $0x23,%rax
+	SHR_V1_RAX="\x48\xc1\xe8";
+	code="${code}${SHR_V1_RAX}\x23";
+	# lea    (%rax,%rax,4),%eax
+	LEA_RAX_RAX_4="\x8d\x04\x80";
+	code="${code}${LEA_RAX_RAX_4}";
+	# add    %eax,%eax
+	ADD_EAX_EAX="\x01\xc0";
+	code="${code}${ADD_EAX_EAX}";
+	echo -en "$code" | base64 -w0;
+}
+
+# log do a log operation over a base on rax and put the result in the register passed as arg $2
+# the result is float 
+log(){
+	# CVTSI2SD Convert Signed Integer to Scalar Double Precision Floating-Point
+	#F20F2AC6 	cvtsi2sd %esi,%xmm0
+	# CVTTSD2SI — Convert With Truncation Scalar Double Precision Floating-Point Value to SignedInteger
+	:
+	CVTTSD2SI_XMM0_ESI="\xF2\x0F\x2C\xF0";
+}
+
+
+# get the most significant bit index from r1 value and put the result in r2
+bsr(){
+	local r1="$1";
+	local r2="$2";
+	local code="";
+	local rc=$(( ( 2#11 << 6 ) + ( 2#${r2^^} << 3 ) + ( 2#${r1^^} ) ));
+	BSR="\x48\x0F\xBD${rc}";
+	echo -ne "$code" | base64 -w0;
+}
+
+# ilog10 do a log operation over a base on rax and put the result in the register passed as arg $2
+# the result is integer truncated with cvttsd2si
+# registers need: 2
+# r1: value
+# 	input: value to process;
+# 	behavior: used to count bits with bsr instruction
+# 	output: no change;
+# r2: bit count
+# 	input: unused;
+# 	behavior: is a work register where the bsr will set the bit count
+# 	output: will return the count bits of the value
+# r3: max_bit_val_ilog10 address / integer log base 10
+# 	input: address value pointer to to max_bit_val_ilog10
+# 	behavior: will be incremented by the number of bits to point at the log10 integer value;
+# 		echo "[$(for (( i=0; i<63; i++)); do [ $i -gt 0 ] && echo -n ,; v=$(( 2 ** i )); l=$(echo "scale=1;l($v)/l(10)" | bc -l); l=${l/.*/}; echo -n ${l:=0}; done )]";
+#		[0,0,0,0,1,1,1,2,2,2,3,3,3,3,4,4,4,5,5,5,6,6,6,6,7,7,7,8,8,8,9,9,9,9,10,10,10,11,11,11,12,12,12,12,13,13,13,14,14,14,15,15,15,15,16,16,16,17,17,17,18,18,18]
+# 	output: log10 integer value at base 10
+ilog10(){
+	local r1=$1;
+	local r2=$2;
+	local r3=$3;
+	local code="";
+	# bsr rbx, esi		# count bits into rbx
+	code="${code}$(bsr $r2 $r1 | b64_to_hex_dump)";
+	# movzx   eax, BYTE PTR max_bit_val_ilog10[1+rax] # movzx (zero extend, set the byte and fill with zeroes the remaining bits)
+	code="${code}$(add $r2 $r3 | b64_to_hex_dump)";
+	echo -en "$code" | base64 -w0;
+}
+
+# i2s integer to string
+i2s(){
+	local int_symbol_value="$1";
+	local int_symbol_type="$2";
+	local str_addr="$2";
+	local code="";
+	if [ "$int_symbol_type" == $SYMBOL_TYPE_DYNAMIC ]; then
+		code="${code}${MOV_ADD4_RAX}$(printEndianValue "${int_symbol_value}" $SIZE_32BITS_4BYTES)";
+	elif [ "$int_symbol_type" == $SYMBOL_TYPE_HARD_CODED ]; then
+		code="${code}${MOV_V4_RAX}$(printEndianValue "${int_symbol_value}" $SIZE_32BITS_4BYTES)";
+	else
+		error not implemented;
+		code="${code}${MOV_ADD4_RAX}$(printEndianValue "${int_symbol_value}" $SIZE_32BITS_4BYTES)";
+	fi;
+	# mov log10(rax) + 1, %rsi;	# 4;
+	code="${code}$(ilog10 rax rdx rsi | b64_to_hex_dump)";
+	code="${code}${INC_RSI}";
+	# do:	# for 3123 will run 4 times:	# [ 1,		2,	3,	4	];
+	# 	mov %rax mod 10, %rcx;		# [ 3,		2,	1,	3	];
+	code="${code}$(module10 rcx | b64_to_hex_dump)";
+	# 	sub rax, rcx;			# [ 3120,	310,	30,	0	];
+	code="${code}$(sub rax rcx | b64_to_hex_dump)";
+	# 	mov %rcx + 0x30, %rdx;		# [ "3",	"2",	"1",	"3"	];
+	# 	mov %rdx, memory + %rsi
+	# 	dec %rsi
+	# 	div %rax, 10
+	code="${code}$(div10 | b64_to_hex_dump)";
+	# 	cmp %rax, 0
+	code="${code}${CMP_RAX}"
+	#code="${code}${CMP_RAX}0";
+	# 	jg do
+	echo -en "$code" | base64 -w0;
+}
+

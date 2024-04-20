@@ -31,3 +31,9 @@ decode_b64_csv_to_array() {
 	done;
 	echo -n "${a[@]}";
 }
+
+function b64_to_hex_dump()
+{
+	base64 -d | xxd --ps | sed "s/\(..\)/\\\\x\1/g" | tr -d '\n'
+}
+
