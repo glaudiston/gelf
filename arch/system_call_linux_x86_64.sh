@@ -354,9 +354,14 @@ add(){
 	if is_register "$r1"; then
 	{
 		if is_register "$r2"; then
-			code="ADD";
+		{
+			local opadd="\x01";
+			local rv=$(( MODRM_MOD_DISPLACEMENT_REG + MODRM_OPCODE_ADD + (${r1^^} << 3) + ${r2^^} ));
+			r=$(printEndianValue $rv $SIZE_8BITS_1BYTE);
+			code="${code}${opadd}${r}";
 			echo -en "${code}" | base64 -w0;
 			return;
+		}
 		fi;
 	}
 	elif is_valid_number "$r1"; then
@@ -635,7 +640,6 @@ function sys_mmap()
 	#    mov rsi, size  ; length
 	#
 	# recover size
-	debug "sys_mmap size=$size"
 	local mmap_size_code="$(echo "$size" | b64_to_hex_dump)";
 	# CODE="${CODE}${MOV_RSI}$(printEndianValue ${mmap_size} ${SIZE_64BITS_8BYTES})";
 	#if pagesize > size {
@@ -1568,8 +1572,9 @@ bsr(){
 	local r1="$1";
 	local r2="$2";
 	local code="";
-	local rc=$(( ( 2#11 << 6 ) + ( 2#${r2^^} << 3 ) + ( 2#${r1^^} ) ));
-	BSR="$(rex | b64_to_hex_dump)\x0F\xBD${rc}";
+	local rc=$(( ( 2#11 << 6 ) + ( ${r2^^} << 3 ) + ( ${r1^^} ) ));
+	BSR="$(rex $r2 $r1 | b64_to_hex_dump)\x0F\xBD$(printEndianValue ${rc} $SIZE_8BITS_1BYTE)";
+	code="${code}${BSR}"
 	echo -ne "$code" | base64 -w0;
 }
 
@@ -1595,8 +1600,11 @@ ilog10(){
 	local r2=$2;
 	local r3=$3;
 	local code="";
+	r1="${r1:=rax}";
+	r2="${r2:=rdx}";
+	r4="${r3:=rsi}";
 	# bsr rbx, esi		# count bits into rbx
-	code="${code}$(bsr $r2 $r1 | b64_to_hex_dump)";
+	code="${code}$(bsr "$r2" "$r1" | b64_to_hex_dump)";
 	# movzx   eax, BYTE PTR max_bit_val_ilog10[1+rax] # movzx (zero extend, set the byte and fill with zeroes the remaining bits)
 	code="${code}$(add $r2 $r3 | b64_to_hex_dump)";
 	echo -en "$code" | base64 -w0;

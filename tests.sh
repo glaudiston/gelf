@@ -442,7 +442,7 @@ test_ilog10(){
 	local n=$RANDOM;
 	local l=$(echo "scale=0; l($n)" | bc -l)
 	compile_test <<EOF
-:	c	[]	.ilog	10	$n
+:	c	[]	.ilog10	$n
 :	x	!	c
 !	sys_exit	x
 EOF

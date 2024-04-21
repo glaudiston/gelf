@@ -40,6 +40,7 @@ SNIPPET_COLUMN_SOURCE_CODE=10;
 SNIPPET_COLUMN_SOURCE_LINES_COUNT=11;
 SNIPPET_COLUMN_USAGE_COUNT=12;
 SNIPPET_COLUMN_RETURN=13;
+SNIPPET_COLUMN_DEPENDENCIES=14;
 
 SNIPPET_PARSER_ERROR_INVALID_SNIPPET_TYPE=1
 SNIPPET_PARSER_ERROR_INVALID_SNIPPET_UNSUPPORTED_UNSTRUCTION=2
@@ -129,6 +130,7 @@ struct_parsed_snippet(){
 	local snippet_usages=0
 
 	local snippet_return="$(eval echo -n \${$SNIPPET_COLUMN_RETURN})";
+	local snippet_dependencies="$(eval echo -n \${$SNIPPET_COLUMN_DEPENDENCIES})";
 
 	local snippet_result="";
 	snippet_result="${snippet_result}${snippet_type}";
@@ -144,6 +146,7 @@ struct_parsed_snippet(){
 	snippet_result="${snippet_result},${snippet_source_lines_count}"
 	snippet_result="${snippet_result},${snippet_usages}";
 	snippet_result="${snippet_result},${snippet_return}";
+	snippet_result="${snippet_result},${snippet_dependencies}";
 
 	local snippet_output_lines=$(echo "${snippet_result}" | wc -l)
 	if ! [ "${snippet_output_lines}" -eq 1 ]; then

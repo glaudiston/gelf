@@ -364,10 +364,16 @@ get_b64_symbol_value()
 	if [ "${symbol_data}" == "" ]; then
 	{
 		# check syscalls that returns data
-		if is_internal_function $symbol_name; then
+		if is_system_function "${symbol_name}"; then
 			out=$(echo -n "$symbol_name" | base64 -w0);
 			outsize=$(echo -n "${out}" | base64 -d | wc -c)
 			echo -n ${out},${outsize},${SYMBOL_TYPE_SYSCALL}
+			return 1;
+		fi;
+		if is_internal_function "${symbol_name}"; then
+			out=$(echo -n "$symbol_name" | base64 -w0);
+			outsize=$(echo -n "${out}" | base64 -d | wc -c);
+			echo -n ${out},${outsize},${SYMBOL_TYPE_SYSCALL},0
 			return 1;
 		fi;
 		error "Expected a integer or a valid variable/constant. But got [$symbol_name][$SNIPPETS]"
@@ -946,8 +952,17 @@ define_variable_from_test()
 	return;
 }
 
+# returns internal function list used
+# returns array definition bytecode
 define_array_variable(){
 	local instr_bytes="";
+	local first_item_idx=$(( deep + 2 ));
+	local first_item="${code_line_elements[$first_item_idx]}";
+	local dependencies="";
+	if is_function "$first_item"; then
+		dependencies="${first_item}";
+		debug "setting deps for array to $dependencies"
+	fi;
 	for (( i=$(( ${#code_line_elements[@]} -1 )); i>$((deep + 1)); i-- ));
 	do
 		local symbol_name=$(echo -n "${code_line_elements[$i]}");
@@ -968,6 +983,9 @@ define_array_variable(){
 	local instr_len=$(echo -n "$instr_bytes" | base64 -d | wc -c);
 	local data_bytes="";
 	local data_len=$(( array_size * 8 ));
+	local usage_count=0;
+	local return_value="";
+	local source_line_count=1;
 	struct_parsed_snippet \
 		"SYMBOL_TABLE" \
 		"${SYMBOL_TYPE_ARRAY}" \
@@ -979,10 +997,14 @@ define_array_variable(){
 		"${data_bytes}" \
 		"${data_len}" \
 		"${CODE_LINE_B64}" \
-		"1";
+		"${source_line_count}" \
+		"${usage_count}" \
+		"${return_value}" \
+		"${dependencies}";
 	return;
 }
 
+# operation system calls
 is_system_function(){
 	local YES=0;
 	local NO=1;
@@ -993,19 +1015,18 @@ is_system_function(){
 	return $NO
 }
 
+# functions coded by the gelf language that will have and address to be called as a function
 is_internal_function(){
 	local YES=0;
 	local NO=1;
 	local symbol_name="$1";
-	if is_system_function $symbol_name; then
-		return $YES
-	fi;
-	if [[ "$symbol_name" =~ ^(.ilog|ret|goto)$ ]]; then
+	if [[ "$symbol_name" =~ ^(.ilog10)$ ]]; then
 		return $YES;
 	fi;
 	return $NO;
 }
 
+# functions defined by user source code
 is_user_function(){
 	local YES=0;
 	local NO=1;
@@ -1321,6 +1342,10 @@ parse_code_bloc(){
 		awk '{s+=$1}END{print s}'
 	)";
 	local bloc_source_lines_count=$(( innerlines +2 ))
+	local bloc_dependencies="$(echo "$recursive_parse"  |
+		cut -d, -f$SNIPPET_COLUMN_DEPENDENCIES | tr "," "\n" | sort | uniq | sed '/^$/d' | tr '\n' ',' | sed 's/,$//g';
+	)";
+	debug "bloc dependencies: $bloc_dependencies"
 	local instr_size_sum="$( echo "${instr_bytes}" |
 		base64 -d | wc -c |
 		awk '{s+=$1}END{print s}';
@@ -1349,6 +1374,8 @@ parse_code_bloc(){
 		base64 -d | wc -c |
 		awk '{s+=$1}END{print s}'
 	)";
+	local bloc_usage_count=0;
+	local bloc_return="";
 	out="$(struct_parsed_snippet \
 		"PROCEDURE_TABLE" \
 		"${SYMBOL_TYPE_PROCEDURE}" \
@@ -1360,7 +1387,10 @@ parse_code_bloc(){
 		"${data_bytes}" \
 		"${data_bytes_sum}" \
 		"${bloc_outer_code_b64}" \
-		"${bloc_source_lines_count}";
+		"${bloc_source_lines_count}" \
+		"${bloc_usage_count}"
+		"${bloc_return}" \
+		"${bloc_dependencies}";
 	)";
 	echo "$out";
 }
@@ -1488,8 +1518,8 @@ do_call(){
 		return;
 	}
 	fi;
-	if [[ "$second_elem" == .ilog ]]; then
-		do_ilog;
+	if [[ "$second_elem" == .ilog10 ]]; then
+		do_ilog10;
 		return;
 	fi;
 	# system calls related code
@@ -1646,8 +1676,8 @@ do_goto(){
 		"1";
 	return;
 }
-do_ilog(){
-	base="$third_elem"
+do_ilog10(){
+	base="10"
 	local target="${code_line_elements[$(( 4 + deep-1 ))]}";
 	debug "do ilog on base $base for the target $target"
 	target_offset="$( echo "$SNIPPETS" | grep "PROCEDURE_TABLE,[^,]*,${target}," | cut -d, -f${SNIPPET_COLUMN_INSTR_OFFSET} )";
@@ -1894,6 +1924,43 @@ detect_static_data_size_from_code()
 	echo ${static_data_size:=0}
 }
 
+create_internal_snippet(){
+	symbol_name="$1";
+	local SNIPPETS="$2";
+	if ! is_internal_function $symbol_name; then
+		error "not an internal function: [$symbol_name]";
+		return 1;
+	fi;
+	local snippet_type=$SYMBOL_TYPE_PROCEDURE;
+	local snippet_name="$symbol_name";
+	local instr_offset="$(get_instr_offset)";
+	local instr_bytes="$(ilog10)";
+	local instr_size="$(echo $instr_bytes | base64 -d | wc -c)";
+	local static_data_offset="$(get_dynamic_data_size "${SNIPPETS}")"
+	local data_bytes="";
+	local data_bytes_sum=0;
+	local bloc_outer_code_b64="";
+	local bloc_source_lines_count=0;
+	local bloc_usage_count=1;
+	local bloc_return="";
+	local bloc_dependencies="";
+	struct_parsed_snippet \
+		"PROCEDURE_TABLE" \
+		"${snippet_type}" \
+		"${snippet_name}" \
+		"${instr_offset}" \
+		"${instr_bytes}" \
+		"${instr_size}" \
+		"${static_data_offset}" \
+		"${data_bytes}" \
+		"${data_bytes_sum}" \
+		"${bloc_outer_code_b64}" \
+		"${bloc_source_lines_count}" \
+		"${bloc_usage_count}" \
+		"${bloc_return}" \
+		"${bloc_dependencies}";
+}
+
 # Round exists because parse_snippets can only trust addresses in final round.
 # We can use it to get control of address changes like to detect the args memory spot
 ROUND_FIRST=1
@@ -1928,7 +1995,14 @@ write_elf()
 	local static_data_size=0;
 	local snippets_file="${ELF_FILE_OUTPUT}.snippets";
 	local snippets=$(echo "${INPUT_SOURCE_CODE}" | parse_snippets "${ROUND_FIRST}" "${PH_VADDR_V}" "${INSTR_TOTAL_SIZE-0}" "${static_data_size}");
-	echo -n "$snippets" > $snippets_file;
+	local dependencies="$(echo "$snippets" |
+		cut -d, -f$SNIPPET_COLUMN_DEPENDENCIES | tr "," "\n" | sort | uniq | sed '/^$/d';
+	)";
+	local internal_dependencies=$(echo "$dependencies" | while read dep; do if is_internal_function $dep; then echo $dep; fi; done)
+	debug "internal dependencies: [$internal_dependencies]";
+	local internal_snippets=$(echo "$internal_dependencies" | while read dep; do create_internal_snippet "$dep" "$snippets"; done);
+	echo -e "${internal_snippets}\n${snippets}" > $snippets_file;
+	echo -e "${internal_snippets}\n${snippets}" > $snippets_file.x;
 	# now we have the all information parsed
 	# but the addresses are just offsets
 	# we need to redo to replace the addresses references
