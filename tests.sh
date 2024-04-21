@@ -395,7 +395,8 @@ EOF
 	expect $? 0 "ab" "$o"
 }
 
-test_fibonacci_generate(){
+test_fibonacci_generate()
+{
 	compile_test <<EOF
 :	stdout	1
 :	fib	{
@@ -422,7 +423,8 @@ EOF
 	expect $? 0
 }
 
-test_sys_geteuid(){
+test_sys_geteuid()
+{
 	compile_test <<EOF
 :	stdout	1
 :	uid	!	sys_geteuid
@@ -440,7 +442,8 @@ test_ilog10(){
 	local n=$RANDOM;
 	local l=$(echo "scale=0; l($n)" | bc -l)
 	compile_test <<EOF
-:	x:	.ilog	10	$n
+:	c	[]	.ilog	10	$n
+:	x	!	c
 !	sys_exit	x
 EOF
 	o=$(run_test);

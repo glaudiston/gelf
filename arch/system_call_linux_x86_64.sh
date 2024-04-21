@@ -78,6 +78,16 @@
 #
 . arch/system_call_linux_x86.sh
 
+
+is_r8_to_r15(){
+	local reg="$1";
+	if [[ "${reg,,}" =~ r([8-9]|1[0-5]) ]]; then
+		return 0;
+	fi;
+	return 1;
+}
+
+
 # THE REX PREFFIX:
 #  REX prefix is optional, without it the code will be 32bit.
 #  REX prefix determines the addressing size and extensions.
@@ -307,14 +317,6 @@ is_register(){
 		return 1
 	fi;
 	return 0;
-}
-
-is_r8_to_r15(){
-	local reg="$1";
-	if [[ "${reg,,}" =~ r([8-9]|1[0-5]) ]]; then
-		return 0;
-	fi;
-	return 1;
 }
 
 # add: given a value or a register on r1, add it to r2

@@ -364,7 +364,7 @@ get_b64_symbol_value()
 	if [ "${symbol_data}" == "" ]; then
 	{
 		# check syscalls that returns data
-		if [ "$symbol_name" == "sys_geteuid" ]; then
+		if is_internal_function $symbol_name; then
 			out=$(echo -n "$symbol_name" | base64 -w0);
 			outsize=$(echo -n "${out}" | base64 -d | wc -c)
 			echo -n ${out},${outsize},${SYMBOL_TYPE_SYSCALL}
@@ -983,15 +983,56 @@ define_array_variable(){
 	return;
 }
 
-is_function_symbol(){
+is_system_function(){
 	local YES=0;
 	local NO=1;
 	local symbol_name="$1";
+	if [[ "$symbol_name" =~ ^(sys_write|sys_exit|sys_geteuid)$ ]]; then
+		return $YES
+	fi;
+	return $NO
+}
+
+is_internal_function(){
+	local YES=0;
+	local NO=1;
+	local symbol_name="$1";
+	if is_system_function $symbol_name; then
+		return $YES
+	fi;
+	if [[ "$symbol_name" =~ ^(.ilog|ret|goto)$ ]]; then
+		return $YES;
+	fi;
+	return $NO;
+}
+
+is_user_function(){
+	local YES=0;
+	local NO=1;
+	local symbol_name="$1";
+	local SNIPPETS="$2";
 	local symbol_data=$(get_b64_symbol_value "${symbol_name}" "${SNIPPETS}");
 	local symbol_type=$(echo "${symbol_data}" | cut -d, -f${B64_SYMBOL_VALUE_RETURN_TYPE});
 	if [ "$symbol_type" == "$SYMBOL_TYPE_PROCEDURE" ]; then
 		return $YES
 	fi
+	return $NO
+}
+
+is_function(){
+	local YES=0;
+	local NO=1;
+	local symbol_name="$1";
+	local snippets="$2";
+	if \
+		is_system_function $symbol_name || 
+		is_internal_function $symbol_name ||
+		is_user_function "$symbol_name" "${SNIPPETS}";
+	then
+		debug "$symbol_name is a function"
+		return $YES
+	fi;
+	debug "$symbol_name is NOT a function";
 	return $NO
 }
 # is_function_call: given a symbol name of type array, check the first array item if it is a procedure that can be executed with a direct bytecode call
@@ -1013,13 +1054,14 @@ is_function_call(){
 		return $YES;
 	fi;
 	if [ "$symbol_type" == $SYMBOL_TYPE_ARRAY ]; then
+		debug "testing array $symbol_name for function call"
 		# check if the first item at the array is a function
 		first_array_arg=$(echo $symbol_source_code | base64 -d| cut -d: -f2- | cut -f4);
-		if is_function_symbol "$first_array_arg"; then
+		if is_function "$first_array_arg"; then
 			return $YES;
 		fi
 	fi;
-	if is_function_symbol "$symbol_name"; then
+	if is_function "$symbol_name"; then
 		$YES
 	fi;
 	return $NO;
@@ -1037,6 +1079,7 @@ get_jmp_size(){
 }
 
 define_variable_from_fn(){
+	local SNIPPETS="${SNIPPETS}";
 	local target="${code_line_elements[$(( 3 + deep-1 ))]}";
 	local retval_addr="${dyn_data_offset}";
 	if [[ "$target" == sys_geteuid ]]; then
@@ -1045,7 +1088,7 @@ define_variable_from_fn(){
 		data_len=8;
 		data_bytes="";
 	}
-	elif is_function_symbol "$target"; then
+	elif is_user_function "$target" "${SNIPPETS}"; then
 	{
 		target_offset="$( echo "$SNIPPETS" | grep "PROCEDURE_TABLE,[^,]*,${target}," | cut -d, -f${SNIPPET_COLUMN_INSTR_OFFSET} )";
 		local jmp_size=$(get_jmp_size "${SNIPPETS}" "${target}" );
@@ -1152,8 +1195,10 @@ define_variable(){
 		# TODO: if the first array position is a function
 		local array_symbol="${code_line_elements[$((3 + deep - 1))]}";
 		if is_function_call $array_symbol "${SNIPPETS}"; then
-			define_variable_from_fn;
+			debug "call function $array_symbol"
+			define_variable_from_fn "${SNIPPETS}";
 		else
+			debug "exec external command $array_symbol"
 			define_variable_from_exec;
 		fi;
 		return;
@@ -1430,6 +1475,7 @@ snippet_write()
 
 do_call(){
 	local third_elem="${code_line_elements[$(( 2 + deep-1 ))]}";
+	# internal function calls
 	if [[ "$second_elem" == ret ]]; then
 	{
 		do_ret;
@@ -1441,6 +1487,10 @@ do_call(){
 		do_goto;
 		return;
 	}
+	fi;
+	if [[ "$second_elem" == .ilog ]]; then
+		do_ilog;
+		return;
 	fi;
 	# system calls related code
 	if [[ "$second_elem" == sys_write ]]; then
@@ -1596,6 +1646,28 @@ do_goto(){
 		"1";
 	return;
 }
+do_ilog(){
+	base="$third_elem"
+	local target="${code_line_elements[$(( 4 + deep-1 ))]}";
+	debug "do ilog on base $base for the target $target"
+	target_offset="$( echo "$SNIPPETS" | grep "PROCEDURE_TABLE,[^,]*,${target}," | cut -d, -f${SNIPPET_COLUMN_INSTR_OFFSET} )";
+	jmp_result="$(jump "$((target_offset + 2))" "${instr_offset}" )";
+	jmp_bytes="$(echo "${jmp_result}" | cut -d, -f1)";
+	jmp_len="$(echo "${jmp_result}" | cut -d, -f2)";
+	struct_parsed_snippet \
+		"SNIPPET_CALL" \
+		"${SYMBOL_TYPE_PROCEDURE}" \
+		"jmp" \
+		"${instr_offset}" \
+		"${jmp_bytes}" \
+		"${jmp_len}" \
+		"${static_data_offset}" \
+		"" \
+		"0" \
+		"${CODE_LINE_B64}" \
+		"1";
+	return;
+}
 do_ret(){
 	local symbol_id="$third_elem";
 	local instr_bytes="";
@@ -1715,6 +1787,7 @@ parse_snippet()
 	local current_static_data_address=$((zero_data_offset + static_data_displacement));
 	local static_data_offset=$current_static_data_address;
 	local dyn_data_offset="$(( zero_data_offset + static_data_size + dynamic_data_offset))";
+
 	if [ "$CODE_LINE" == "" ]; then
 	{
 		empty_line;
@@ -1733,7 +1806,7 @@ parse_snippet()
 		return
 	}
 	fi;
-	# user defined calls
+	# calls to internal, system or user functions
 	if [[ "$first_elem" == ! ]]; then
 	{
 		do_call;
