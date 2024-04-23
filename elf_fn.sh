@@ -256,13 +256,13 @@ print_elf_body()
 		do
 			local dt=$(echo -en "$d" | cut -d, -f${SNIPPET_COLUMN_TYPE});
 			local ds=$(echo -en "$d" | cut -d, -f$SNIPPET_COLUMN_DATA_LEN);
-			local dbl=$(echo -en "$d" | cut -d, -f$SNIPPET_COLUMN_DATA_BYTES | base64 -d | wc -c);
-			if [ "$dt" == "SYMBOL_TABLE" ]; then
-				if [ "${ds:=0}" -gt 0 -a "${dbl:=0}" -gt 0 ]; then # avoid hard coded values
-					echo -en "$d" | cut -d, -f$SNIPPET_COLUMN_DATA_BYTES;
-					echo -en "\x00" | base64 -w0; # ensure a null byte to split data
-					let static_data_count++;
-				fi;
+			local symbol_name=$(echo -en "$d" | cut -d, -f$SNIPPET_COLUMN_SUBNAME);
+			local symbol_data=$(echo -en "$d" | cut -d, -f$SNIPPET_COLUMN_DATA_BYTES);
+			local dbl=$( echo $symbol_data | base64 -d | wc -c);
+			if ! is_hard_coded_value "$symbol_data" "$symbol_name"; then
+				echo -en "$d" | cut -d, -f$SNIPPET_COLUMN_DATA_BYTES;
+				echo -en "\x00" | base64 -w0; # ensure a null byte to split data
+				let static_data_count++;
 			fi;
 		done; 
 	)";
@@ -499,6 +499,8 @@ is_hard_coded_value()
 	local NO_ERR=0;
 	local ERR=1;
 	# TODO: implement a better way this one just work for numbers
+	# binary null values will report somethink like:
+	# elf_fn.sh: line 502: warning: command substitution: ignored null byte in input
 	local v="$(echo "$1" | base64 -d)";
 	local symbol_name="$2";
 	if [ "$v" == "" ];then
@@ -611,9 +613,6 @@ is_static_data_snippet()
 {
 	local snip="$1";
 	local snip_type=$(echo "$snip" | cut -d, -f"$SNIPPET_COLUMN_TYPE");
-	if [ "$snip_type" != SYMBOL_TABLE ]; then
-		return 1;
-	fi
 	local snip_data_bytes=$(echo "$snip" | cut -d, -f "$SNIPPET_COLUMN_DATA_BYTES");
 	if is_hard_coded_value "${snip_data_bytes}"; then
 		return 1;
@@ -645,6 +644,12 @@ count_static_data()
 	echo ${static_data_count:=0}
 }
 
+get_zero_data_offset()
+{
+	local PH_VADDR_V="$1";
+	local INSTR_TOTAL_SIZE="$2";
+	echo $(( PH_VADDR_V + EH_SIZE + PH_SIZE + INSTR_TOTAL_SIZE ));
+}
 get_current_static_data_displacement()
 {
 	local snippets="$1";
@@ -955,6 +960,7 @@ define_variable_from_test()
 # returns internal function list used
 # returns array definition bytecode
 define_array_variable(){
+	local dyn_data_offset="$1";
 	local instr_bytes="";
 	local first_item_idx=$(( deep + 2 ));
 	local first_item="${code_line_elements[$first_item_idx]}";
@@ -1103,6 +1109,8 @@ define_variable_from_fn(){
 	local SNIPPETS="${SNIPPETS}";
 	local target="${code_line_elements[$(( 3 + deep-1 ))]}";
 	local retval_addr="${dyn_data_offset}";
+	local data_len=8; # for now we don't know if the function does return values, so, consider that it always return something
+	local target_fn="$target";
 	if [[ "$target" == sys_geteuid ]]; then
 	{
 		instr_bytes="$(sys_geteuid "${dyn_data_offset}")";
@@ -1111,7 +1119,9 @@ define_variable_from_fn(){
 	}
 	elif is_user_function "$target" "${SNIPPETS}"; then
 	{
-		target_offset="$( echo "$SNIPPETS" | grep "PROCEDURE_TABLE,[^,]*,${target}," | cut -d, -f${SNIPPET_COLUMN_INSTR_OFFSET} )";
+		local target_fn_data=$(echo "$SNIPPETS" | grep "PROCEDURE_TABLE,[^,]*,${target},");
+		target_offset="$( echo $target_fn_data | cut -d, -f${SNIPPET_COLUMN_INSTR_OFFSET} )";
+		#data_len=$(echo $target_fn_data | cut -d, -f${SNIPPET_COLUMN_DATA_LEN});
 		local jmp_size=$(get_jmp_size "${SNIPPETS}" "${target}" );
 		instr_bytes="$(call_procedure "$((target_offset + jmp_size))" "${instr_offset}" "" "${retval_addr}")";
 		error "fn call not implemented";
@@ -1122,9 +1132,10 @@ define_variable_from_fn(){
 	{
 		local target_data="$( echo "$SNIPPETS" | grep "SYMBOL_TABLE,${SYMBOL_TYPE_ARRAY},${target}," )";
 		local symbol_source_code=$(echo $target_data | cut -d, -f${SNIPPET_COLUMN_SOURCE_CODE});
-		local target_fn=$(echo $symbol_source_code | base64 -d| cut -d: -f2- | cut -f4);
+		target_fn=$(echo $symbol_source_code | base64 -d| cut -d: -f2- | cut -f4);
 		local target_fn_data="$(echo "$SNIPPETS" | grep "PROCEDURE_TABLE,[^,]*,${target_fn},")";
 		local target_addr=$(echo $target_fn_data | cut -d, -f${SNIPPET_COLUMN_INSTR_OFFSET});
+		#data_len=$(echo $target_fn_data | cut -d, -f${SNIPPET_COLUMN_DATA_LEN});
 		local jmp_size=$(get_jmp_size "${SNIPPETS}" "${target_fn}" );
 		target_addr=$(( target_addr + jmp_size ));
 		instr_bytes="$(call_procedure "${target_addr}" "${instr_offset}" "${SYMBOL_TYPE_ARRAY}" "${retval_addr}")";
@@ -1147,6 +1158,7 @@ define_variable_from_fn(){
 }
 
 define_variable(){
+	local dyn_data_offset="$1";
 	# All variables, constants, macros are symbols and should be managed by a symbol table
 	# It should have name type, scope and memory address
 	# The compiler should updated that items in the first code read
@@ -1227,7 +1239,7 @@ define_variable(){
 	fi;
 	if [ "$sec_arg" == "[]" ]; then # exec and capture output into variable
 	{
-		define_array_variable;
+		define_array_variable "${dyn_data_offset}";
 		return;
 	}
 	fi;
@@ -1267,13 +1279,14 @@ define_variable(){
 }
 
 do_define(){
+	local dyn_data_offset="$1";
 	if [[ "${CODE_LINE_XXD}" =~ .*097b$ ]]; then # check if ends with ":\t{" ... so it's a code block function
 	{
 		define_code_block
 		return;
 	}
 	fi;
-	define_variable
+	define_variable "${dyn_data_offset}";
 }
 
 parse_code_bloc_instr(){
@@ -1701,6 +1714,7 @@ do_ilog10(){
 do_ret(){
 	local symbol_id="$third_elem";
 	local instr_bytes="";
+	local code_line="$CODE_LINE_B64";
 	if [ "${symbol_id}" != "" ]; then
 		local symbol_data=$(get_b64_symbol_value "${symbol_id}" "${SNIPPETS}");
 		local symbol_type=$(echo "${symbol_data}" | cut -d, -f${B64_SYMBOL_VALUE_RETURN_TYPE});
@@ -1720,7 +1734,7 @@ do_ret(){
 		"${static_data_offset}" \
 		"" \
 		"0" \
-		"${CODE_LINE_B64}" \
+		"${code_line}" \
 		"1";
 }
 do_exit(){
@@ -1810,8 +1824,7 @@ parse_snippet()
 	local CODE_LINE_B64=$( echo -n "${CODE_LINE}" | base64 -w0);
 	local previous_snippet=$( echo "${SNIPPETS}" | tail -1 );
 	local instr_offset=$(get_instr_offset "${previous_snippet}");
-	local dyn_data_size=$(get_dynamic_data_size "$SNIPPETS");
-	local zero_data_offset=$(( PH_VADDR_V + EH_SIZE + PH_SIZE + INSTR_TOTAL_SIZE ));
+	local zero_data_offset=$( get_zero_data_offset "$PH_VADDR_V" "$INSTR_TOTAL_SIZE" );
 	local dynamic_data_offset=$(get_current_dynamic_data_offset "${SNIPPETS}" "${CODE_LINE_B64}");
 	local static_data_displacement=$(get_current_static_data_displacement "${SNIPPETS}" "${CODE_LINE_B64}");
 	local current_static_data_address=$((zero_data_offset + static_data_displacement));
@@ -1832,7 +1845,7 @@ parse_snippet()
 	fi;
 	if [[ "$first_elem" == : ]]; then
 	{
-		do_define;
+		do_define "${dyn_data_offset}";
 		return
 	}
 	fi;
@@ -1925,8 +1938,10 @@ detect_static_data_size_from_code()
 }
 
 create_internal_snippet(){
-	symbol_name="$1";
+	local symbol_name="$1";
 	local SNIPPETS="$2";
+	local PH_VADDR_V="$3";
+	local INSTR_TOTAL_SIZE="$4";
 	if ! is_internal_function $symbol_name; then
 		error "not an internal function: [$symbol_name]";
 		return 1;
@@ -1934,11 +1949,29 @@ create_internal_snippet(){
 	local snippet_type=$SYMBOL_TYPE_PROCEDURE;
 	local snippet_name="$symbol_name";
 	local instr_offset="$(get_instr_offset)";
-	local instr_bytes="$(ilog10)";
+	local static_data_offset="$(( $(get_zero_data_offset "$PH_VADDR_V" "$INSTR_TOTAL_SIZE") + $(get_static_data_size "${SNIPPETS}") ))"
+	local ilog10_map_addr="$((static_data_offset))";
+	local ilog10_return_addr="${static_data_offset}";
+	local instr_bytes="$(ilog10 "" "" "${ilog10_map_addr}" "${ilog10_return_addr}")";
 	local instr_size="$(echo $instr_bytes | base64 -d | wc -c)";
-	local static_data_offset="$(get_dynamic_data_size "${SNIPPETS}")"
-	local data_bytes="";
-	local data_bytes_sum=0;
+	local jump_bytes="$(jump_relative $instr_size)";
+	instr_bytes=$(echo "$jump_bytes$instr_bytes");
+	instr_size="$(echo $instr_bytes | base64 -d | wc -c)";
+	local data_bytes="$(
+		for (( i=1; i<63; i++));
+		do
+			v=$(( 2 ** i ));
+			l=$(echo "scale=8;l($v)/l(10)" | bc -l);
+			l=${l/.*/};
+			printf %02x ${l:=0};
+		done | xxd --ps -r | base64 -w0;
+		for (( i=0; i<19; i++ ));
+		do
+			v=$(( 10 ** i ));
+			echo -en "$(printEndianValue ${v} $SIZE_64BITS_8BYTES)" | base64 -w0;
+		done;
+	)";
+	local data_bytes_sum=$(echo $data_bytes | base64 -d | wc -c);
 	local bloc_outer_code_b64="";
 	local bloc_source_lines_count=0;
 	local bloc_usage_count=1;
@@ -2000,18 +2033,20 @@ write_elf()
 	)";
 	local internal_dependencies=$(echo "$dependencies" | while read dep; do if is_internal_function $dep; then echo $dep; fi; done)
 	debug "internal dependencies: [$internal_dependencies]";
-	local internal_snippets=$(echo "$internal_dependencies" | while read dep; do create_internal_snippet "$dep" "$snippets"; done);
+	local internal_snippets=$(echo "$internal_dependencies" | while read dep; do create_internal_snippet "$dep" "$snippets" "$PH_VADDR_V" "${INSTR_TOTAL_SIZE-0}"; done);
 	echo -e "${internal_snippets}\n${snippets}" > $snippets_file;
-	echo -e "${internal_snippets}\n${snippets}" > $snippets_file.x;
+	echo -e "${internal_snippets}\n${snippets}" > $snippets_file.round1;
 	# now we have the all information parsed
 	# but the addresses are just offsets
 	# we need to redo to replace the addresses references
 	debug ==== second parse round ====;
 	local INSTR_TOTAL_SIZE=$(detect_instruction_size_from_code "${snippets_file}");
 	local static_data_size=$(detect_static_data_size_from_code "${snippets_file}");
+	debug static_data_size=$static_data_size INSTR_TOTAL_SIZE=$INSTR_TOTAL_SIZE
+	local internal_snippets=$(echo "$internal_dependencies" | while read dep; do create_internal_snippet "$dep" "$snippets" "${PH_VADDR_V}" "${INSTR_TOTAL_SIZE}"; done);
 	# update snippets with new addr
-	snippets=$(echo "${INPUT_SOURCE_CODE}" | parse_snippets "${ROUND_FINAL}" "${PH_VADDR_V}" "${INSTR_TOTAL_SIZE}" "${static_data_size}");
-	echo -n "$snippets" > $snippets_file;
+	snippets=$(echo "${INPUT_SOURCE_CODE}" | parse_snippets "${ROUND_FINAL}" "${PH_VADDR_V}" "${INSTR_TOTAL_SIZE}" "${static_data_size}" "${internal_snippets}");
+	echo -e "${internal_snippets}\n$snippets" > $snippets_file;
 	local ELF_BODY="$(
 		print_elf_body \
 			"${PH_VADDR_V}" \

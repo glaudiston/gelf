@@ -52,6 +52,11 @@ int mov_addr_rax(pid_t child, unsigned long addr)
 	printf("%016lx: " ANSI_COLOR_WHITE "movzbq (%%rsi), %%rax;" ANSI_COLOR_GRAY "\t# move to rax the resolved pointer value of RSI", addr);fflush(stdout);
 	return TRUE + RSI;
 }
+int bsr_rax_rdx(pid_t child, unsigned long addr)
+{
+	printf("%016lx: " ANSI_COLOR_WHITE "bsr %%rax, %%rdx;" ANSI_COLOR_GRAY "\t# count bits need to represent the binary value rax and set the value on rdx", addr);fflush(stdout);
+	return TRUE + RDX;
+}
 
 int mov_addr_rdx(pid_t child, unsigned long addr)
 {
@@ -224,6 +229,11 @@ int mov_rsi_rdx(pid_t child, unsigned long addr)
 	printf("%016lx: " ANSI_COLOR_WHITE "mov %%rsi, %%rdx;" ANSI_COLOR_GRAY "\t\t#", addr); fflush(stdout);
 	return TRUE + RDX;
 }
+int mov_rsp_rax(pid_t child, unsigned long addr)
+{
+	printf("%016lx: " ANSI_COLOR_WHITE "mov %%rsp, %%rax;" ANSI_COLOR_GRAY "\t#", addr); fflush(stdout);
+	return TRUE + RAX;
+}
 int mov_rsp_rdx(pid_t child, unsigned long addr)
 {
 	printf("%016lx: " ANSI_COLOR_WHITE "mov %%rsp, %%rdx;" ANSI_COLOR_GRAY "\t#", addr); fflush(stdout);
@@ -271,13 +281,19 @@ int xor_rdi_rdi(pid_t child, unsigned long addr)
 }
 int sub_rdx_rsi(pid_t child, unsigned long addr)
 {
-	printf("%016lx: " ANSI_COLOR_WHITE "sub %rsi, %rdx;" ANSI_COLOR_GRAY "\t# (result in RDX) # rdx: %llx, rsi: %llx", addr, regs.rdx, regs.rsi);fflush(stdout);
+	printf("%016lx: " ANSI_COLOR_WHITE "sub %%rsi, %%rdx;" ANSI_COLOR_GRAY "\t# (result in RDX) # rdx: %llx, rsi: %llx", addr, regs.rdx, regs.rsi);fflush(stdout);
 	return TRUE + RDX;
+}
+int add_v_rax(pid_t child, unsigned long addr)
+{
+	unsigned char v = ptrace(PTRACE_PEEKTEXT, child, (void*)addr+3, 0);
+	printf("%016lx: " ANSI_COLOR_WHITE "add %i, %%rax;" ANSI_COLOR_GRAY "\t# rax bef: %x\t", addr, v, regs.rax);fflush(stdout);
+	return TRUE + RAX;
 }
 int add_v_rdx(pid_t child, unsigned long addr)
 {
 	long unsigned v = ptrace(PTRACE_PEEKTEXT, child, (void*)addr+4, 0);
-	printf("%016lx: " ANSI_COLOR_WHITE "add %lu rdx;" ANSI_COLOR_GRAY "\t# rdx: %lli\n", addr, v, regs.rdx);fflush(stdout);
+	printf("%016lx: " ANSI_COLOR_WHITE "add %lu, %%rdx;" ANSI_COLOR_GRAY "\t# rdx: %lli\n", addr, v, regs.rdx);fflush(stdout);
 	return TRUE + RDX;
 }
 
@@ -290,6 +306,14 @@ int cmp_rax_v(pid_t child, unsigned long addr)
 int cmp_rax_rcx(pid_t child, unsigned long addr)
 {
 	printf("%016lx: " ANSI_COLOR_WHITE "cmp %%rax, %%rcx;" ANSI_COLOR_GRAY "\t\t# %s, rax==%x, rcx==%x\n", addr, regs.rax == regs.rcx ? "TRUE": "FALSE", regs.rax, regs.rcx);
+	return 0;
+}
+int cmp_v4_rdx_8_rax(pid_t child, unsigned long addr)
+{
+	unsigned base_addr=ptrace(PTRACE_PEEKTEXT, child, addr+4);
+	unsigned t=base_addr+regs.rdx*8;
+	unsigned v = ptrace(PTRACE_PEEKTEXT, child, t);
+	printf("%016lx: " ANSI_COLOR_WHITE "cmp 0x%x(,%%rdx,8), %%rax;" ANSI_COLOR_GRAY "\t# rdx=%x, target 0x%x==%li, rax==%li\n", addr, base_addr, regs.rdx, t, v, regs.rax);
 	return 0;
 }
 int cmp_rsi_v(pid_t child, unsigned long addr)
@@ -503,11 +527,24 @@ int jg_int(pid_t child, unsigned long addr)
 	printf("%016lx: " ANSI_COLOR_WHITE "jg .%i;" ANSI_COLOR_GRAY "\t\t\t# jump if greater than zero(int)\n", addr, data);
 	return 0;
 }
-
+int movsx_eax_byte(pid_t child, unsigned long addr)
+{
+	unsigned data = ptrace(PTRACE_PEEKTEXT, child, (void*)addr+4, 0);
+	printf("%016lx: " ANSI_COLOR_WHITE "movsx rsp+0x%x, %%eax;" ANSI_COLOR_GRAY "\t# ", addr, (char)data);
+	return TRUE+RAX;
+}
 int jg_byte(pid_t child, unsigned long addr)
 {
 	printf("%016lx: " ANSI_COLOR_WHITE "jg .-9;" ANSI_COLOR_GRAY "\t\t# if previous test > 0 jump back 9 bytes\n", addr);
 	return 0;
+}
+
+int sbb_v1_edx(pid_t child, unsigned long addr)
+{
+	unsigned v = ptrace(PTRACE_PEEKTEXT, child, (void*)addr+2, 0);
+	int carry_flag = (regs.eflags & (1 << 0)) ? 1 : 0;
+	printf("%016lx: " ANSI_COLOR_WHITE "sbb byte +%x, %%edx;" ANSI_COLOR_GRAY "\t\t# CF %i, rdx, bef: %lx; after: ", addr, (char)v, carry_flag, regs.rdx);
+	return TRUE + RDX;
 }
 
 int inc_rdx(pid_t child, unsigned long addr)
@@ -643,6 +680,11 @@ struct bytecode_entry
 		.fn = jg_int,
 	},
 	{
+		.k = {0x0f,0xbe,0x44,0x24},
+		.kl = 4,
+		.fn = movsx_eax_byte,
+	},
+	{
 		.k = { 0x41, 0x50 },
 		.kl = 2,
 		.fn = push_r8
@@ -661,6 +703,11 @@ struct bytecode_entry
 		.k = {0x48,0x0f,0xb6, 0x06},
 		.kl = 4,
 		.fn = mov_addr_rax
+	},
+	{
+		.k = { 0x48, 0x0f,  0xbd, 0xd0},
+		.kl = 4,
+		.fn = bsr_rax_rdx,
 	},
 	{
 		.k = {0x48,0x29,0xf2},
@@ -691,6 +738,16 @@ struct bytecode_entry
 		.k = {0x48,0x39,0xc1},
 		.kl = 3,
 		.fn = cmp_rax_rcx
+	},
+	{
+		.k = { 0x48, 0x3b, 0x04, 0xd5 },
+		.kl = 4,
+		.fn = cmp_v4_rdx_8_rax,
+	},
+	{
+		.k = {0x48,0x83,0xc0},
+		.kl = 3,
+		.fn = add_v_rax
 	},
 	{
 		.k = {0x48,0x83,0xc2},
@@ -741,6 +798,11 @@ struct bytecode_entry
 		.k = {0x48,0x89,0xd1},
 		.kl = 3,
 		.fn = mov_rdx_rcx
+	},
+	{
+		.k = {0x48,0x89,0xe0},
+		.kl = 3,
+		.fn = mov_rsp_rax
 	},
 	{
 		.k = {0x48,0x89,0xe2},
@@ -1016,6 +1078,11 @@ struct bytecode_entry
 		.k = {0x7f, 0xf5},
 		.kl = 2,
 		.fn = jg_byte,
+	},
+	{
+		.k = {0x83, 0xda},
+		.kl = 2,
+		.fn = sbb_v1_edx,
 	},
 	{
 		.k = {0x84,0xc0},

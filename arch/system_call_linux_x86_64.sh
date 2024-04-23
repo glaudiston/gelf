@@ -355,7 +355,7 @@ add(){
 	{
 		if is_register "$r2"; then
 		{
-			local opadd="\x01";
+			local opadd="${p}\x01";
 			local rv=$(( MODRM_MOD_DISPLACEMENT_REG + MODRM_OPCODE_ADD + (${r1^^} << 3) + ${r2^^} ));
 			r=$(printEndianValue $rv $SIZE_8BITS_1BYTE);
 			code="${code}${opadd}${r}";
@@ -716,20 +716,46 @@ function sys_mmap()
 #    2 the jump short instruction byte count 
 function bytecode_jump_short()
 {
-	local TARGET_ADDR="$1";
-	local CURRENT_ADDR="$2";
-	local RELATIVE=$(( TARGET_ADDR - CURRENT_ADDR ));
+	local relative=$1;
 	local code="";
-	if [ ! "$(( (RELATIVE >= -128) && (RELATIVE <= 127) ))" -eq 1 ]; then
+	if [ ! "$(( (relative >= -128) && (relative <= 127) ))" -eq 1 ]; then
 		debug "displacement too big to jump short.";
 		return;
 	fi;
-	# debug jump short relative $RELATIVE
-	local RADDR_V="$(printEndianValue "$RELATIVE" $SIZE_8BITS_1BYTE )";
+	# debug jump short relative $relative
+	local RADDR_V="$(printEndianValue "$relative" $SIZE_8BITS_1BYTE )";
 	# debug jump short to RADDR_V=[$( echo -n "$RADDR_V" | xxd)]
 	code="${code}${JMP_V1}${RADDR_V}";
 	echo -ne "$(echo -en "${code}" | base64 -w0)";
 	return
+}
+
+jump_relative(){
+	local relative=$1;
+	local short_jump_response=$(bytecode_jump_short "${relative}")
+	if [ "$(echo -n "${short_jump_response}" | base64 -d | wc -c)" -gt 0 ];then
+		echo -n "${short_jump_response}";
+		return;
+	fi;
+	#bytecode_jump_near
+	if [ "$(( (relative >= - ( 1 << 31 )) && (relative <= ( 1 << 31 ) -1) ))" -eq 1 ]; then
+		# jump near
+		local RADDR_V;
+		RADDR_V="$(printEndianValue "${relative}" $SIZE_32BITS_4BYTES)";
+		# debug "jump near relative ( $relative, $RADDR_V )";
+		CODE="${CODE}${JMP_V4}${RADDR_V}";
+		echo -ne "$(echo -en "${CODE}" | base64 -w0)";
+		return;
+	fi;
+
+	error "JMP not implemented for that relative or absolute value: $relative"
+	# TODO, another way to move to a location is set the RIP directly
+	# something like
+	# mov eax, $address
+	# mov [rsp], eax
+	# mov eip, [rsp]
+	echo -ne ",0"
+	return;
 }
 
 # jump should receive the target address and the current BIP.
@@ -738,38 +764,12 @@ function jump()
 {
 	local TARGET_ADDR="$1";
 	local CURRENT_ADDR="$2";
+	local relative=$(( TARGET_ADDR - CURRENT_ADDR ))
 	# debug "jump: TARGET_ADDR:[$(printf %x $TARGET_ADDR)], CURRENT_ADDR:[$( printf %x ${TARGET_ADDR})]"
 	local OPCODE_SIZE=1;
 	local DISPLACEMENT_BITS=32; # 4 bytes
 	local JUMP_NEAR_SIZE=$(( OPCODE_SIZE + DISPLACEMENT_BITS / 8 )); # 5 bytes
-
-	local short_jump_response=$(bytecode_jump_short "$TARGET_ADDR" "${CURRENT_ADDR}")
-	if [ "$(echo -n "${short_jump_response}" | base64 -d | wc -c)" -gt 0 ];then
-		# debug short jump succeed;
-		echo -n "${short_jump_response}";
-		return;
-	fi;
-	# debug jump, unable to short, trying near: $short_jump_response
-	#bytecode_jump_near
-	local RELATIVE=$(( TARGET_ADDR - CURRENT_ADDR ))
-	if [ "$(( (RELATIVE >= - ( 1 << 31 )) && (RELATIVE <= ( 1 << 31 ) -1) ))" -eq 1 ]; then
-		# jump near
-		local RADDR_V;
-		RADDR_V="$(printEndianValue "${RELATIVE}" $SIZE_32BITS_4BYTES)";
-		# debug "jump near relative ( $RELATIVE, $RADDR_V )";
-		CODE="${CODE}${JMP_V4}${RADDR_V}";
-		echo -ne "$(echo -en "${CODE}" | base64 -w0)";
-		return;
-	fi;
-
-	error "JMP not implemented for that relative or absolute value: $RELATIVE"
-	# TODO, another way to move to a location is set the RIP directly
-	# something like
-	# mov eax, $address
-	# mov [rsp], eax
-	# mov eip, [rsp]
-	echo -ne ",0"
-	return;
+	jump_relative $relative
 }
 
 
@@ -1572,14 +1572,20 @@ bsr(){
 	local r1="$1";
 	local r2="$2";
 	local code="";
-	local rc=$(( ( 2#11 << 6 ) + ( ${r2^^} << 3 ) + ( ${r1^^} ) ));
+	local modrm="$MODRM_MOD_DISPLACEMENT_REG";
+	if [ "$r1" == "(rax)" ]; then
+		modrm="$MODRM_MOD_DISPLACEMENT_REG_POINTER";
+	fi
+	local rc=$(( modrm + ( ${r2^^} << 3 ) + ( ${r1^^} ) ));
 	BSR="$(rex $r2 $r1 | b64_to_hex_dump)\x0F\xBD$(printEndianValue ${rc} $SIZE_8BITS_1BYTE)";
 	code="${code}${BSR}"
 	echo -ne "$code" | base64 -w0;
 }
 
-# ilog10 do a log operation over a base on rax and put the result in the register passed as arg $2
-# the result is integer truncated with cvttsd2si
+# ilog10 returns the integer log base 10 of the value in r1 register.
+# 	Step 1: Get the guess value from ilog_guess_map using the bit index(aka ilog2/bsr);
+# 	Step 2: Subtract 1 from guess when the value is less than the power value recovered using the guess.
+# returns:	integer truncated on RDI
 # registers need: 2
 # r1: value
 # 	input: value to process;
@@ -1589,25 +1595,67 @@ bsr(){
 # 	input: unused;
 # 	behavior: is a work register where the bsr will set the bit count
 # 	output: will return the count bits of the value
-# r3: max_bit_val_ilog10 address / integer log base 10
+# r3: ilog_guess_map address / integer log base 10
 # 	input: address value pointer to to max_bit_val_ilog10
 # 	behavior: will be incremented by the number of bits to point at the log10 integer value;
 # 		echo "[$(for (( i=0; i<63; i++)); do [ $i -gt 0 ] && echo -n ,; v=$(( 2 ** i )); l=$(echo "scale=1;l($v)/l(10)" | bc -l); l=${l/.*/}; echo -n ${l:=0}; done )]";
 #		[0,0,0,0,1,1,1,2,2,2,3,3,3,3,4,4,4,5,5,5,6,6,6,6,7,7,7,8,8,8,9,9,9,9,10,10,10,11,11,11,12,12,12,12,13,13,13,14,14,14,15,15,15,15,16,16,16,17,17,17,18,18,18]
 # 	output: log10 integer value at base 10
 ilog10(){
-	local r1=$1;
-	local r2=$2;
-	local r3=$3;
+	local r1="$1"; # source value register or integer value
+	local r2="$2"; # target register to put the bit count
+	local guess_map_addr="$3"; # register pointing to address of array_max_bit_val_ilog10 or address value
+	local ret_addr="$4";
 	local code="";
+	local retcode="";
+	if [ "$r1" == "" ]; then
+		# when called directly act like a function,
+		# so the number will be rsp + n, move it to rax where n can be:
+		# 	0 = rsp = (return addr)
+		# 	8 = 2 ( argc )
+		# 	16 = ilog10 addr
+		# 	24 = first arg
+		# so we want n=24
+		code="${code}${MOV_RSP_RAX}";
+		code="${code}$(add 24 rax | b64_to_hex_dump)${MOV_RAX_RAX}";
+		# should be the same as: movsbl 0x18(%rsp), %eax
+		#MOVSBL_V4RSP_EAX="\x0F\xBE\x44\x24";
+		#code="${code}${MOVSBL_V4RSP_EAX}$(printEndianValue 24 $SIZE_8BITS_1BYTE)";
+		retcode="$(bytecode_ret | b64_to_hex_dump)";
+	fi;
 	r1="${r1:=rax}";
 	r2="${r2:=rdx}";
-	r4="${r3:=rsi}";
 	# bsr rbx, esi		# count bits into rbx
-	code="${code}$(bsr "$r2" "$r1" | b64_to_hex_dump)";
-	# movzx   eax, BYTE PTR max_bit_val_ilog10[1+rax] # movzx (zero extend, set the byte and fill with zeroes the remaining bits)
-	code="${code}$(add $r2 $r3 | b64_to_hex_dump)";
-	echo -en "$code" | base64 -w0;
+	code="${code}$(bsr "$r1" "$r2" | b64_to_hex_dump)";
+	# movzx   eax, BYTE PTR array_max_bit_val_ilog10[1+rax] # movzx (zero extend, set the byte and fill with zeroes the remaining bits)
+	#MOV_RSI_RCX="\x48\x89\xF1";
+	#${MOV_RSI_RCX}$(add 63 rcx | b64_to_hex_dump)
+	#MOVSBL_V4RSI_ECX="\x0F\xBE\x4E$(printEndianValue 63 $SIZE_8BITS_1BYTE)";
+	#code="${code}${MOVSBL_V4RSI_ECX}";
+	#code="${code}$(add $r2 $r3 | b64_to_hex_dump)";
+	# 483B04D5 	cmp 0x0(,%rdx,8),%rax
+	# 1 0000 0FBE1415 	movsbl 0x010018(,%rdx,),%edx
+	#movsbl guess_map_addr(rdx), %edx
+	MOVSBL_V4_RDX_EDX="\x0F\xBE\x14\x15";
+	code="${code}${MOVSBL_V4_RDX_EDX}$(printEndianValue $guess_map_addr $SIZE_32BITS_4BYTES)";
+	CMP_V4_RDX_8_RAX="\x48\x3B\x04\xD5";
+	local power_map_addr=$((guess_map_addr + 62));
+	code="${code}${CMP_V4_RDX_8_RAX}$(printEndianValue $power_map_addr $SIZE_32BITS_4BYTES)";
+	SBB_0_EDX="\x83\xda\x00";
+	code="${code}${SBB_0_EDX}";
+	if [ "$ret_addr" != "" ]; then
+		#MOVZX_DL_RDX="\x48\x0F\xB6\xD2";
+		#LEA_RDX_RDX="\x48\x8B\x12";
+		#MOV_RSI_RSI="\x48\x8B\x36";
+		#MOVZX_SIL_RSI="\x48\x0F\xB6\xF6";
+		#MOVZX_SIL_RDI="\x48\x0F\xB6\xFE";
+		#code="${code}${MOV_RSI_RSI}";
+		#1 0000 480FB6FA 	movzx %dl,%rdi
+		MOVZX_DL_RDI="\x48\x0f\xb6\xfa";
+		code="${code}${MOVZX_DL_RDI}";
+		#code="${code}${MOV_RSI_ADDR4}$(printEndianValue $ret_addr $SIZE_32BITS_4BYTES)";
+	fi;
+	echo -en "${code}${retcode}" | base64 -w0;
 }
 
 # i2s integer to string

@@ -440,7 +440,8 @@ EOF
 
 test_ilog10(){
 	local n=$RANDOM;
-	local l=$(echo "scale=0; l($n)" | bc -l)
+	echo -n "random number $n...";
+	local l=$(echo "scale=1; l($n)/l(10)" | bc -l | sed 's/^[.].*/0/; s/[.].*//');
 	compile_test <<EOF
 :	c	[]	.ilog10	$n
 :	x	!	c
