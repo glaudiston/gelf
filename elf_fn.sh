@@ -1958,14 +1958,14 @@ create_internal_snippet(){
 	instr_bytes=$(echo "$jump_bytes$instr_bytes");
 	instr_size="$(echo $instr_bytes | base64 -d | wc -c)";
 	local data_bytes="$(
-		for (( i=1; i<63; i++));
+		for (( i=1; i<32; i++));
 		do
 			v=$(( 2 ** i ));
 			l=$(echo "scale=8;l($v)/l(10)" | bc -l);
 			l=${l/.*/};
 			printf %02x ${l:=0};
 		done | xxd --ps -r | base64 -w0;
-		for (( i=0; i<19; i++ ));
+		for (( i=0; i<11; i++ ));
 		do
 			v=$(( 10 ** i ));
 			echo -en "$(printEndianValue ${v} $SIZE_64BITS_8BYTES)" | base64 -w0;

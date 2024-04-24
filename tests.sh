@@ -423,12 +423,11 @@ EOF
 	expect $? 0
 }
 
-test_sys_geteuid()
-{
+test_sys_geteuid(){
 	compile_test <<EOF
 :	stdout	1
 :	uid	!	sys_geteuid
-:	a	[]	i2s	uid
+:	a	[]	.i2s	uid
 :	textuid	!	a
 !	sys_write	stdout	textuid
 :	ok	0
@@ -439,16 +438,24 @@ EOF
 }
 
 test_ilog10(){
-	local n=$RANDOM;
-	echo -n "random number $n...";
-	local l=$(echo "scale=1; l($n)/l(10)" | bc -l | sed 's/^[.].*/0/; s/[.].*//');
-	compile_test <<EOF
+	# good numbers to test
+	numbers_to_test="$({
+	for (( n=2; n < 2 ** 32; n = n * 10 )); do echo $(( n -1 )); if [ $n == $(( 2 ** 31 )) ]; then break; fi; echo $n; echo $((n+1)); done;
+	for (( n=2; n < 2 ** 32; n = n * 2 )); do echo $(( n -1 )); echo $n; echo $((n+1)); done;
+	} | sort -n | uniq)";
+	numbers_to_test="${RANDOM}"
+	for n in $numbers_to_test; do
+		#local n=$RANDOM;
+		echo -n "n=$n..." | tee /dev/stderr;
+		local l=$(echo "scale=18; l($n)/l(10)" | bc -l | sed 's/^[.].*/0/; s/[.].*//');
+		compile_test <<EOF
 :	c	[]	.ilog10	$n
 :	x	!	c
 !	sys_exit	x
 EOF
-	o=$(run_test);
-	expect $? $l;
+		o=$(run_test);
+		expect $? $l | tee /dev/stderr;
+	done;
 }
 
 . ./test_suite.sh

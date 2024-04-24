@@ -1639,7 +1639,7 @@ ilog10(){
 	MOVSBL_V4_RDX_EDX="\x0F\xBE\x14\x15";
 	code="${code}${MOVSBL_V4_RDX_EDX}$(printEndianValue $guess_map_addr $SIZE_32BITS_4BYTES)";
 	CMP_V4_RDX_8_RAX="\x48\x3B\x04\xD5";
-	local power_map_addr=$((guess_map_addr + 62));
+	local power_map_addr=$((guess_map_addr + 31));
 	code="${code}${CMP_V4_RDX_8_RAX}$(printEndianValue $power_map_addr $SIZE_32BITS_4BYTES)";
 	SBB_0_EDX="\x83\xda\x00";
 	code="${code}${SBB_0_EDX}";
