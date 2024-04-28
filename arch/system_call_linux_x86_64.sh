@@ -236,6 +236,7 @@ SUB_RSP_SHORT="$(rex v1 rsp| b64_to_hex_dump)\x83\xec"; # Subtract 1 byte(two co
 TEST="\x85"; # 10000101
 
 IMM="$(( 2#00111000 ))";
+MOV_AL_ADDR4="\x88\x04\x25";
 MOV_EDI_EDI="\x67\x8b\x3f";
 MOV_RAX_RCX="\x48\x89\xc1";
 MOV_RBX_RCX="\x48\x89\xD9";
@@ -1774,27 +1775,40 @@ i2s(){
 	local power10_addr="$5";
 	local CURRENT_RIP="$6";
 	local code="";
+	local codepart1=''
 	if [ "$int_symbol_type" == $SYMBOL_TYPE_DYNAMIC ]; then
-		code="${code}${MOV_ADD4_RAX}$(printEndianValue "${int_symbol_value}" $SIZE_32BITS_4BYTES)";
+		codepart1="${codepart1}${MOV_ADD4_RAX}$(printEndianValue "${int_symbol_value}" $SIZE_32BITS_4BYTES)";
 	elif [ "$int_symbol_type" == $SYMBOL_TYPE_HARD_CODED ]; then
-		code="${code}${MOV_V4_RAX}$(printEndianValue "${int_symbol_value}" $SIZE_32BITS_4BYTES)";
+		codepart1="${codepart1}${MOV_V4_RAX}$(printEndianValue "${int_symbol_value}" $SIZE_32BITS_4BYTES)";
 	else
 		:
 		# expect to have the value on rax already;
 	fi;
-	# mov log10(rax) + 1, %rsi;	# 4;
-	code="${code}${MOV_RSP_RAX}";
-	code="${code}$(add 24 rax | b64_to_hex_dump)";
-	code="${code}${MOV_RAX_RAX}";
-	code="${code}${MOV_RAX_RAX}";
-	code="${code}$(push RAX | b64_to_hex_dump)";
-	code="${code}$(push RAX | b64_to_hex_dump)";
-	code="${code}$(push RAX | b64_to_hex_dump)";
-	code="${code}$(call_procedure ${ilog10_addr} $(( CURRENT_RIP + $( echo -en "${code}" | wc -c) )) | b64_to_hex_dump)";
+	codepart1="${codepart1}${MOV_RSP_RAX}";
+	codepart1="${codepart1}$(add 24 rax | b64_to_hex_dump)";
+	codepart1="${codepart1}${MOV_RAX_RAX}";
+	codepart1="${codepart1}${MOV_RAX_RAX}";
+	codepart1="${codepart1}${CMP_RAX_V1}$(printEndianValue 0 $SIZE_8BITS_1BYTE)";
+	local codeforzero="";
+	codeforzero="${codeforzero}$(add 48 rax| b64_to_hex_dump)";
+	codeforzero="${codeforzero}${MOV_AL_ADDR4}$(printEndianValue $str_addr $SIZE_32BITS_4BYTES)";
+	codeforzero="${codeforzero}${MOV_V4_RDI}$(printEndianValue $str_addr $SIZE_32BITS_4BYTES)";
+	codeforzero="${codeforzero}$(bytecode_ret | b64_to_hex_dump)";
+	codepart1="${codepart1}${JG_V1}$(printEndianValue $( echo -en "$codeforzero" | wc -c) $SIZE_8BITS_1BYTE)";
+	codepart1="${codepart1}${codeforzero}";
+	codepart1="${codepart1}$(push RAX | b64_to_hex_dump)";
+	codepart1="${codepart1}$(push RAX | b64_to_hex_dump)";
+	codepart1="${codepart1}$(push RAX | b64_to_hex_dump)";
+	codepart1="${codepart1}$(call_procedure ${ilog10_addr} $(( CURRENT_RIP + $( echo -en "${codepart1}" | wc -c) )) | b64_to_hex_dump)";
 	# at this point rdx == 3 (log 10 (n))
 	# rax is the value (1000)
-	code="${code}${XOR_RDI_RDI}";
-	code="${code}${XOR_RCX_RCX}";
+	codepart1="${codepart1}${XOR_RDI_RDI}";
+	code="${code}${codepart1}";
+	local codepart2="";
+	codepart2="${codepart2}${XOR_RCX_RCX}";
+	local code_dec_part="";
+	code_dec_part="${code_dec_part}${SUB_ADDR4_RAX_RAX}$(printEndianValue $power10_addr $SIZE_32BITS_4BYTES)";
+	code_dec_part="${code_dec_part}$(inc rcx | b64_to_hex_dump)";
 	local loopcode="";
 	# cmp %rax, $power10_addr(,%rdx,8);
 	loopcode="${loopcode}${CMP_RAX_ADDR4_RDX_8}$(printEndianValue "$power10_addr" $SIZE_32BITS_4BYTES)";
@@ -1808,19 +1822,20 @@ i2s(){
 		printDigitCode="${printDigitCode}${CMP_RDX_V1}$(printEndianValue 0 $SIZE_8BITS_1BYTE)";
 		xor_size=3; # size of "xor rcx, rcx" instr bytes
 		printDigitCode="${printDigitCode}${JGE_V1}$(printEndianValue $(( 0 - $( echo -e "$printDigitCode" | wc -c ) - xor_size - 11 )) $SIZE_8BITS_1BYTE)"; # TODO why do i need to substract 11?
-		printDigitCode="${printDigitCode}${JMP_V1}$(printEndianValue 13 $SIZE_8BITS_1BYTE)"; # jump over the dec part
+		local jmpv1_size=2; # it is not in code_dec_part yet because it depends on this block size
+		printDigitCode="${printDigitCode}${JMP_V1}$(printEndianValue $(( $(echo -en "${code_dec_part}"| wc -c) + jmpv1_size)) $SIZE_8BITS_1BYTE)";
 		# continue; # jump back to "xor %rcx, %rcx"
 	jmpsize=$(( $(echo -e "$printDigitCode" | wc -c) ));
 	loopcode="${loopcode}${JNG_V1}$(printEndianValue ${jmpsize} $SIZE_8BITS_1BYTE)";
 	loopcode="${loopcode}${printDigitCode}";
 	# jg loopcode
-	code="${code}${loopcode}";
+	codepart2="${codepart2}${loopcode}";
 	# fix the stack
 	# sub power10(rax), rax
-	code="${code}${SUB_ADDR4_RAX_RAX}$(printEndianValue $power10_addr $SIZE_32BITS_4BYTES)";
-	code="${code}$(inc rcx | b64_to_hex_dump)";
+	codepart2="${codepart2}${code_dec_part}";
 	# jmp back
-	code="${code}${JMP_V1}$(printEndianValue $(( - $(echo -en "${code}" | wc -c) + 25)) $SIZE_8BITS_1BYTE )";
+	code="${code}${codepart2}";
+	code="${code}${JMP_V1}$(printEndianValue $(( - $(echo -en "${codepart2}" | wc -c) - 5 )) $SIZE_8BITS_1BYTE )";
 	code="${code}$(pop RAX | b64_to_hex_dump)";
 	code="${code}$(pop RAX | b64_to_hex_dump)";
 	code="${code}$(pop RAX | b64_to_hex_dump)";
