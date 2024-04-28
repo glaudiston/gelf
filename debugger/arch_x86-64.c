@@ -41,10 +41,10 @@ int mov__rdx__rax(pid_t child, unsigned long addr)
 	printf("%016lx: " ANSI_COLOR_WHITE "movzbq (%%rdx), %%rax;" ANSI_COLOR_GRAY "\t# move to rax the resolved pointer value of RDX", addr);fflush(stdout);
 	return TRUE + RDX;
 }
-int mov_rax_addr(pid_t child, unsigned long addr)
+int add_rax_addr4(pid_t child, unsigned long addr)
 {
 	unsigned v = ptrace(PTRACE_PEEKTEXT, child, (void*)addr+4, 0);
-	printf("%016lx: " ANSI_COLOR_WHITE "mov %rax, 0x%lx;" ANSI_COLOR_GRAY "\t# ", addr, v);fflush(stdout);
+	printf("%016lx: " ANSI_COLOR_WHITE "add %rax, [0x%lx];" ANSI_COLOR_GRAY "\t# ", addr, v);fflush(stdout);
 	return TRUE + RAX;
 }
 int mov_addr_rax(pid_t child, unsigned long addr)
@@ -421,6 +421,12 @@ int test_al(pid_t child, unsigned long addr)
 }
 int jne(pid_t child, unsigned long addr)
 {
+	char v = ptrace(PTRACE_PEEKTEXT, child, (void*)addr+2,0);
+	printf("%016lx: " ANSI_COLOR_WHITE "jne %i;" ANSI_COLOR_GRAY "\t\t\t# if false jump to 0x%x\n", addr, v, regs.rip + v + 6);	// 6 = 2 instr bytes + 4 address bytes
+	return 0;
+}
+int jne_v4(pid_t child, unsigned long addr)
+{
 	long unsigned v = ptrace(PTRACE_PEEKTEXT, child, (void*)addr+2,0);
 	printf("%016lx: " ANSI_COLOR_WHITE "jne %i;" ANSI_COLOR_GRAY "\t\t\t# if false jump to 0x%x\n", addr, v, regs.rip + v + 6);	// 6 = 2 instr bytes + 4 address bytes
 	return 0;
@@ -521,6 +527,12 @@ int jz(pid_t child, unsigned long addr)
 	printf("%016lx: " ANSI_COLOR_WHITE "jz .%i" ANSI_COLOR_GRAY "\t\t\t# if true, jump to 0x%x\n", addr, data, regs.rip + data + 6);
 	return 0;
 }
+int jge(pid_t child, unsigned long addr)
+{
+	signed char data = ptrace(PTRACE_PEEKTEXT, child, (void*)addr+2, 0);
+	printf("%016lx: " ANSI_COLOR_WHITE "jge .%i" ANSI_COLOR_GRAY "\t\t\t# if not lower than, jump to 0x%x\n", addr, data, regs.rip + data + 6);
+	return 0;
+}
 int jg_int(pid_t child, unsigned long addr)
 {
 	unsigned data = ptrace(PTRACE_PEEKTEXT, child, (void*)addr+2, 0);
@@ -543,6 +555,7 @@ int sbb_v1_edx(pid_t child, unsigned long addr)
 {
 	unsigned v = ptrace(PTRACE_PEEKTEXT, child, (void*)addr+2, 0);
 	int carry_flag = (regs.eflags & (1 << 0)) ? 1 : 0;
+	//int zero_flag = (regs.eflags & (1 << 6)) ? 1 : 0;
 	printf("%016lx: " ANSI_COLOR_WHITE "sbb byte +%x, %%edx;" ANSI_COLOR_GRAY "\t\t# CF %i, rdx, bef: %lx; after: ", addr, (char)v, carry_flag, regs.rdx);
 	return TRUE + RDX;
 }
@@ -675,6 +688,11 @@ struct bytecode_entry
 		.fn = jne,
 	},
 	{
+		.k = {0x0f,0x8d},
+		.kl = 2,
+		.fn = jge,
+	},
+	{
 		.k = {0x0f, 0x8f},
 		.kl = 2,
 		.fn = jg_int,
@@ -692,7 +710,7 @@ struct bytecode_entry
 	{
 		.k = {0x48,0x01,0x04,0x25},
 		.kl = 4,
-		.fn = mov_rax_addr
+		.fn = add_rax_addr4
 	},
 	{
 		.k = {0x48,0x0f,0xb6, 0x02},
@@ -1072,7 +1090,7 @@ struct bytecode_entry
 	{
 		.k = {0x75,0xf8},
 		.kl = 2,
-		.fn = jne,
+		.fn = jne_v4,
 	},
 	{
 		.k = {0x7f, 0xf5},
@@ -1179,3 +1197,25 @@ void printRelevantRegisters(pid_t pid, struct user_regs_struct regs, int printNe
 		printNextData=0;
 	}
 }
+
+/*
+bytecode_parse_state
+bytecode_parse_states {
+	reading
+	done
+}
+bytecode_parse_events {
+	char_bits_starts with 0100 -> do_parse_operand_size
+	* -> parse_modr/m
+}
+bytecode_parse_actions {
+#  REX Bits:
+#  |7|6|5|4|3|2|1|0|
+#  |0|1|0|0|W|R|X|B|
+#  W bit = Operand size 1==64-bits, 0 == legacy, depends on opcode.
+#  R bit = Extends the ModR/M reg field to 4 bits. 0 selects RAX-RSI, 1 selects R8-R15
+#  X bit = extends SIB 'index' field, same as R but for the SIB byte (memory operand)
+#  B bit = extends the ModR/M r/m or 'base' field or the SIB field
+	do_parse_rex -> (another state machine)
+}
+*/

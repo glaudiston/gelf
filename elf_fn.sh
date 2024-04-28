@@ -664,7 +664,7 @@ get_current_dynamic_data_offset()
 	local snippets="$1";
 	local current_line="$2";
 	local SNIPPETS="$(get_snippets_until_line "$current_line" "$snippets")";
-	get_dynamic_data_size "$SNIPPETS"
+	get_dynamic_data_size "$snippets"
 }
 
 get_sym_dyn_data_size()
@@ -1026,7 +1026,7 @@ is_internal_function(){
 	local YES=0;
 	local NO=1;
 	local symbol_name="$1";
-	if [[ "$symbol_name" =~ ^(.ilog10)$ ]]; then
+	if [[ "$symbol_name" =~ ^(.ilog10|.i2s)$ ]]; then
 		return $YES;
 	fi;
 	return $NO;
@@ -1452,7 +1452,7 @@ get_instr_offset()
 	local previous_snippet="$1";
 	local previous_instr_offset=$(echo "${previous_snippet}" | cut -d, -f$SNIPPET_COLUMN_INSTR_OFFSET);
 	previous_instr_offset="${previous_instr_offset:=$((PH_VADDR_V + EH_SIZE + PH_SIZE))}"
-	local previous_instr_sum=$(echo "${previous_snippet}" | cut -d, -f$SNIPPET_COLUMN_INSTR_LEN);
+	local previous_instr_sum=$(echo "${previous_snippet}" | cut -d, -f$SNIPPET_COLUMN_INSTR_LEN | tail -1);
 	local instr_offset="$(( ${previous_instr_offset} + previous_instr_sum ))";
 	echo -n "${instr_offset}";
 }
@@ -1937,18 +1937,15 @@ detect_static_data_size_from_code()
 	echo ${static_data_size:=0}
 }
 
-create_internal_snippet(){
+create_internal_ilog10_snippet()
+{
 	local symbol_name="$1";
 	local SNIPPETS="$2";
 	local PH_VADDR_V="$3";
 	local INSTR_TOTAL_SIZE="$4";
-	if ! is_internal_function $symbol_name; then
-		error "not an internal function: [$symbol_name]";
-		return 1;
-	fi;
 	local snippet_type=$SYMBOL_TYPE_PROCEDURE;
 	local snippet_name="$symbol_name";
-	local instr_offset="$(get_instr_offset)";
+	local instr_offset="$(get_instr_offset "")";
 	local static_data_offset="$(( $(get_zero_data_offset "$PH_VADDR_V" "$INSTR_TOTAL_SIZE") + $(get_static_data_size "${SNIPPETS}") ))"
 	local ilog10_map_addr="$((static_data_offset))";
 	local ilog10_return_addr="${static_data_offset}";
@@ -1994,6 +1991,92 @@ create_internal_snippet(){
 		"${bloc_dependencies}";
 }
 
+get_internal_addr()
+{
+	local symbol_name="$1";
+	local snippets="$2";
+	local addr=$(echo "$snippets" | grep ",$symbol_name," | cut -d, -f$SNIPPET_COLUMN_INSTR_OFFSET);
+	if [ "$addr" == "" ]; then
+		error "internal function $symbol_name not defined"
+	fi;
+	echo $((addr));
+}
+get_power10_addr()
+{
+	local snippets="$1";
+	local symbol_name=".ilog10";
+	local addr=$(echo "$snippets" | grep ",$symbol_name," | cut -d, -f$SNIPPET_COLUMN_DATA_OFFSET);
+	if [ "$addr" == "" ]; then
+		error "internal function $symbol_name not defined"
+	fi;
+	echo $(( addr + ilog10_guess_map_size ));
+}
+create_internal_i2s_snippet()
+{
+	local symbol_name="$1";
+	debug creating $symbol_name
+	local SNIPPETS="$2";
+	local PH_VADDR_V="$3";
+	local INSTR_TOTAL_SIZE="$4";
+	local snippet_type=$SYMBOL_TYPE_PROCEDURE;
+	local snippet_name="$symbol_name";
+	local instr_offset="$(get_instr_offset "$( echo "$SNIPPETS" | tail -1)")";
+	local dynamic_data_offset="$(( $(get_zero_data_offset "$PH_VADDR_V" "$INSTR_TOTAL_SIZE") + $(get_dynamic_data_size "${SNIPPETS}") ))"
+	local ilog10_addr=$(get_internal_addr .ilog10 "${SNIPPETS}");
+	local power10_addr=$(get_power10_addr "${SNIPPETS}");
+	local instr_bytes="$(i2s "" "" "${dynamic_data_offset}" "${ilog10_addr}" "${power10_addr}" "${instr_offset}")";
+	local instr_size="$(echo "$instr_bytes" | base64 -d | wc -c)";
+	local jump_bytes="$(jump_relative $instr_size)";
+	instr_bytes=$(echo "$jump_bytes$instr_bytes");
+	instr_size="$(echo $instr_bytes | base64 -d | wc -c)";
+	local data_bytes="";
+	local data_bytes_size="32";
+	local bloc_outer_code_b64="";
+	local bloc_source_lines_count=0;
+	local bloc_usage_count=1;
+	local bloc_return="";
+	local bloc_dependencies="";
+	struct_parsed_snippet \
+		"PROCEDURE_TABLE" \
+		"${snippet_type}" \
+		"${snippet_name}" \
+		"${instr_offset}" \
+		"${instr_bytes}" \
+		"${instr_size}" \
+		"${dynamic_data_offset}" \
+		"${data_bytes}" \
+		"${data_bytes_size}" \
+		"${bloc_outer_code_b64}" \
+		"${bloc_source_lines_count}" \
+		"${bloc_usage_count}" \
+		"${bloc_return}" \
+		"${bloc_dependencies}";
+}
+
+create_internal_snippet()
+{
+	local symbol_name="$1";
+	local SNIPPETS="$2";
+	local PH_VADDR_V="$3";
+	local INSTR_TOTAL_SIZE="$4";
+	if ! is_internal_function $symbol_name; then
+		error "not an internal function: [$symbol_name]";
+		return 1;
+	fi;
+	if [ "$symbol_name" == ".ilog10" ]; then
+		create_internal_ilog10_snippet "$symbol_name" "$SNIPPETS" "$PH_VADDR_V" "$INSTR_TOTAL_SIZE";
+		return;
+	fi;
+	if [ "$symbol_name" == ".i2s" ]; then
+		local ilog10_snip=$(create_internal_ilog10_snippet ".ilog10" "$SNIPPETS" "$PH_VADDR_V" "$INSTR_TOTAL_SIZE");
+		local ilog10_instr_size=$(echo $ilog10_snip | cut -d, -f$SNIPPET_COLUMN_INSTR_LEN);
+		echo $ilog10_snip;
+		INSTR_TOTAL_SIZE=$(( INSTR_TOTAL_SIZE + ilog10_instr_size ))
+		create_internal_i2s_snippet "$symbol_name" "$(echo -e "$ilog10_snip\n$SNIPPETS")" "$PH_VADDR_V" "$INSTR_TOTAL_SIZE";
+		return;
+	fi;
+}
+
 # Round exists because parse_snippets can only trust addresses in final round.
 # We can use it to get control of address changes like to detect the args memory spot
 ROUND_FIRST=1
@@ -2033,7 +2116,7 @@ write_elf()
 	)";
 	local internal_dependencies=$(echo "$dependencies" | while read dep; do if is_internal_function $dep; then echo $dep; fi; done)
 	debug "internal dependencies: [$internal_dependencies]";
-	local internal_snippets=$(echo "$internal_dependencies" | while read dep; do create_internal_snippet "$dep" "$snippets" "$PH_VADDR_V" "${INSTR_TOTAL_SIZE-0}"; done);
+	local internal_snippets=$(echo "$internal_dependencies" | while read dep; do create_internal_snippet "$dep" "" "$PH_VADDR_V" "${INSTR_TOTAL_SIZE-0}"; done);
 	echo -e "${internal_snippets}\n${snippets}" > $snippets_file;
 	echo -e "${internal_snippets}\n${snippets}" > $snippets_file.round1;
 	# now we have the all information parsed
@@ -2043,7 +2126,7 @@ write_elf()
 	local INSTR_TOTAL_SIZE=$(detect_instruction_size_from_code "${snippets_file}");
 	local static_data_size=$(detect_static_data_size_from_code "${snippets_file}");
 	debug static_data_size=$static_data_size INSTR_TOTAL_SIZE=$INSTR_TOTAL_SIZE
-	local internal_snippets=$(echo "$internal_dependencies" | while read dep; do create_internal_snippet "$dep" "$snippets" "${PH_VADDR_V}" "${INSTR_TOTAL_SIZE}"; done);
+	local internal_snippets=$(echo "$internal_dependencies" | while read dep; do create_internal_snippet "$dep" "" "${PH_VADDR_V}" "${INSTR_TOTAL_SIZE}"; done);
 	# update snippets with new addr
 	snippets=$(echo "${INPUT_SOURCE_CODE}" | parse_snippets "${ROUND_FINAL}" "${PH_VADDR_V}" "${INSTR_TOTAL_SIZE}" "${static_data_size}" "${internal_snippets}");
 	echo -e "${internal_snippets}\n$snippets" > $snippets_file;
