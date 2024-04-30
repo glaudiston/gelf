@@ -798,7 +798,7 @@ define_variable_read_from_file()
 		"${CODE_LINE_B64}" \
 		"1" \
 		"0" \
-		"RAX"; #TODO: this is should set the register where the write call should look at data address. and it should be a variable, because this breaks cross arch(aarch does not have RAX).
+		"rax"; #TODO: this is should set the register where the write call should look at data address. and it should be a variable, because this breaks cross arch(aarch does not have RAX).
 	return;
 }
 

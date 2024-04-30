@@ -395,8 +395,7 @@ EOF
 	expect $? 0 "ab" "$o"
 }
 
-test_fibonacci_generate()
-{
+test_fibonacci_generate(){
 	compile_test <<EOF
 :	stdout	1
 :	fib	{
@@ -406,7 +405,9 @@ test_fibonacci_generate()
 	:	fibn	+	prev	last
 	:	toStop	?	fibn	limit
 	!	toStop	?>	ret
-	#!	sys_write	stdout	fibn
+	:	narr	[]	.i2s	fibn
+	:	n	!	narr
+	#!	sys_write	stdout	n
 	:	f	[]	fib	last	fibn	limit
 	!	f
 	!	ret
@@ -423,6 +424,25 @@ EOF
 	expect $? 0
 }
 
+test_i2s(){
+	compile_test <<EOF
+:	stdout	1
+:	n	@1
+:	sna	[]	.i2s	n
+:	sn	!	sna
+!	write	stdout	sn
+exit	n
+EOF
+	n=$(( RANDOM % 126 ));
+	{
+		o=$(run_test 0)
+		expect $? 0 0 $o
+		o=$(run_test $n)
+		expect $? $n $n $o
+	} | tr '\n' ';';
+	echo
+}
+
 test_sys_geteuid(){
 	compile_test <<EOF
 :	stdout	1
@@ -434,7 +454,8 @@ test_sys_geteuid(){
 !	sys_exit	ok
 EOF
 	o=$(run_test);
-	expect $? 0;
+	eo=$(id -u)
+	expect $? 0 $eo $o;
 }
 
 test_ilog10(){
