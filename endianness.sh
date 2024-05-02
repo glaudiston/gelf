@@ -6,8 +6,9 @@ function printBigEndian(){
 	local VALUE="${VALUE:=0}"
 	SIZE="$2"
 	SIZE="${SIZE:=8}"
-	printf "%0$((SIZE * 2))x\n" "${VALUE}" |
-	       	sed 's/\(..\)/\\x\1/g'
+	local l=$((SIZE * 2));
+	printf "%0${l}x\n" "${VALUE}" |
+		sed 's/.*\(.\{'$l'\}\)$/\1/g;s/\(..\)/\\x\1/g;' # truncates and escape
 }
 
 # given a value and a optional size(default 8), return the expected hex dumped bytes in little endianness
