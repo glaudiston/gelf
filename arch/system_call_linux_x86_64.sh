@@ -109,6 +109,13 @@ is_64bit_extended_register(){
 	fi;
 	return 1;
 }
+is_8bit_extended_register(){
+	local v="$1";
+	if [[ "${v,,}" =~ (spl|bpl|sil|dil) ]]; then
+		return 0;
+	fi;
+	return 1;
+}
 is_64bit_register(){
 	local v="$1";
 	if [[ "${v,,}" =~ ^(rax|rcx|rdx|rbx|rsp|rsi|rdi|r8|r9|r10|r11|r12|r13|r14|r15)$ ]]; then
@@ -171,9 +178,10 @@ is_register(){
 #  B bit = extends the ModR/M r/m or 'base' field or the SIB field
 #
 rex(){
+	debug "rex $@"
 	local src=$1;
 	local tgt=$2;
-	if ! { is_64bit_register "$src" || is_64bit_register "$tgt"; }; then
+	if ! { is_64bit_register "$src" || is_64bit_register "$tgt" || is_8bit_extended_register "$src" ; }; then
 		return;
 	fi;
 	local W=1;
@@ -185,6 +193,9 @@ rex(){
 	fi;
 	if is_64bit_extended_register "$tgt"; then
 		B=1;
+	fi;
+	if is_8bit_extended_register "$src"; then
+		R=1;
 	fi;
 	local v=$(printf "%02x" $(( (2#0100 << 4) + (W<<3) + (R<<2) + (X<<1) + B )) );
 	code=$(echo -ne $v | xxd --ps -r | base64 -w0);
@@ -224,7 +235,7 @@ prefix(){
 	local v1="$1";
 	local v2="$2";
 	local code="";
-	if is_64bit_register "$1" || is_64bit_register "$2"; then
+	if is_64bit_register "$1" || is_64bit_register "$2" || is_8bit_extended_register "$1"; then
 		code="${code}$(rex "$v1" "$v2" | b64_to_hex_dump)";
 	fi;
 	if is_16bit_register "$1" || is_16bit_register "$2"; then
@@ -394,56 +405,74 @@ mov(){
 	echo -n $out;
 }
 cmp(){
+	debug cmp $@
 	local v1="$1";
 	local v2="$2";
 	local opcode="";
 	local mod_rm="";
 	local code="";
+	code="${code}$(prefix "$v1" "$v2" | b64_to_hex_dump)";
 	if is_8bit_register "$v1"; then
+	{
 		opcode="\x38";
 		if is_8bit_register "$v2"; then
-			mod_rm="$(printf '\x%02x' $((MODRM_MOD_DISPLACEMENT_REG + (v1 << 3) + v2 )))";
+		{
+			mod_rm="$(printf '\\x%02x' $((MODRM_MOD_DISPLACEMENT_REG + (v1 << 3) + v2 )))";
 			code="${code}${opcode}${mod_rm}";
 			echo -en "$code" | base64 -w0;
 			return;
+		}
 		fi;
 		if is_valid_number "$v2"; then
+		{
 			if [ "$v2" -lt 256 ]; then # TODO not sure if 127 or 256
-				imm8="$(printf '\x%02x' $v2)"; # immediate value with 8 bits
+			{
+				imm8="$(printf '\\x%02x' "$v2")"; # immediate value with 8 bits
 				if [ "$v1" = "al" ]; then
 				{
-					code="\x3c$(printf '\x%02x' ${imm8})"; # only valid to %al: cmp %al, imm8;
+					code="${code}\x3c$(printf '\\x%02x' ${imm8})"; # only valid to %al: cmp %al, imm8;
 					echo -en "$code" | base64 -w0;
 					return;
 				}
-				else
-				{
-					if [[ "${v1}" =~ ^(al|bl|cl|dl|ah|bh|ch|dh)$ ]]; then # byte registers without REX
-					{
-						# CMP r/m8, imm8 	Compare imm8 with r/m8
-						# \xb0 %al/r8b, lb ... \xb7
-						opcode="\xb0";
-						if [[ "${v1}" =~ "h" ]]; then
-							opcode="$(( opcode + (v1 << 3) ))";
-						else
-							opcode="$(( opcode + v1 ))";
-						fi;
-						code="${code}$(( opcode + v1 ))${imm8}";
-					}
-					else # byte registers with REX
-					{
-						# they are: AL, BL, CL, DL, DIL, SIL, BPL, SPL, R8B - R15B;
-						# but we will not use the ones we can reach without the REX byte;
-						# so we expect to use only for DIL, SIL, BPL, SPL, R8B - R15B;
-						error not implemented
-					}
-					fi;
-				}
 				fi;
-			else
-				error not implemented or allowed?
+				# byte registers without REX:
+				# CMP r/m8, imm8 	Compare imm8 with r/m8
+				# 80 /7 ib
+				# \xb0 %al/r8b, lb ... \xb7
+				#
+				#  80F800            cmp al,0x0
+				#  80F900            cmp cl,0x0
+				#  80FA00            cmp dl,0x0
+				#  80FB00            cmp bl,0x0
+				#  80FC00            cmp ah,0x0
+				#  80FD00            cmp ch,0x0
+				#  80FE00            cmp dh,0x0
+				#  80FF00            cmp bh,0x0
+				#
+				# byte registers with REX:
+				# they are: AL, BL, CL, DL, DIL, SIL, BPL, SPL, R8B - R15B;
+				# but we will not use the ones we can reach without the REX byte;
+				# so we expect to use only for DIL, SIL, BPL, SPL, R8B - R15B;
+				# 248:00000000  4880F800          o64 cmp al,0x0
+				#  4880F800          o64 cmp al,0x0
+				#  4880F900          o64 cmp cl,0x0
+				#  4880FA00          o64 cmp dl,0x0
+				#  4880FB00          o64 cmp bl,0x0
+				#  4880FC00          o64 cmp spl,0x0
+				#  4880FD00          o64 cmp bpl,0x0
+				#  4880FE00          o64 cmp sil,0x0
+				#  4880FF00          o64 cmp dil,0x0
+				#
+				opcode="$( printf '\\x%02x' $(( 16#f8 + v1 )) )";
+				code="${code}\x80${opcode}${imm8}";
+				echo -en "$code" | base64 -w0;
+				return;
+			}
 			fi;
+			error not implemented or allowed?
+		}
 		fi;
+	}
 	fi;
 	error not implemented
 }
@@ -451,7 +480,7 @@ jg(){
 	local v="$1";
 	local code=""
 	code="${code}${JG_V1}";
-	code="${code}$(printf '\x%02x' "$v")";
+	code="${code}$(printf '\\x%02x' "$v")";
 	echo -en "${code}" | base64 -w0;
 }
 
@@ -1346,7 +1375,7 @@ function detect_string_length()
 	code="${code}${TEST_AL}";
 	# jz
 	# "ebfe" # jump back 0 bytes
-	JUMP_BACK_BYTES="\x7f\xf5"; # jg .-9; Jump back 9 bytes only if AL > 0
+	JUMP_BACK_BYTES="\x7f\xf5"; # jg .-9; Jump back 9 bytes only if AL > 0 (f5 == -11, includes the 2 bytes jmp instr)
 	code="${code}${JUMP_BACK_BYTES}";
 	code="${code}${DEC_rdx}";
 	# sub %rsi, %rdx
@@ -1947,19 +1976,21 @@ i2s(){
 	if [ "$int_symbol_type" == $SYMBOL_TYPE_DYNAMIC ]; then
 		codepart1="${codepart1}${MOV_ADD4_rax}$(printEndianValue "${int_symbol_value}" $SIZE_32BITS_4BYTES)";
 	elif [ "$int_symbol_type" == $SYMBOL_TYPE_HARD_CODED ]; then
-		codepart1="${codepart1}${MOV_V4_rax}$(printEndianValue "${int_symbol_value}" $SIZE_32BITS_4BYTES)";
+		codepart1="${codepart1}$(mov "${int_symbol_value}" rax | b64_to_hex_dump)";
 	else
 		:
 		# expect to have the value on rax already;
 	fi;
-	codepart1="${codepart1}${MOV_rsp_rax}";
+	codepart1="${codepart1}$(mov rsp rax | b64_to_hex_dump)";
 	codepart1="${codepart1}$(add 24 rax | b64_to_hex_dump)";
-	# TODO: Problem: if the string is less than 8 bytes, then we need to ensure it is zero on higher bits;
+	codepart1="${codepart1}$(mov "(rax)" rax | b64_to_hex_dump)";
+	# TODO: Problem: if the string is not aligned with 8 bytes,
+	# 	 	then we need to ensure it is zero on higher bits in last string byte;
 	# TODO: 	how to know if the string is less than 8 bytes?
 	# 		check for byte "00"; How ?
 	# 			we can:
-	codepart1="${codepart1}$(mov rax rsi | b64_to_hex_dump)";	# mov %rax, %rsi;	# backup the value in another register;
-	codepart1="${codepart1}$(cmp al 0 | b64_to_hex_dump)";		# cmp %al, 0;		# check low 8 bits for 0x00;
+	codepart1="${codepart1}$(mov "(rax)" rdi | b64_to_hex_dump)";	# mov %rax, %rsi;	# backup the value in another register;
+	codepart1="${codepart1}$(cmp sil 0 | b64_to_hex_dump)";		# cmp %dl, 0;		# check low 8 bits for 0x00;
 	#codepart1="${codepart1}$(jg 3 | b64_to_hex_dump)"; # jg ...; if true rcx is the strlen
 	# 				- shift right 8 bits
 	# 				- cmp %rcx, 3; # loop test
@@ -1979,7 +2010,6 @@ i2s(){
 	# 	- then we can test and 
 	# 	- if less than 8bytes, 
 	# 		- clean up (not rsp) with the exceeding bits
-	codepart1="${codepart1}$(mov "(rax)" rax | b64_to_hex_dump)";
 	codepart1="${codepart1}$(mov "(rax)" rax | b64_to_hex_dump)";
 	codepart1="${codepart1}${CMP_rax_V1}$(printEndianValue 0 $SIZE_8BITS_1BYTE)";
 	local codeforzero="";
