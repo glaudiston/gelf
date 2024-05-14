@@ -61,7 +61,32 @@ void peek_array(pid_t child, void *addr, char* out){
 	sprintf(out, "%s]", out);
 }
 
-void printRegValue(pid_t child, unsigned long r, int deep)
+// TODO this intent to print str on sys_write
+// Make sense to call it on syscall.
+void copy_bytes(pid_t child, long unsigned addr, char * target, size_t size)
+{
+	int i = 0;
+	for ( i = 0; (i * 4) < size; i++ ){
+		unsigned long data = ptrace(PTRACE_PEEKTEXT, child,
+			(void*)addr + i * 4, 0);
+		memcpy(&target[i * 4], &data, 4);
+	}
+}
+int running_forks = 1;
+struct report_values {
+
+};
+
+void run_next_instruction(pid_t pid)
+{
+	unsigned long data = ptrace(PTRACE_SINGLESTEP, pid, 0, NULL);		// execute next instruction
+	if ( data != 0 ) {
+		printf("SINGLE STEP EXPECTED 0 but was %08x\n", data);
+		perror("single step error");fflush(stderr);
+	}
+}
+
+void printMemoryValue(pid_t child, unsigned long r, int deep)
 {
 	char lastbyte[10];
 	lastbyte[0]='\n';
@@ -79,7 +104,7 @@ void printRegValue(pid_t child, unsigned long r, int deep)
 		printf(" <%i points itself: 0x%lx\n", deep +1, v);
 		return;
 	}
-	printRegValue(child, v, deep+1);
+	printMemoryValue(child, v, deep+1);
 	char * buff = malloc(BUFF_SIZE);
 	peek_string(child, (void*)r, buff); // str?
 	buff[BUFF_SIZE]=0;
@@ -87,49 +112,53 @@ void printRegValue(pid_t child, unsigned long r, int deep)
 	free(buff);
 }
 
-// TODO this intent to print str on sys_write
-// Make sense to call it on syscall.
-void copy_bytes(pid_t child, long unsigned addr, char * target, size_t size)
+struct {
+	unsigned char step;
+} user_request = {
+	.step=false
+};
+
+char * history_file="history_file";
+void interact_user(pid_t pid, void * regs)
 {
-	int i = 0;
-	for ( i = 0; (i * 4) < size; i++ ){
-		unsigned long data = ptrace(PTRACE_PEEKTEXT, child,
-			(void*)addr + i * 4, 0);
-		memcpy(&target[i * 4], &data, 4);
-	}
-}
-int get_bytecode_fn(pid_t child, unsigned long addr, unsigned data)
-{
-	int l = sizeof(bytecodes_list) / sizeof(bytecodes_list[0]);
-	unsigned char * mk; // bytecode map key
-	int mkl=0; // bytecode map key length
-	int i = 0;
-	// data is composed of 4 bytes(32 bits) in a little-endian, so:
-	unsigned char b1 = data << 24 >> 24;
-	unsigned char b2 = data << 16 >> 24;
-	unsigned char b3 = data << 8 >> 24;
-	unsigned char b4 = data << 0 >> 24;
-	unsigned char bytes[4] = {b1, b2, b3, b4};
-	for (i=0; i<l; i++){
-		struct bytecode_entry * entry = &bytecodes_list[i];
-		mk = entry->k;
-		mkl = entry->kl;
-		if (strncmp(mk, bytes, mkl) == 0) {
-			return entry->fn(child, addr);
+	while (true){
+		char * user_input = readline("> ");
+		if (user_input == NULL){
+			fprintf(stderr,"input closed.\n");
+			exit(2);
 		}
+		add_history(user_input);
+		int i = write_history(history_file);
+		if ( i != 0 ){
+			perror("Failed to write history file: ");
+		}
+		if ( strcmp(user_input,"s") == 0 ) {
+			user_request.step=true;
+			break;
+		}
+		if ( strcmp(user_input,"c") == 0) {
+			user_request.step=false;
+			break;
+		}
+		arch_interact_user(pid, regs, user_input);
 	}
-	return -1;
 }
-int running_forks = 1;
+
 void trace_watcher(pid_t pid)
 {
+	if (cmd_options.interactive_mode){
+		using_history();
+		read_history(history_file);
+		user_request.step=true;
+	}
 	char filename[256];
-	int printNextData=0;
+	instruction_info ptr_parsed_instruction = {
+		.print_request_size=0,
+	};
 	int status;
-	unsigned long addr = 0;
 	unsigned long straddr;
 	int once_set=0;
-	long int ic=0;
+	unsigned long int ic=0;
 	while ( running_forks ) {
 		waitpid(pid, &status, 0);
 		if (!once_set){
@@ -164,65 +193,94 @@ void trace_watcher(pid_t pid)
 		    return;
 		}
 		get_registers(pid, &regs);
-		addr = regs.rip;
-		printRelevantRegisters(pid, regs, printNextData);
+		if (cmd_options.interactive_mode && user_request.step){
+			interact_user(pid, &regs);
+		}
 		ic++;
-		printf(ANSI_COLOR_GRAY "IC(%li)PID(%i)",ic, pid);fflush(stdout);
-		uint32_t data = ptrace(PTRACE_PEEKTEXT, pid, (void*)addr, 0);
-		printNextData = get_bytecode_fn(pid, addr, data);
-		if ( printNextData == -1 ) {
-			// data is composed of 4 bytes in a little-endian, so:
-			unsigned char first_byte = data << 24 >> 24;
-			unsigned char second_byte = data << 16 >> 24;
-			unsigned char third_byte=data << 8 >> 24;
-			unsigned char fourth_byte=data >> 24;
-			uint32_t data2 = ptrace(PTRACE_PEEKTEXT, pid, (void*)addr+4, 0);
-			unsigned char fifth_byte = data2 << 24 >> 24;
-			unsigned char sixth_byte = data2 << 16 >> 24;
-			unsigned char seventh_byte=data2 << 8 >> 24;
-			unsigned char eigth_byte=data2 >> 24;
-			char ndisasm[256];
-			sprintf(ndisasm, "/bin/sh -c 'echo $(echo -ne \"\\x%x\\x%x\\x%x\\x%x\\x%x\\x%x\\x%x\\x%x\" | ndisasm -b %i - | head -1 | tr -s \\  | cut -d \\  -f3-)'", 
-					first_byte, second_byte, third_byte, fourth_byte,
-					fifth_byte, sixth_byte, seventh_byte, eigth_byte, 64);
-			printf("%016lx: [%02x%02x %02x%02x %02x%02x %02x%02x]; ndisasm: ", addr,
-					first_byte, second_byte, third_byte, fourth_byte, 
-					fifth_byte, sixth_byte, seventh_byte, eigth_byte);fflush(stdout);
-			system(ndisasm);fflush(stdout);
-			printNextData = 0;
+		print_previous_instruction_trace(pid, ic, regs, &ptr_parsed_instruction);
+		ptr_parsed_instruction = parse_next_instruction(pid, regs);
+		print_next_instruction(pid, ic, regs, &ptr_parsed_instruction);
+		run_next_instruction(pid);
+	}
+}
+
+void print_usage(char * command_name){
+	fprintf(stderr, "\n\
+Usage: %s <executable>\n\
+	\n\
+	--help\n\
+		Show this text\n\
+	--no-colors\n\
+		do not print terminal color bytes\n\
+	--interactive\n\
+		prompt user for commands, useful to set breakpoints and check registers and memory values\n\
+	--binary-tips\n\
+		show bit values for known composed bytes\n\
+\n\
+This app was developed by Glaudiston Gomes da Silva, while digging into Gelf development.\n\
+See: github.com/glaudiston/gelf\n\
+	\n", command_name);
+}
+
+void parse_options(int argc, char *argv[]){
+	if (argc < 2){
+		print_usage(argv[0]);
+		exit(1);
+	}
+	int i=0;
+	for (i=1;i<argc;i++){
+		if ( strcmp(argv[i], "--help" ) == 0) {
+			print_usage(argv[0]);
+			exit(1);
 		}
-		data = ptrace(PTRACE_SINGLESTEP, pid, 0, NULL);
-		if ( data != 0 ) {
-			printf("SINGLE STEP EXPECTED 0 but was %08x\n", data);
-			perror("single step error");fflush(stderr);
+		if ( strcmp(argv[i], "--binary-tips" ) == 0 ) {
+			cmd_options.binary_tips=true;
+			continue;
 		}
+		if ( strcmp(argv[i], "--no-colors" ) == 0 ) {
+			cmd_options.show_colors=false;
+			continue;
+		}
+		if ( strcmp(argv[i], "--interactive") == 0) {
+			cmd_options.interactive_mode = true;
+			continue;
+		}
+		cmd_options.cmd_index=i;
+		break;
+	}
+	if (cmd_options.cmd_index==0){
+		char color_red[16]="\e[38;2;255;0;0m";
+		char color_reset[16]="\e[0m";
+		if (!cmd_options.show_colors){
+			color_red[0]=0;
+			color_reset[0]=0;
+		}
+		fprintf(stderr, "%sERROR%s: you need to provide the ELF file to debug", color_red, color_reset);
+		print_usage(argv[0]);
+		exit(1);
 	}
 }
 
 int main(int argc, char *argv[])
 {
-    pid_t child;
+	parse_options(argc, argv);
+	pid_t child;
 
-    if (argc < 2) {
-        fprintf(stderr, "Usage: %s <executable>\n", argv[0]);
-        exit(1);
-    }
+	char *filename=argv[cmd_options.cmd_index];
+	if (access(filename, X_OK) == -1) {
+		fprintf(stderr, "The file does not exists or does not have the execute permission: %s\n", filename);
+		exit(1);
+	}
 
-    char *filename=argv[1];
-    if (access(filename, X_OK) == -1) {
-	fprintf(stderr, "The file does not exists or does not have the execute permission: %s", filename);
-	exit(1);
-    }
+	int child_pid = fork(); fflush(stdout);
+	if (child_pid == 0) { // child thread
+		ptrace(PTRACE_TRACEME, 0, 0, NULL); // this is the child thread, allow it to be traced.
+		char ** env = &argv[1];
+		execvp(filename, env); // replace this child forked thread with the binary to trace
+	} else {
+		// parent thread (pid has the child pid)
+		trace_watcher(child_pid);
+	}
 
-    int child_pid = fork(); fflush(stdout);
-    if (child_pid == 0) { // child thread
-        ptrace(PTRACE_TRACEME, 0, 0, NULL); // this is the child thread, allow it to be traced.
-	char ** env = &argv[1];
-        execvp(filename, env); // replace this child forked thread with the binary to trace
-    } else { // parent thread (pid has the child pid)
-	trace_watcher(child_pid);
-    }
-
-    printf(ANSI_COLOR_RESET);
-    return 0;
+	return 0;
 }
