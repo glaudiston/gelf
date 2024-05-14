@@ -46,23 +46,23 @@
 #  RFLAG(64)
 #
 #Here is a table of all the registers in x86_64 with their sizes:
-# 8bit(high,low)	16bits	32bits	64bits	bitval
-ah=0;	al=0;		ax=0;	eax=0;	rax=0;	# 000
-ch=0;	cl=1;		cx=1;	ecx=1;	rcx=1;	# 001	special because `rep` and others? uses it
-dh=0;	dl=2;		dx=2;	edx=2;	rdx=2;	# 010
-bh=0;	bl=3;		bx=3;	ebx=3;	rbx=3;	# 011
-spl=4;	sp=4;	esp=4;	rsp=4;	# 100	processor controlled pointing to stack pointer
-bpl=5;	bp=5;	ebp=5;	rbp=5;	# 101
-sil=6;	si=6;	rsi=6;	rsi=6;	# 110
-dil=7;	di=7;	edi=7;	rdi=7;	# 111
-r8b=0;	r8w=0;	r8d=0;	r8=0;	# 000
-r9b=1;	r9w=1;	r9d=1;	r9=1;	# 001
-r10b=2;	r10w=2;	r10d=2;	r10=2;	# 010
-r11b=3;	r11w=3;	r11d=3; r11=3;	# 011
-r12b=4;	r12w=4;	r12d=4;	r12=4;	# 100
-r13b=5;	r13w=5;	r13d=5;	r13=5;	# 101
-r14b=6;	r14w=6;	r14d=6;	r14=6;	# 110
-r15b=7;	r15w=7;	r15d=7;	r15=7;	# 111
+# 8bit(hi,low)	16bits	32bits	64bits	bitval
+ah=0;	al=0;	ax=0;	eax=0;	rax=0;	# 000
+ch=0;	cl=1;	cx=1;	ecx=1;	rcx=1;	# 001	special because `rep` and others? uses it
+dh=0;	dl=2;	dx=2;	edx=2;	rdx=2;	# 010
+bh=0;	bl=3;	bx=3;	ebx=3;	rbx=3;	# 011
+	spl=4;	sp=4;	esp=4;	rsp=4;	# 100	processor controlled pointing to stack pointer
+	bpl=5;	bp=5;	ebp=5;	rbp=5;	# 101
+	sil=6;	si=6;	rsi=6;	rsi=6;	# 110
+	dil=7;	di=7;	edi=7;	rdi=7;	# 111
+	r8b=0;	r8w=0;	r8d=0;	r8=0;	# 000
+	r9b=1;	r9w=1;	r9d=1;	r9=1;	# 001
+	r10b=2;	r10w=2;	r10d=2;	r10=2;	# 010
+	r11b=3;	r11w=3;	r11d=3; r11=3;	# 011
+	r12b=4;	r12w=4;	r12d=4;	r12=4;	# 100
+	r13b=5;	r13w=5;	r13d=5;	r13=5;	# 101
+	r14b=6;	r14w=6;	r14d=6;	r14=6;	# 110
+	r15b=7;	r15w=7;	r15d=7;	r15=7;	# 111
 #		eip	rip		instruction pointer: address of the next instruction to execute.
 #
 # Note that the smallers registers uses the same space as the bigger ones. changing the small will affect the bigger
@@ -197,8 +197,16 @@ rex(){
 	if is_8bit_extended_register "$src"; then
 		R=1;
 	fi;
+	if is_8bit_extended_register "$tgt"; then
+		B=1;
+	fi;
+	if is_8bit_extended_register "$src" && is_8bit_register "$tgt" && ! is_8bit_extended_register "$tgt"; then
+		W=0;
+		R=0;
+		B=0;
+	fi;
 	local v=$(printf "%02x" $(( (2#0100 << 4) + (W<<3) + (R<<2) + (X<<1) + B )) );
-	code=$(echo -ne $v | xxd --ps -r | base64 -w0);
+	code=$(echo -ne "$v");
 	echo -ne "$code";
 }
 
@@ -236,13 +244,13 @@ prefix(){
 	local v2="$2";
 	local code="";
 	if is_64bit_register "$1" || is_64bit_register "$2" || is_8bit_extended_register "$1"; then
-		code="${code}$(rex "$v1" "$v2" | b64_to_hex_dump)";
+		code="${code}$(rex "$v1" "$v2")";
 	fi;
 	if is_16bit_register "$1" || is_16bit_register "$2"; then
-		local osize="\x66";
+		local osize="66";
 		code="${code}${osize}";
 	fi
-	echo -en "$code" | base64 -w0;
+	echo -en "$code";
 }
 
 	#    $(( (2#0100 << 4) + (1 << 3) +  ( target_is_64bit_extended_register << 2 ) + ( 0 << 1) + ( source_is_64bit_extended_register ) ))
@@ -251,8 +259,13 @@ prefix(){
 #  The x64 the ModR/M can not handle all register/memory combinations
 #  for example when you try to move the rsp to an memory address,
 #  the rsp(100) is set to require an additional field the SIB is this additional field
-
-#In the opcode "48 89 C6", the byte C6 is actually the ModR/M byte, which is divided into three fields:
+#
+# +------------+--------+--------+------------+
+# |   Prefix   | OpCode | ModR/M |    SIB     |
+# | (optional) | 	|	 | (optional) |
+# +------------+--------+--------+------------+
+#
+# In the opcode "48 89 C6", the byte C6 is actually the ModR/M byte, which is divided into three fields:
 #
 #  The ModR/M's mod field indicates the addressing mode.
 #    The first 2 bits (11) indicate the addressing mode.  In this case, 11 represents the register addressing mode. It means the instruction operates on registers directly, rather than accessing memory.
@@ -261,8 +274,8 @@ prefix(){
 #    The last 3 bits (000) specify the source register (which in this case is rax).
 #
 # So, in summary, the ModR/M byte in the opcode "48 89 C6" indicates that we are using a register-to-register move instruction, with rsi as the destination register and rax as the source register.
-# MOV_rsp_rsi="$(prefix rsp rsi | b64_to_hex_dump)${MOV_R}\x$( printf %x $(( MOVR + (rsi << 3) + rsp )) )"; # move the rsp to rsi #11000110
-# MOV__rsp__rsi="$(prefix "(rsp)" rsi| b64_to_hex_dump)\x8b\x34\x24"; # mov (%rsp), %rsp; # move value resolving pointer
+# MOV_rsp_rsi="$(prefix  rsp rsi  | xdr | base64 -w0 | b64_to_hex_dump)${MOV_R}\x$( printf %x $(( MOVR + (rsi << 3) + rsp )) )"; # move the rsp to rsi #11000110
+# MOV__rsp__rsi="$(prefix  "(rsp)" rsi | xdr | base64 -w0 | b64_to_hex_dump)\x8b\x34\x24"; # mov (%rsp), %rsp; # move value resolving pointer
 # show_bytecode "MOV %rsi, (%rsp)"
 #48893424
 # show_bytecode "MOV %rsi, %rsp"
@@ -272,25 +285,26 @@ function push(){
 	local reg="$1";
 	local b2=$(( 16#50 + reg ));
 	if is_64bit_extended_register "$reg"; then
-		b1="$((16#41))";
-		printf "%02x%02x" "${b1}" "${b2}" | xxd --ps -r | base64 -w0;
-	else
-		printf "%02x" "${b2}" | xxd --ps -r | base64 -w0;
+		local b1="$((16#41))";
+		px "$b1" $SIZE_8BITS_1BYTE;
 	fi;
+	px "$b2" $SIZE_8BITS_1BYTE;
 }
+
 function pop(){
 	local reg="$1";
 	local b2=$(( 16#58 + reg ));
 	if [[ "$reg" =~ R([8-9]|1[0-5]) ]]; then
 		b1="$((16#41))";
-		printf "%02x%02x" "${b1}" "${b2}" | xxd --ps -r | base64 -w0;
+		printf "%02x%02x" "${b1}" "${b2}";
 	else
-		printf "%02x" "${b2}" | xxd --ps -r | base64 -w0;
+		printf "%02x" "${b2}";
 	fi;
 }
+
 MODRM_MOD_DISPLACEMENT_REG_POINTER=$(( 0 << 6 ));	# If mod is 00, no displacement follows the ModR/M byte, and the operand is IN a register (like a pointer). The operation will use the address in a register. This is used with SIB for 64bit displacements
-MODRM_MOD_DISPLACEMENT_8=$((   1 << 6 ));	# If mod is 01, a displacement of 8 bits follows the ModR/M byte.
-MODRM_MOD_DISPLACEMENT_32=$((  2 << 6 ));	# If mod is 10, a displacement of 32 bits follows the ModR/M byte.
+MODRM_MOD_DISPLACEMENT_8=$((   1 << 6 ));	# If mod is 01, pointer of [reg+displacement of 8 bits] follows the ModR/M byte.
+MODRM_MOD_DISPLACEMENT_32=$((  2 << 6 ));	# If mod is 10, pointer of [reg+displacement of 32 bits] follows the ModR/M byte.
 MODRM_MOD_DISPLACEMENT_REG=$(( 3 << 6 ));	# If mod is 11, the operand is a register, and there is no displacement. The operation will use the register itself.
 # Here's a table with the 3-bit ModR/M values and their corresponding descriptions, including the value 101 for MOV rax, imm:
 # 3-bit	Description
@@ -331,19 +345,6 @@ MODRM_REG_r15=$(( r15 << 3 )); # 111 7
 MOV="$(( MODRM_MOD_DISPLACEMENT_32 ))";	# \x80 Move using memory as source (32-bit)
 MOVR="$(( MODRM_MOD_DISPLACEMENT_REG ))";	# \xc0 move between registers
 
-# SUB
-#    28H: SUB with two 8-bit operands.
-#    29H: SUB with 32-bit operands (or 64bit registers, depends on ModR/M.
-#    2AH: SUB with 8-bit or 16-bit operands.
-#    2BH: SUB with 16-bit or 64-bit operands.
-#    80H /n: SUB with immediate data and 8-bit operands.
-#    81H /n: SUB with immediate data and 16-bit or 32-bit operands.
-#    83H /n: SUB with immediate data and sign-extended 8-bit or 32-bit operands.
-SUB_R="\x29";
-SUB_64bit="\x2B";
-SUB_IMM32="\x81";
-SUB_IMMSE8="\x83" # This depends on ModR/M OpCode
-SUB_rsp_SHORT="$(prefix v1 rsp| b64_to_hex_dump)\x83\xec"; # Subtract 1 byte(two complement) value from rsp
 TEST="\x85"; # 10000101
 IMM="$(( 2#00111000 ))";
 MOV_8BIT="\x88";
@@ -354,29 +355,65 @@ mov(){
 	local v2="$2";
 	local modrm="";
 	local code="";
-	code="${code}$(prefix "$v1" "$v2" | b64_to_hex_dump)";
+	code="${code}$(prefix "$v1" "$v2")";
 	if is_valid_number "$v1"; then
-		local mov_v4_reg="\xc7";
+	{
+		if [ "$(( (v1 >= -128) && (v1 <= 127) ))" -eq 1 ] && is_8bit_register "$v2"; then
+			code="${code}$(px $(( 16#B0 + v2 )) $SIZE_8BITS_1BYTE)"
+			code="${code}$(px "$v1" $SIZE_8BITS_1BYTE)";
+			echo -en "${code}";
+			return;
+		fi;
+		local mov_v4_reg="c7";
 		local mod_reg=0;
-		modrm="$(printEndianValue "$(( MODRM_MOD_DISPLACEMENT_REG + mod_reg + v2 ))" $SIZE_8BITS_1BYTE)";
-		code="${code}${mov_v4_reg}${modrm}$(printEndianValue "$v1" $SIZE_32BITS_4BYTES)";
+		modrm="$(px "$(( MODRM_MOD_DISPLACEMENT_REG + mod_reg + v2 ))" $SIZE_8BITS_1BYTE)";
+		code="${code}${mov_v4_reg}${modrm}$(px "$v1" $SIZE_32BITS_4BYTES)";
+	}
 	fi;
 	if [[ "$v1" =~ ^\(.*\)$ ]]; then	# resolve pointer address value
+	{
 		local v1_r=$( echo $v1 | tr -d '()' );
-		code="${code}${MOV_RESOLVE_ADDRESS}";
+		local mov_resolve_address="8b";
+		code="${code}${mov_resolve_address}";
 		if is_register "$v1_r"; then
 			local mod_reg=$(( v2 << 3 )); # 000 0
 			if is_register "$v2"; then
-				modrm="$(printEndianValue "$(( MODRM_MOD_DISPLACEMENT_REG_POINTER + mod_reg + v1_r ))" $SIZE_8BITS_1BYTE)";
+				modrm="$(px "$(( MODRM_MOD_DISPLACEMENT_REG_POINTER + mod_reg + v1_r ))" $SIZE_8BITS_1BYTE)";
 			fi;
 		fi;
 		code="${code}${modrm}";
+	}
 	fi;
 	if is_64bit_register "$v1"; then
-		code="${code}\x89";
+	{
+		code="${code}89";
 		local mod_reg=$(( v1 << 3 ));
+		if [[ "$v2" =~ ^\(.*\)$ ]]; then	# resolve pointer address value
+		{
+			local v2_r=$( echo $v2 | tr -d '()' );
+			if is_register "$v2_r"; then
+				local mod_reg=$(( v1 << 3 )); # 000 0
+				if is_register "$v1"; then
+					modrm="$(px "$(( MODRM_MOD_DISPLACEMENT_REG_POINTER + mod_reg + v2_r ))" $SIZE_8BITS_1BYTE)";
+				fi;
+				if [ "$v2_r" == "rsp" ]; then # rsp is a special case where the next byte is sib;
+					sib=$(px $(( MODRM_MOD_DISPLACEMENT_REG_POINTER + ( v2_r << 3 ) )) $SIZE_8BITS_1BYTE);
+					modrm="$modrm$sib"; 
+				fi;
+			fi;
+			code="${code}${modrm}";
+			debug "asm: mov $@; # $code";
+			echo -n "$code";
+			return;
+		}
+		fi;
 		if is_register "$v2"; then
-			modrm="$(printEndianValue "$(( MODRM_MOD_DISPLACEMENT_REG + mod_reg + v2 ))" $SIZE_8BITS_1BYTE)";
+			modrm="$(px "$(( MODRM_MOD_DISPLACEMENT_REG + mod_reg + v2 ))" $SIZE_8BITS_1BYTE)";
+			code="${code}${modrm}";
+			local rv="$(echo -en "${code}")";
+			echo -n $rv;
+			debug "mov $@; # $rv";
+			return;
 		elif is_valid_number "$v2"; then
 			# if 32 bits addr
 			# MOV %rsp ADDR: 48892425 78100000 ? not tested
@@ -387,39 +424,48 @@ mov(){
 			# 78100000: little endian 32bit addr
 			# the rsp(100) is set to require an additional field the SIB is this additional field
 			local sib=$rsp;
-			MOD_RM="$( printEndianValue $(( MODRM_MOD_DISPLACEMENT_REG_POINTER + mod_reg + sib )) ${SIZE_8BITS_1BYTE} )";
-			SIB=$(printEndianValue $(( 2#00100101 )) ${SIZE_8BITS_1BYTE});
-			local v="$(printEndianValue "$v2" $SIZE_32BITS_4BYTES)";
+			MOD_RM="$( px $(( MODRM_MOD_DISPLACEMENT_REG_POINTER + mod_reg + sib )) ${SIZE_8BITS_1BYTE} )";
+			SIB=$(px $(( 2#00100101 )) ${SIZE_8BITS_1BYTE});
+			local v="$(px "$v2" $SIZE_32BITS_4BYTES)";
 			code="${code}${INSTR_MOV}${MOD_RM}${SIB}${v}";
 		else
 			error not implemented
 		fi;
 		code="${code}${modrm}";
+	}
 	fi;
 	if is_8bit_register "$v1"; then
-		mov_8bit="\x88";
-		code="${code}${mov_8bit}";
+	{
+		if is_8bit_register "$v2"; then
+			mov_8bit="88";
+			code="${code}${mov_8bit}";
+			code="${code}$(px $(( MODRM_MOD_DISPLACEMENT_REG + $(( v1 << 3 )) + v2 )) $SIZE_8BITS_1BYTE)";
+			echo -en "${code}";
+			return;
+		fi;
+	}
 	fi;
-	out=$(echo -en "${code}" | base64 -w0);
+	out=$(echo -en "${code}");
 	debug mov $@: out [$out];
 	echo -n $out;
 }
+# CMP
 cmp(){
-	debug cmp $@
 	local v1="$1";
 	local v2="$2";
 	local opcode="";
 	local mod_rm="";
 	local code="";
-	code="${code}$(prefix "$v1" "$v2" | b64_to_hex_dump)";
+	code="${code}$(prefix  "$v1" "$v2")";
 	if is_8bit_register "$v1"; then
 	{
-		opcode="\x38";
+		opcode="38";
 		if is_8bit_register "$v2"; then
 		{
-			mod_rm="$(printf '\\x%02x' $((MODRM_MOD_DISPLACEMENT_REG + (v1 << 3) + v2 )))";
+			mod_rm="$(px $((MODRM_MOD_DISPLACEMENT_REG + (v1 << 3) + v2 )) $SIZE_8BITS_1BYTE)";
 			code="${code}${opcode}${mod_rm}";
-			echo -en "$code" | base64 -w0;
+			echo -en "$code";
+			debug "asm: cmp $@; # $code";
 			return;
 		}
 		fi;
@@ -427,11 +473,12 @@ cmp(){
 		{
 			if [ "$v2" -lt 256 ]; then # TODO not sure if 127 or 256
 			{
-				imm8="$(printf '\\x%02x' "$v2")"; # immediate value with 8 bits
+				imm8="$(px "$v2" $SIZE_8BITS_1BYTE)"; # immediate value with 8 bits
 				if [ "$v1" = "al" ]; then
 				{
-					code="${code}\x3c$(printf '\\x%02x' ${imm8})"; # only valid to %al: cmp %al, imm8;
-					echo -en "$code" | base64 -w0;
+					code="${code}3c$(px "${imm8}" $SIZE_8BITS_1BYTE)"; # only valid to %al: cmp %al, imm8;
+					echo -en "$code";
+					debug "asm: cmp $@; # $code";
 					return;
 				}
 				fi;
@@ -463,9 +510,10 @@ cmp(){
 				#  4880FE00          o64 cmp sil,0x0
 				#  4880FF00          o64 cmp dil,0x0
 				#
-				opcode="$( printf '\\x%02x' $(( 16#f8 + v1 )) )";
-				code="${code}\x80${opcode}${imm8}";
-				echo -en "$code" | base64 -w0;
+				opcode="$( px $(( 16#f8 + v1 )) $SIZE_8BITS_1BYTE)";
+				code="${code}80${opcode}${imm8}";
+				debug "asm: cmp $@; # $code";
+				echo -en "$code";
 				return;
 			}
 			fi;
@@ -474,48 +522,127 @@ cmp(){
 		fi;
 	}
 	fi;
+	if is_64bit_register "$v1"; then
+	{
+		if is_valid_number "$v2"; then
+		{
+			if [ "$v2" -gt -128 -a "$v2" -lt 128 ]; then
+			{
+				local cmp=83; # only if most significant bit(bit 7) of the next byte is 1 and depending on opcode(bits 6-3) And ModR/M opcode
+				local cmp_v1="${cmp}$(px $(( MODRM_MOD_DISPLACEMENT_REG + MODRM_OPCODE_CMP + v1 )) $SIZE_8BITS_1BYTE)";
+				code="${code}${cmp_v1}$(px $v2 $SIZE_8BITS_1BYTE)";
+				local rv=$(echo -en "${code}");
+				debug "asm: cmp $@; # $rv"
+				echo -n "$rv";
+				return;
+			}
+			fi;
+			b1="39";
+			b2="$(( 16#04 + (v1 << 3) ))";
+			b3="25";
+			code="${code}${b1}${b2}${b3}"; # cmp rax v4;
+			debub "asm: cmp $@; # $code";
+			echo $code;
+		}
+		fi;
+		if is_64bit_register "$v2"; then
+			local b1="39";
+			local b2="$(px $(( MODRM_MOD_DISPLACEMENT_REG + (v1 << 3) + v2 )) $SIZE_8BITS_1BYTE)";
+			local rv="${code}${b1}${b2}";
+			debug "asm: cmp $@; # $rv";
+			echo -n "$rv";
+			return;
+		fi;
+	}
+	fi;
 	error not implemented
 }
-jg(){
-	local v="$1";
-	local code=""
-	code="${code}${JG_V1}";
-	code="${code}$(printf '\\x%02x' "$v")";
-	echo -en "${code}" | base64 -w0;
-}
-
-MOV_AL_ADDR4="\x88\x04\x25";
-# LEA - Load Effective Address (page 1146)
-#LEAQ_RIP_rbx="$(prefix rip rbx| b64_to_hex_dump)\x8d\x1d\x00\x00\x00\x00";
-LEA_rax_rax_4="\x8d\x04\x80";
-LEA_V4_rdx="$(prefix v4 rdx | b64_to_hex_dump)\x8d\x14\x25";
-LEA_V4_rax="$(prefix v4 rax | b64_to_hex_dump)\x8d\x04\x25";
-LEA_V4_rcx="$(prefix v4 rcx | b64_to_hex_dump)\x8d\x0c\x25";
-MOV_ADDR4_rdx="$(prefix addr4 rdx | b64_to_hex_dump)\x8b\x14\x25"; # followed by 4 bytes le;
-MOV_ADDR4_rax="$(prefix addr4 rax | b64_to_hex_dump)\x8b\x04\x25";
-MOV_ADDR4_rsi="$(prefix addr4 rsi | b64_to_hex_dump)\x8b\x34\x25";
-MOV_ADDR4_rdi="$(prefix addr4 rdi | b64_to_hex_dump)\x8b\x3c\x25";
-MOV_V4_rax="$(prefix v4 rax | b64_to_hex_dump)\xc7\xc0";
-MOV_V4_rcx="$(prefix v4 rcx | b64_to_hex_dump)\xc7\xc1";
-MOV_V4_rdx="$(prefix v4 rdx | b64_to_hex_dump)\xc7\xc2"; # MOV value and resolve address, so the content of memory address is set at the register
-MOV_V4_rsi="$(prefix v4 rsi | b64_to_hex_dump)\xc7\xc6";
-MOV_V4_rdi="$(prefix v4 rdi | b64_to_hex_dump)\xc7\xc7";
-MOV_V8_rax="$(prefix v8 rax | b64_to_hex_dump)$( printEndianValue $(( MOV + IMM + rax )) ${SIZE_8BITS_1BYTE} )"; # 48 b8
-MOV_V8_rdx="$(prefix v8 rdx | b64_to_hex_dump)$( printEndianValue $(( MOV + IMM + rdx )) ${SIZE_8BITS_1BYTE} )"; # 48 ba
-MOV_V8_rsi="$(prefix v8 rsi | b64_to_hex_dump)$( printEndianValue $(( MOV + IMM + rsi )) ${SIZE_8BITS_1BYTE} )"; # 48 be
-#debug MOV_rsi=$MOV_rsi
-MOV_V8_rdi="$(prefix v8 rdi | b64_to_hex_dump)$( printEndianValue $(( MOV + IMM + rdi )) ${SIZE_8BITS_1BYTE} )"; # 48 bf; #if not prepended with rex(x48) expect 32 bit register (edi: 4 bytes)
-MOV_CL_ADDR4_rdi="\x88\x8F";
-MOV_R="\x89";
-MOVSB="\xa4"; # move 64bits(8 bytes) from %rsi addr to %rdi addr
-#MOVSQ="$(prefix | b64_to_hex_dump)\xa5"; # move 64bits(8 bytes) from %rsi addr to %rdi addr
-XOR_rbx_rbx="\x48\x31\xDB";
 CMP_rax_ADDR4_rdx_8="\x48\x39\x04\xD5";
 CMP_rbx_ADDR4_rdx_8="\x48\x39\x1C\xD5";
 CMP_ADDR4_rdx_8_rbx="\x48\x3B\x1C\xD5";
 CMP_V4_rdx_8_rax="\x48\x3B\x04\xD5";
-CMP_rax_rcx="$(prefix rax rcx | b64_to_hex_dump)\x39\xc1";
-CMP_rax_V4="\x48\x39\x04\x25";
+shlq(){
+	local v1=$1;
+	local v2=$2;
+	local p=$(prefix  "$v1" "$v2");
+	if is_valid_number "$v1"; then
+		local opcode1="C1";
+		local opcode2="$( px $(( 16#e0 + v2 )) $SIZE_8BITS_1BYTE )";
+		local code="";
+		code="${code}${p}${opcode1}${opcode2}$(px $((v1)) $SIZE_8BITS_1BYTE)";
+		rv=$(echo -en "${code}");
+		debug "shlq $@; # $rv"
+		echo -n "$rv";
+		return;
+	fi;
+	if [ "$v1" == "cl" ]; then
+		local opcode1="D3";
+		local opcode2="$( px $(( 16#e0 + v2 )) $SIZE_8BITS_1BYTE)";
+		local code="";
+		code="${code}${p}${opcode1}${opcode2}";
+		local rv=$(echo -en "${code}");
+		debug "shlq $@; # $rv"
+		echo -n "$rv"
+		return;
+	fi;
+	error not implemented/supported
+}
+shrq(){
+	local v1=$1;
+	local v2=$2;
+	local p=$(prefix  "$v1" "$v2");
+	if is_valid_number "$v1"; then
+		local opcode1="c1";
+		local opcode2="$( px $(( 16#e8 + v2 )) $SIZE_8BITS_1BYTE)";
+		local code="";
+		code="${code}${p}${opcode1}${opcode2}$(px $((v1)) $SIZE_8BITS_1BYTE)";
+		echo -n "${code}";
+		return;
+	fi;
+	if [ "$v1" == "cl" ]; then
+		local opcode1="d3";
+		local opcode2="$( px $(( 16#e8 + v2 )) $SIZE_8BITS_1BYTE)";
+		local code="";
+		code="${code}${p}${opcode1}${opcode2}";
+		local rv=$(echo -n "${code}");
+		debug "shrq $@; # $rv"
+		echo -n $rv;
+		return;
+	fi;
+	error not implemented/supported
+}
+jmp(){
+	local v1=$1;
+	local code="eb";
+	code="${code}$(px "${v1}" $SIZE_8BITS_1BYTE)";
+	echo -en "${code}";
+}
+
+MOV_AL_ADDR4="\x88\x04\x25";
+# LEA - Load Effective Address (page 1146)
+#LEAQ_RIP_rbx="$(prefix  rip rbx | xdr | base64 -w0 | b64_to_hex_dump)\x8d\x1d\x00\x00\x00\x00";
+LEA_rax_rax_4="\x8d\x04\x80";
+LEA_V4_rdx="$(prefix  v4 rdx  | xdr | base64 -w0 | b64_to_hex_dump)\x8d\x14\x25";
+LEA_V4_rax="$(prefix  v4 rax  | xdr | base64 -w0 | b64_to_hex_dump)\x8d\x04\x25";
+LEA_V4_rcx="$(prefix  v4 rcx  | xdr | base64 -w0 | b64_to_hex_dump)\x8d\x0c\x25";
+MOV_ADDR4_rdx="$(prefix  addr4 rdx  | xdr | base64 -w0 | b64_to_hex_dump)\x8b\x14\x25"; # followed by 4 bytes le;
+MOV_ADDR4_rax="$(prefix  addr4 rax  | xdr | base64 -w0 | b64_to_hex_dump)\x8b\x04\x25";
+MOV_ADDR4_rsi="$(prefix  addr4 rsi  | xdr | base64 -w0 | b64_to_hex_dump)\x8b\x34\x25";
+MOV_ADDR4_rdi="$(prefix  addr4 rdi  | xdr | base64 -w0 | b64_to_hex_dump)\x8b\x3c\x25";
+MOV_V4_rax="$(prefix  v4 rax  | xdr | base64 -w0 | b64_to_hex_dump)\xc7\xc0";
+MOV_V4_rcx="$(prefix  v4 rcx  | xdr | base64 -w0 | b64_to_hex_dump)\xc7\xc1";
+MOV_V4_rdx="$(prefix  v4 rdx  | xdr | base64 -w0 | b64_to_hex_dump)\xc7\xc2"; # MOV value and resolve address, so the content of memory address is set at the register
+MOV_V4_rsi="$(prefix  v4 rsi  | xdr | base64 -w0 | b64_to_hex_dump)\xc7\xc6";
+MOV_V4_rdi="$(prefix  v4 rdi  | xdr | base64 -w0 | b64_to_hex_dump)\xc7\xc7";
+MOV_V8_rax="$(prefix  v8 rax  | xdr | base64 -w0 | b64_to_hex_dump)$( printEndianValue $(( MOV + IMM + rax )) ${SIZE_8BITS_1BYTE} )"; # 48 b8
+MOV_V8_rdx="$(prefix  v8 rdx  | xdr | base64 -w0 | b64_to_hex_dump)$( printEndianValue $(( MOV + IMM + rdx )) ${SIZE_8BITS_1BYTE} )"; # 48 ba
+MOV_V8_rsi="$(prefix  v8 rsi  | xdr | base64 -w0 | b64_to_hex_dump)$( printEndianValue $(( MOV + IMM + rsi )) ${SIZE_8BITS_1BYTE} )"; # 48 be
+#debug MOV_rsi=$MOV_rsi
+MOV_V8_rdi="$(prefix  v8 rdi  | xdr | base64 -w0 | b64_to_hex_dump)$( printEndianValue $(( MOV + IMM + rdi )) ${SIZE_8BITS_1BYTE} )"; # 48 bf; #if not prepended with rex(x48) expect 32 bit register (edi: 4 bytes)
+MOV_CL_ADDR4_rdi="\x88\x8F";
+MOV_R="\x89";
+MOVSB="\xa4"; # move 64bits(8 bytes) from %rsi addr to %rdi addr
+#MOVSQ="$(prefix   | xdr | base64 -w0 | b64_to_hex_dump)\xa5"; # move 64bits(8 bytes) from %rsi addr to %rdi addr
 REP="\xf3"; # repeat until rcx
 #MOVSBL_V4rsp_EAX="\x0F\xBE\x44\x24";
 #MOV_rsi_rcx="\x48\x89\xF1";
@@ -531,19 +658,17 @@ MOVSBL_V4_rdx_EDX="\x0F\xBE\x14\x15";
 
 # show_bytecode "mov %rsp, %rsi"
 # 4889e6
-MOV_rax_rsi="$(mov rax rsi | b64_to_hex_dump)"; # xC6 move the rax to rsi #11000110
-MOV_rax_rdx="$(mov rax rdx | b64_to_hex_dump)";
-MOV_rax_rdi="$(mov rax rdi | b64_to_hex_dump)";
-MOV_rdx_rcx="$(mov rdx rcx | b64_to_hex_dump)";
-#MOV_rsp_rsi="$(prefix rsp rsi | b64_to_hex_dump)${MOV_R}\xe6"; # Copy the rsp(pointer address) to the rsp(as a pointer address).
-MOV_rsp_rax="$(mov rsp rax | b64_to_hex_dump)";
-MOV_rsp_rsi="$(mov rsp rsi | b64_to_hex_dump)"; # move the rsp to rsi #11000110
-MOV_rsp_rdx="$(mov rsp rdx | b64_to_hex_dump)"; # move the rsp to rdx #11000010
-MOV_rsp_rdi="$(mov rsp rdi | b64_to_hex_dump)";
-MOV_rsi_rax="$(mov rsi rax | b64_to_hex_dump)"; # move the rsi to rdx #11110010
-MOV_rsi_rdx="$(mov rsi rdx | b64_to_hex_dump)"; # move the rsi to rdx #11110010
-SUB_V1_rax="$(prefix v1 rax | b64_to_hex_dump)\x83\xe8";
-SUB_ADDR4_rax_rax="\x48\x2b\x04\xd5";
+MOV_rax_rsi="$(mov  rax rsi  | xdr | base64 -w0 | b64_to_hex_dump)"; # xC6 move the rax to rsi #11000110
+MOV_rax_rdx="$(mov  rax rdx  | xdr | base64 -w0 | b64_to_hex_dump)";
+MOV_rax_rdi="$(mov  rax rdi  | xdr | base64 -w0 | b64_to_hex_dump)";
+MOV_rdx_rcx="$(mov  rdx rcx  | xdr | base64 -w0 | b64_to_hex_dump)";
+#MOV_rsp_rsi="$(prefix  rsp rsi  | xdr | base64 -w0 | b64_to_hex_dump)${MOV_R}\xe6"; # Copy the rsp(pointer address) to the rsp(as a pointer address).
+MOV_rsp_rax="$(mov  rsp rax  | xdr | base64 -w0 | b64_to_hex_dump)";
+MOV_rsp_rsi="$(mov  rsp rsi  | xdr | base64 -w0 | b64_to_hex_dump)"; # move the rsp to rsi #11000110
+MOV_rsp_rdx="$(mov  rsp rdx  | xdr | base64 -w0 | b64_to_hex_dump)"; # move the rsp to rdx #11000010
+MOV_rsp_rdi="$(mov  rsp rdi  | xdr | base64 -w0 | b64_to_hex_dump)";
+MOV_rsi_rax="$(mov  rsi rax  | xdr | base64 -w0 | b64_to_hex_dump)"; # move the rsi to rdx #11110010
+MOV_rsi_rdx="$(mov  rsi rdx  | xdr | base64 -w0 | b64_to_hex_dump)"; # move the rsi to rdx #11110010
 
 # add: given a value or a register on r1, add it to r2
 # r1: can be a register id, a integer value or a address value
@@ -553,39 +678,49 @@ SUB_ADDR4_rax_rax="\x48\x2b\x04\xd5";
 # 	input: register
 # 	output: added r1 and r2
 ADD_FULL="\x81"; # ADD 32 or 64 bit operand (depend on ModR/M
-ADD_M64="$(prefix rax | b64_to_hex_dump)${ADD_FULL}";
+ADD_M64="$(prefix  rax  | xdr | base64 -w0 | b64_to_hex_dump)${ADD_FULL}";
 ADD_M64_rdi="${ADD_M64}";
 ADD_EAX_EAX="\x01\xc0";
-ADD_rsi_rdx="$(prefix rsi rdx | b64_to_hex_dump)\x01\xF2";
-ADD_V4_rdx="$(prefix v4 rdx | b64_to_hex_dump)\x81\xC2";
-ADD_V4_rdi="$(prefix v4 rdi | b64_to_hex_dump)\x81\xC7";
-ADD_r15_r14="$(prefix r15 r14 | b64_to_hex_dump)\x01\xfe";
-ADD_r15_rax="$(prefix r15 rax | b64_to_hex_dump)\x01\xF8";
-ADD_r15_rsi="$(prefix r15 rsi | b64_to_hex_dump)\x01\xFE";
-ADD_rcx_r8="$(prefix rcx r8 | b64_to_hex_dump)\x01\xc8";
-ADD_rdx_r8="$(prefix rdx r8 | b64_to_hex_dump)\x01\xd0";
-ADD_r8_rdi="$(prefix r8 rdi | b64_to_hex_dump)\x01\xc7";
+ADD_rsi_rdx="$(prefix  rsi rdx  | xdr | base64 -w0 | b64_to_hex_dump)\x01\xF2";
+ADD_V4_rdx="$(prefix  v4 rdx  | xdr | base64 -w0 | b64_to_hex_dump)\x81\xC2";
+ADD_V4_rdi="$(prefix  v4 rdi  | xdr | base64 -w0 | b64_to_hex_dump)\x81\xC7";
+ADD_r15_r14="$(prefix  r15 r14  | xdr | base64 -w0 | b64_to_hex_dump)\x01\xfe";
+ADD_r15_rax="$(prefix  r15 rax  | xdr | base64 -w0 | b64_to_hex_dump)\x01\xF8";
+ADD_r15_rsi="$(prefix  r15 rsi  | xdr | base64 -w0 | b64_to_hex_dump)\x01\xFE";
+ADD_rcx_r8="$(prefix  rcx r8  | xdr | base64 -w0 | b64_to_hex_dump)\x01\xc8";
+ADD_rdx_r8="$(prefix  rdx r8  | xdr | base64 -w0 | b64_to_hex_dump)\x01\xd0";
+ADD_r8_rdi="$(prefix  r8 rdi  | xdr | base64 -w0 | b64_to_hex_dump)\x01\xc7";
 add(){
-	local ADD_SHORT="\x83"; # ADD 8 or 16 bit operand (depend on ModR/M opcode first bit(most significant (bit 7)) been zero) and the ModR/M opcode
+	local ADD_SHORT="83"; # ADD 8 or 16 bit operand (depend on ModR/M opcode first bit(most significant (bit 7)) been zero) and the ModR/M opcode
 	local r1="$1";
 	local r2="$2";
 	local code="";
-	local p=$(prefix "$r1" "$r2" | b64_to_hex_dump);
+	local p=$(prefix "$r1" "$r2");
 	if [ "$r2" = "AL" ]; then
-		ADD_AL="\x04";
-		code="${code}${ADD_AL}$(printEndianValue "$r1" ${SIZE_8BITS_1BYTE})";
-		echo -en "${code}" | base64 -w0;
+		ADD_AL="04";
+		code="${code}${ADD_AL}$(px "$r1" ${SIZE_8BITS_1BYTE})";
+		echo -n "${code}";
+		debug "asm: add $@; # $(echo -n "$code")"
 		return
+	fi;
+	if is_8bit_register "$r1" && is_8bit_register "$r2"; then
+		b1="00";
+		b2="$(px $(( MODRM_MOD_DISPLACEMENT_REG + (r1 << 3) + r2 )) $SIZE_8BITS_1BYTE)";
+		code="$p$b1$b2";
+		echo -n $code;
+		debug "add $@; # $code";
+		return;
 	fi;
 	if is_register "$r1"; then
 	{
 		if is_register "$r2"; then
 		{
-			local opadd="${p}\x01";
+			local opadd="${p}01";
 			local rv=$(( MODRM_MOD_DISPLACEMENT_REG + MODRM_OPCODE_ADD + (${r1,,} << 3) + ${r2,,} ));
-			r=$(printEndianValue $rv $SIZE_8BITS_1BYTE);
+			r=$(px $rv $SIZE_8BITS_1BYTE);
 			code="${code}${opadd}${r}";
-			echo -en "${code}" | base64 -w0;
+			echo -n "${code}";
+			debug "asm: add $@; # $(echo -n "$code")"
 			return;
 		}
 		fi;
@@ -594,12 +729,14 @@ add(){
 	{
 		if is_register "$r2"; then
 			if [ $r1 -lt 128 ]; then
+			{
 				r=$(( MODRM_MOD_DISPLACEMENT_REG + MODRM_OPCODE_ADD + ${r2,,} ))
-				code="${code}${p}${ADD_SHORT}$(printEndianValue $r $SIZE_8BITS_1BYTE)";
-				code="${code}$(printEndianValue $r1 $SIZE_8BITS_1BYTE)";
-				debug "add $@: $(echo -en "$code" | base64 -w0)"
-				echo -en "${code}" | base64 -w0;
+				code="${code}${p}${ADD_SHORT}$(px $r $SIZE_8BITS_1BYTE)";
+				code="${code}$(px $r1 $SIZE_8BITS_1BYTE)";
+				debug "asm: add $@; # $(echo -n "$code")"
+				echo -n "${code}";
 				return;
+			}
 			fi;
 		fi;
 	}
@@ -610,45 +747,124 @@ add(){
 	fi;
 	error "not implemented: add $@"
 }
+# SUB
+#    28H: SUB with two 8-bit operands.
+#    29H: SUB with 32-bit operands (or 64bit registers, depends on ModR/M.
+#    2AH: SUB with 8-bit or 16-bit operands.
+#    2BH: SUB with 16-bit or 64-bit operands.
+#    80H /n: SUB with immediate data and 8-bit operands.
+#    81H /n: SUB with immediate data and 16-bit or 32-bit operands.
+#    83H /n: SUB with immediate data and sign-extended 8-bit or 32-bit operands.
+SUB_R="\x29";
+SUB_64bit="\x2B";
+SUB_IMM32="\x81";
+SUB_IMMSE8="\x83" # This depends on ModR/M OpCode
+#SUB_rsp_SHORT="$(prefix  v1 rsp | xdr | base64 -w0 | b64_to_hex_dump)\x83\xec"; # Subtract 1 byte(two complement) value from rsp
+SUB_ADDR4_rax_rax="\x48\x2b\x04\xd5";
+SUB_rdx_rsi="$(prefix  rdx rsi  | xdr | base64 -w0 | b64_to_hex_dump)${SUB_R}${ModRM}";
+SUB_rsi_rdx="$(prefix  rsi rdx  | xdr | base64 -w0 | b64_to_hex_dump)\x29\xf2";
+sub(){
+	local v1="$1";
+	local v2="$2";
+	local p="$(prefix "$v1" "$v2")";
+	if is_8bit_register "$v1" && is_8bit_register "$v2"; then
+		opcode1="28";
+		opcode2="$(px $((MODRM_MOD_DISPLACEMENT_REG + (v1 << 3) + v2 )) $SIZE_8BITS_1BYTE)";
+		c="${p}${opcode1}${opcode2}";
+		debug "asm: sub $@; # $c";
+		echo -n "$c";
+		return;
+	fi;
+	if is_valid_number "$v1" && is_8bit_int "$v1"; then
+	{
+		#4883E801          sub rax,byte +0x1
+		#48832801          sub qword [rax],byte +0x1
+		if is_register "$v2"; then
+			opcode1="83";
+			opcode2=$(px $(( 16#e8 + v2 )) $SIZE_8BITS_1BYTE);
+			c="${p}${opcode1}${opcode2}$(px $v1 $SIZE_8BITS_1BYTE)";
+			debug "asm: sub $@; # $c";
+			echo -n $c;
+			return;
+		fi;
+	}
+	fi;
+	error not implemented sub $@
+}
+is_8bit_int(){
+	local v="$1";
+	[ "$(( (v >= - ( 1 << 7 )) && (v <= ( 1 << 7 ) -1) ))" -eq 1 ];
+}
+# signed integer multiply
+imul(){
+	local v1="$1";
+	local v2="$2";
+	local p="$(prefix "$1" "$2")";
+	if is_valid_number "$1"; then
+		# 486BF60A	# imul $10,%rsi ; imul rsi,rsi,byte +0xa
+		#
+		local b1="6b";
+		# f0 + target reg + reg mul
+		local b2="$(px $(( MODRM_MOD_DISPLACEMENT_REG + (v2<<3) + v2)) $SIZE_8BITS_1BYTE)";
+		local b3="$(px "$v1" $SIZE_8BITS_1BYTE)";
+		c="$p$b1$b2$b3";
+		echo -n "$c";
+		debug "imul $@; # $c"
+		return;
+	fi;
+	if is_register "$1"; then
+		# 480fafc2	imul %rdx,%rax
+		local b1="0f";
+		local b2="af";
+		local b3="$(px $(( MODRM_MOD_DISPLACEMENT_REG + (v1 << 3) + v2)) $SIZE_8BITS_1BYTE)";
+		c="$p$b1$b2$b3";
+		echo -n "$c";
+		debug "imul $@; # $c"
+		return;
+	fi;
+	error not implemented: imul $@
+}
+dec(){
+	error not implemented
+}
 inc(){
 	local r=$1;
-	local p=$(prefix $r | b64_to_hex_dump);
+	local p=$(prefix  $r  | xdr | base64 -w0 | b64_to_hex_dump);
 	local inc_op="\xff";
 	local reg=$(printEndianValue $((MODRM_MOD_DISPLACEMENT_REG + ${r,,})) $SIZE_8BITS_1BYTE);
 	echo -en "${p}${inc_op}${reg}" | base64 -w0;
 }
 
 INC_rdx="$(inc rdx | b64_to_hex_dump)";
-DEC_rdx="$(prefix rdx| b64_to_hex_dump)\xff\xca";
-DEC_rdi="$(prefix rdi| b64_to_hex_dump)\xff\xcf";
-MOV_V4_r14="$(prefix v4 r14 | b64_to_hex_dump)\xC7\xC6";
-XOR_r15_r15="\x4D\x31\xFF";
-MOV_rsp_r14="$(prefix rsp r14 | b64_to_hex_dump)\x89\xe6";
-MOV_r14_ADDR4="$(prefix r14 addr4| b64_to_hex_dump)\x89\x34\x25";
+DEC_rdx="$(prefix  rdx | xdr | base64 -w0 | b64_to_hex_dump)\xff\xca";
+DEC_rdi="$(prefix  rdi | xdr | base64 -w0 | b64_to_hex_dump)\xff\xcf";
+MOV_V4_r14="$(prefix  v4 r14  | xdr | base64 -w0 | b64_to_hex_dump)\xC7\xC6";
+MOV_rsp_r14="$(prefix  rsp r14  | xdr | base64 -w0 | b64_to_hex_dump)\x89\xe6";
+MOV_r14_ADDR4="$(prefix  r14 addr4 | xdr | base64 -w0 | b64_to_hex_dump)\x89\x34\x25";
 # MOV_RESOLVE_ADDRESS needs the ModR/M mod (first 2 bits) to be 00.
-MOV_rcx_rcx="$(prefix "(rcx)" rcx | b64_to_hex_dump)\x8b\x09";
+MOV_rcx_rcx="$(prefix  "(rcx)" rcx  | xdr | base64 -w0 | b64_to_hex_dump)\x8b\x09";
 MODRM="$(printEndianValue "$(( MODRM_MOD_DISPLACEMENT_REG_POINTER + MODRM_REG_rsi + rsi))" $SIZE_8BITS_1BYTE)";
-MOV_rsi_rsi="$(mov "(rsi)" rsi| b64_to_hex_dump)"; # mov (%rsi), %rsi
+MOV_rsi_rsi="$(mov  "(rsi)" rsi | xdr | base64 -w0 | b64_to_hex_dump)"; # mov (%rsi), %rsi
 MODRM="$(printEndianValue "$(( MODRM_MOD_DISPLACEMENT_REG_POINTER + MODRM_REG_rdx + rdx))" $SIZE_8BITS_1BYTE)";
-MOV_rdx_rdx="$(prefix "(rdx)" rdx| b64_to_hex_dump)${MOV_RESOLVE_ADDRESS}${MODRM}";
+MOV_rdx_rdx="$(prefix  "(rdx)" rdx | xdr | base64 -w0 | b64_to_hex_dump)${MOV_RESOLVE_ADDRESS}${MODRM}";
 MODRM="$(printEndianValue "$(( MODRM_MOD_DISPLACEMENT_REG_POINTER + MODRM_REG_rdi + rdi))" $SIZE_8BITS_1BYTE)";
-MOV_rdi_rdi="$(prefix "(rdi)" rdi| b64_to_hex_dump)${MOV_RESOLVE_ADDRESS}${MODRM}";
-MOV_rdi_ADDR4="$(prefix rdi addr4| b64_to_hex_dump)\x89\x3C\x25";
+MOV_rdi_rdi="$(prefix  "(rdi)" rdi | xdr | base64 -w0 | b64_to_hex_dump)${MOV_RESOLVE_ADDRESS}${MODRM}";
+MOV_rdi_ADDR4="$(prefix  rdi addr4 | xdr | base64 -w0 | b64_to_hex_dump)\x89\x3C\x25";
 
 # show_bytecode "movq (%rsp), %rsi"
 # 488b3424
 # MOV_VALUE_rsi_rsp="$(rex | b64_to_hex_dump)\x8b\x34\x24"; # Copy the rsp(pointer value, not address) to the rsi(as a integer value).
 
-# while $(rex | b64_to_hex_dump) is used for first 8 register, the last 8 register use \x49
-MOV_rax_r8="$(prefix rax r8| b64_to_hex_dump)${MOV_R}$(printEndianValue $(( MOVR + MODRM_REG_rax + r8 )) ${SIZE_8BITS_1BYTE})";
-MOV_rax_r9="$(prefix rax r9| b64_to_hex_dump)\x89\xc1"; # move the size read to r9
-MOV_r8_rdi="$(prefix r8 rdi | b64_to_hex_dump)\x89\xc7";
-MOV_r8_rdx="$(prefix r8 rdx | b64_to_hex_dump)\x89$(printEndianValue $(( MOVR + MODRM_REG_r8 + rdx )) ${SIZE_8BITS_1BYTE})";
-MOV_r9_rdi="$(prefix r9 rdi | b64_to_hex_dump)\x89$(printEndianValue $(( MOVR + MODRM_REG_r9 + rdi )) ${SIZE_8BITS_1BYTE})";
-MOV_r9_rdx="$(prefix r9 rdx | b64_to_hex_dump)\x89$(printEndianValue $(( MOVR + MODRM_REG_r9 + rdx )) ${SIZE_8BITS_1BYTE})";
-MOV_V8_r8="$(prefix v8 r8 | b64_to_hex_dump)\xB8";
-MOV_V8_r9="$(prefix v8 r9 | b64_to_hex_dump)\xB9";
-MOV_V8_r10="$(prefix v8 r10 | b64_to_hex_dump)\xBA";
+# while $(rex) is used for first 8 register, the last 8 register use \x49
+MOV_rax_r8="$(prefix  rax r8 | xdr | base64 -w0 | b64_to_hex_dump)${MOV_R}$(printEndianValue $(( MOVR + MODRM_REG_rax + r8 )) ${SIZE_8BITS_1BYTE})";
+MOV_rax_r9="$(prefix  rax r9 | xdr | base64 -w0 | b64_to_hex_dump)\x89\xc1"; # move the size read to r9
+MOV_r8_rdi="$(prefix  r8 rdi  | xdr | base64 -w0 | b64_to_hex_dump)\x89\xc7";
+MOV_r8_rdx="$(prefix  r8 rdx  | xdr | base64 -w0 | b64_to_hex_dump)\x89$(printEndianValue $(( MOVR + MODRM_REG_r8 + rdx )) ${SIZE_8BITS_1BYTE})";
+MOV_r9_rdi="$(prefix  r9 rdi  | xdr | base64 -w0 | b64_to_hex_dump)\x89$(printEndianValue $(( MOVR + MODRM_REG_r9 + rdi )) ${SIZE_8BITS_1BYTE})";
+MOV_r9_rdx="$(prefix  r9 rdx  | xdr | base64 -w0 | b64_to_hex_dump)\x89$(printEndianValue $(( MOVR + MODRM_REG_r9 + rdx )) ${SIZE_8BITS_1BYTE})";
+MOV_V8_r8="$(prefix  v8 r8  | xdr | base64 -w0 | b64_to_hex_dump)\xB8";
+MOV_V8_r9="$(prefix  v8 r9  | xdr | base64 -w0 | b64_to_hex_dump)\xB9";
+MOV_V8_r10="$(prefix  v8 r10  | xdr | base64 -w0 | b64_to_hex_dump)\xBA";
 
 # XOR is useful to set zero at registers using less bytes in the instruction
 # Here's an table with the bytecodes for XORing each 64-bit register with zero:
@@ -669,29 +885,26 @@ MOV_V8_r10="$(prefix v8 r10 | b64_to_hex_dump)\xBA";
 # r13	xor r13, r13	4D 31 ED
 # r14	xor r14, r14	4D 31 F6
 # r15	xor r15, r15	4D 31 FF
-XOR_rax_rax="$(prefix rax rax | b64_to_hex_dump)\x31\xc0";
-XOR_rcx_rcx="$(prefix rcx rcx | b64_to_hex_dump)\x31\xC9";
-XOR_rdx_rdx="$(prefix rdx rdx | b64_to_hex_dump)\x31\xd2";
-XOR_rsi_rsi="$(prefix rsi rsi | b64_to_hex_dump)\x31\xf6";
-XOR_rdi_rdi="$(prefix rdi rdi | b64_to_hex_dump)\x31\xff";
-XOR_r8_r8="$(prefix r8 r8 | b64_to_hex_dump)\x31\xc0";
-XOR_r10_r10="$(prefix r10 r10 | b64_to_hex_dump)\x31\xd2";
+xor(){
+	local v1="$1";
+	local v2="$2";
+	local p=$(prefix "$v1" "$v2");
+	local c="";
+	c="$c$p";
+	local xor=31;
+	c="$c$xor";
+	if is_64bit_register "$v1" && is_64bit_register "$v2"; then
+		local modrm=$( px $(( MODRM_MOD_DISPLACEMENT_REG + ( v1 << 3 ) + v2 )) $SIZE_8BITS_1BYTE);
+		c="$c${modrm}";
+	fi;
+	echo "${c}";
+	debug "asm: xor $@; # $c";
+}
 
-# CMP
-CMP="\x83"; # only if most significant bit(bit 7) of the next byte is 1 and depending on opcode(bits 6-3) And ModR/M opcode
-CMP_rax_V1="$(prefix rax v1 | b64_to_hex_dump)${CMP}$( printEndianValue $(( MODRM_MOD_DISPLACEMENT_REG + MODRM_OPCODE_CMP + rax )) $SIZE_8BITS_1BYTE)";
-CMP_rbx_V1="$(prefix rbx v1 | b64_to_hex_dump)${CMP}$( printEndianValue $(( MODRM_MOD_DISPLACEMENT_REG + MODRM_OPCODE_CMP + rbx )) $SIZE_8BITS_1BYTE)";
-CMP_rdx_V1="$(prefix rdx v1 | b64_to_hex_dump)${CMP}$( printEndianValue $(( MODRM_MOD_DISPLACEMENT_REG + MODRM_OPCODE_CMP + rdx )) $SIZE_8BITS_1BYTE)";
-CMP_rsi_V1="$(prefix rsi v1 | b64_to_hex_dump)${CMP}$( printEndianValue $(( MODRM_MOD_DISPLACEMENT_REG + MODRM_OPCODE_CMP + rsi )) $SIZE_8BITS_1BYTE)";
-
-
-SUB_rsp="$(prefix rsp | b64_to_hex_dump)${SUB_IMMSE8}${MODRM}\x28" # sub rsp, x28
-SUB_rdx_rsi="$(prefix rdx rsi | b64_to_hex_dump)${SUB_R}${ModRM}";
-#MOV_DATA_rax="$(prefix v4 rax | b64_to_hex_dump)\x0f\xb6\x06"; # movzbq (%rsi), %rax
-TEST_rax_rax="$(prefix rax rax | b64_to_hex_dump)\x85\xc0";
-SUB_rsi_rdx="$(prefix rsi rdx | b64_to_hex_dump)\x29\xf2";
-IMUL_rdx_rax="$(prefix rdx rax | b64_to_hex_dump)\x0f\xaf\xc2";
-SHR_V1_rax="$(prefix v1 rax | b64_to_hex_dump)\xc1\xe8";
+#MOV_DATA_rax="$(prefix  v4 rax  | xdr | base64 -w0 | b64_to_hex_dump)\x0f\xb6\x06"; # movzbq (%rsi), %rax
+TEST_rax_rax="$(prefix  rax rax  | xdr | base64 -w0 | b64_to_hex_dump)\x85\xc0";
+IMUL_rdx_rax="$(prefix  rdx rax  | xdr | base64 -w0 | b64_to_hex_dump)\x0f\xaf\xc2";
+SHR_V1_rax="$(prefix  v1 rax  | xdr | base64 -w0 | b64_to_hex_dump)\xc1\xe8";
 
 # JMP
 # We have some types of jump
@@ -704,7 +917,7 @@ JMP_rdi="\xe0";
 JNE="\x0f\x85"; # The second byte "85" is the opcode for the JNE(Jump if Not Equal) same of JNZ(Jump if Not Zero) instruction. The following four bytes "06 00 00 00" represent the signed 32-bit offset from the current instruction to the target label.
 JZ="\x0f\x84";
 JNC_BYTE="\x73"; # jae, jnb and jnc are all the same condition code CF = 0.
-JZ_BYTE="\x74"; # follow by a signed byte from FF (-126) to 7f (127)
+JZ_BYTE="74"; # follow by a signed byte from FF (-126) to 7f (127)
 JNZ_BYTE="\x75";
 JNA_BYTE="\x76";
 JA_BYTE="\x77"; # CF = 0, ZF = 0
@@ -770,6 +983,20 @@ JG="\x0F\x8F"; # Jump if Greater than zero; flags: SF = OF, ZF = 0
 #JPO		Jump if parity odd 	  			PF = 0 			7B 	0F 8B
 #JCXZ		Jump if %CX register is 0
 #JECXZ		Jump if %ECX register is 0 	  		%CX = 0 %ECX = 0 	E3
+jz(){
+	local v="$1";
+	local code=""
+	code="${code}${JZ_BYTE}";
+	code="${code}$(px "$v" $SIZE_8BITS_1BYTE)";
+	echo -e "${code}";
+}
+jg(){
+	local v="$1";
+	local code=""
+	code="${code}${JG_V1}";
+	code="${code}$(printf '\\x%02x' "$v")";
+	echo -en "${code}" | base64 -w0;
+}
 #Processor Flags
 #
 #The x86 processors have a large set of flags that represent the state of the processor, and the conditional jump instructions can key off of them in combination.
@@ -873,18 +1100,18 @@ sys_fstat()
 	local CODE="";
 	# rdi: File descriptor number
 	if [ "${fd}" != "" ]; then
-		CODE="${CODE}$(mov "$fd" rdi | b64_to_hex_dump)";
+		CODE="${CODE}$(mov  "$fd" rdi  | xdr | base64 -w0 | b64_to_hex_dump)";
 	else
 		# if no fd providen use rax by default
-		CODE="${CODE}$(mov rax rdi | b64_to_hex_dump)";
+		CODE="${CODE}$(mov  rax rdi  | xdr | base64 -w0 | b64_to_hex_dump)";
 		# TODO not sure this is a good idea but we will lost rax so for 
 		# now we will save it at r8 too
-		CODE="${CODE}$(mov rax r8 | b64_to_hex_dump)";
+		CODE="${CODE}$(mov  rax r8  | xdr | base64 -w0 | b64_to_hex_dump)";
 	fi;
  	# rsi: Pointer to a struct stat (will be filled with file information)
-	CODE="${CODE}$(mov "${stat_addr}" rsi | b64_to_hex_dump)";
+	CODE="${CODE}$(mov  "${stat_addr}" rsi  | xdr | base64 -w0 | b64_to_hex_dump)";
 	# rax: fstat
-	CODE="${CODE}$(mov $SYS_FSTAT rax | b64_to_hex_dump)";
+	CODE="${CODE}$(mov  $SYS_FSTAT rax  | xdr | base64 -w0 | b64_to_hex_dump)";
  	CODE="${CODE}${SYSCALL}";
 	echo -ne "${CODE}" | base64 -w0;
 	return;
@@ -898,10 +1125,10 @@ function get_read_size()
 	local target_register="$2";
 	local st_size=16#30;
 	local code="";
-	code="${code}$(mov $(( STAT_ADDR + st_size )) rsi | b64_to_hex_dump)";
-	code="${code}$(mov '(rsi)' rsi | b64_to_hex_dump)";
-	local default_value_code="$(mov "$PAGESIZE" rsi | b64_to_hex_dump)";
-	code="${code}${CMP_rsi_V1}\x00"; # 64bit cmp rsi, 00
+	code="${code}$(mov  $(( STAT_ADDR + st_size )) rsi  | xdr | base64 -w0 | b64_to_hex_dump)";
+	code="${code}$(mov  '(rsi)' rsi  | xdr | base64 -w0 | b64_to_hex_dump)";
+	local default_value_code="$(mov  "$PAGESIZE" rsi  | xdr | base64 -w0 | b64_to_hex_dump)";
+	code="${code}$(cmp rsi 0 | xdr | base64 -w0 | b64_to_hex_dump)"; # 64bit cmp rsi, 00
 	local BYTES_TO_JUMP="$(printEndianValue $(echo -en "${default_value_code}" | wc -c) $SIZE_32BITS_4BYTES)";
 	code="${code}${JG}${BYTES_TO_JUMP}";
 	code="${code}${default_value_code}";
@@ -928,7 +1155,7 @@ function getpagesize()
 	local CODE="";
 	CODE="${CODE}$(mov $((16#3f)) rax)"; # sys_uname syscall
 	CODE="${CODE}${MOV_rdi_ADDR4}$(printEndianValue $((16#18)) $SIZE_32BITS_4BYTES)"; # _SC_PAGESIZE
-	CODE="${CODE}${XOR_rsi_rsi}"; # zeroes unused rsi
+	CODE="${CODE}$(xor rsi rsi | xdr | base64 -w0 | b64_to_hex_dump)"; # zeroes unused rsi
 	CODE="${CODE}${SYSCALL}"; # 
 	return;
 }
@@ -948,7 +1175,7 @@ function sys_mmap()
 	local CODE="";
 	# ; Map the memory region
 	# mov rdi, 0     ; addr (let kernel choose)
-	CODE="${CODE}${XOR_rdi_rdi}";
+	CODE="${CODE}$(xor rdi rdi | xdr | base64 -w0 | b64_to_hex_dump)";
 	# TODO use fstat to detect the size and implement a logic to align it to page memory
 	# When using mmap, the size parameter specified in rsi should be aligned to the page size. 
 	# This is because the kernel allocates memory in units of pages, 
@@ -981,7 +1208,7 @@ function sys_mmap()
 	PROT_READ=1;
 	PROT_WRITE=2;
 	PROT_EXEC=4;
-	CODE="${CODE}$(mov $(( PROT_READ + PROT_WRITE )) rdx | b64_to_hex_dump)";
+	CODE="${CODE}$(mov  $(( PROT_READ + PROT_WRITE )) rdx  | xdr | base64 -w0 | b64_to_hex_dump)";
 	# man mmap for valid flags
 	#    mov r10, 2    ; flags
 	MAP_SHARED=1;
@@ -998,14 +1225,14 @@ function sys_mmap()
 	elif [ "$fd" != "" ]; then
 		CODE="${CODE}${MOV_V8_r8}$(printEndianValue $fd ${SIZE_64BITS_8BYTES})";
 	fi;
-	#CODE="${CODE}${XOR_r8_r8}";
+	#CODE="${CODE}$(xor r8 r8 | xdr | base64 -w0 | b64_to_hex_dump)";
 	#    mov r9, 0     ; offset
 	CODE="${CODE}${MOV_V8_r9}$(printEndianValue 0 ${SIZE_64BITS_8BYTES})";
 	#    mov rax, 9    ; mmap system call number
 	CODE="${CODE}${MOV_V8_rax}$(printEndianValue $SYS_MMAP ${SIZE_64BITS_8BYTES})";
 	CODE="${CODE}${SYSCALL}";
 	# test rax to detect failure
-	CODE="${CODE}${CMP_rax_V1}\x00"; # 64bit cmp rax, 00
+	CODE="${CODE}$(cmp rax 0 | xdr | base64 -w0 | b64_to_hex_dump)"; # 64bit cmp rax, 00
 	# if it fails do mmap with  MAP_ANONYMOUS
 	local ANON_MMAP_CODE="${MOV_V8_r10}$(printEndianValue $(( MAP_PRIVATE + MAP_ANONYMOUS )) ${SIZE_64BITS_8BYTES})";
 	ANON_MMAP_CODE="${ANON_MMAP_CODE}${MOV_V8_rax}$(printEndianValue $SYS_MMAP ${SIZE_64BITS_8BYTES})";
@@ -1039,7 +1266,7 @@ function bytecode_jump_short()
 	local relative=$1;
 	local code="";
 	if [ ! "$(( (relative >= -128) && (relative <= 127) ))" -eq 1 ]; then
-		debug "displacement too big to jump short.";
+		debug "displacement too big to jump short: $relative";
 		return;
 	fi;
 	# debug jump short relative $relative
@@ -1111,8 +1338,8 @@ function call_procedure()
 	local retval_addr="$4";
 	local code="";
 	if [ "$ARGS_TYPE" == $SYMBOL_TYPE_ARRAY ]; then
-		local array_code="$XOR_r15_r15";
-		array_code="${array_code}$(add 8 r15 | b64_to_hex_dump)";
+		local array_code="$(xor r15 r15 | xdr | base64 -w0 | b64_to_hex_dump)";
+		array_code="${array_code}$(add 8 r15 | xdr | base64 -w0 | b64_to_hex_dump)";
 		code="${code}${array_code}";
 		array_code_size="$(echo -en "$array_code" | wc -c)";
 		CURRENT=$((CURRENT + array_code_size)); # append current bytecode size
@@ -1154,9 +1381,9 @@ function push_v_stack()
 {
 	local value="$1";
 	local code="";
-	code="${code}${MOV_V4_rax}$(printEndianValue "${value}" "${SIZE_32BITS_4BYTES}")";
-	code="${code}$(push rax | b64_to_hex_dump)";
-	echo -en "${code}" | base64 -w0
+	code="${code}$(mov "${value}" rax)";
+	code="${code}$(push rax)";
+	echo -n "${code}";
 }
 
 function push_stack()
@@ -1253,7 +1480,7 @@ function read_file()
 		# do we have a buffer to read into? should we use it in a mmap?
 		# now we create a buffer with mmap using this fd in rax.
 		CODE="${CODE}$(sys_mmap "${DATA_LEN}" | b64_to_hex_dump)";
-		CODE="${CODE}$(mov rax "$targetMemory" | b64_to_hex_dump)";
+		CODE="${CODE}$(mov  rax "$targetMemory"  | xdr | base64 -w0 | b64_to_hex_dump)";
 		# TODO test sys_mmap return at rax, and if fails(<0) then mmap without the fd
 		# TODO once mmap set, if the source file is read only we can just close it.
 		# then the fd should be at eax and r8
@@ -1269,7 +1496,7 @@ function read_file()
 			CODE="${CODE}$(sys_mmap | b64_to_hex_dump)";
 			# collect $rax (memory location returned from mmap)
 			# use it as argument to write out.
-			CODE="$(mov rax "$targetMemory" | b64_to_hex_dump)";
+			CODE="$(mov  rax "$targetMemory"  | xdr | base64 -w0 | b64_to_hex_dump)";
 			CODE="${CODE}${MOV_rax_rsi}";
 			CODE="${CODE}${MOV_V8_rax}$(printEndianValue $SYS_WRITE $SIZE_64BITS_8BYTES)";
 			STDOUT=1;
@@ -1343,7 +1570,7 @@ function detect_argsize()
 	CODE="${CODE}${MOV_rsi_rdx}";
 	# increment rdx by 8
 	ARGUMENT_DISPLACEMENT=8
-	CODE="${CODE}$(add $ARGUMENT_DISPLACEMENT rdx | b64_to_hex_dump)";
+	CODE="${CODE}$(add $ARGUMENT_DISPLACEMENT rdx | xdr | base64 -w0 | b64_to_hex_dump)";
 	# mov to the real address (not pointer to address)
 	ModRM=$( printEndianValue $(( MODRM_MOD_DISPLACEMENT_REG + MODRM_REG_rsi + rdx )) ${SIZE_8BITS_1BYTE} )
 	CODE="${CODE}${MOV_rsi_rsi}"; # resolve pointer to address
@@ -1359,13 +1586,13 @@ function detect_argsize()
 function detect_string_length()
 {
 	local code="";
-	#code="${code}${XOR_rdx_rdx}"; # ensure rdx = 0
-	code="${code}$(mov rsi rdx | b64_to_hex_dump)"; # let's use rdx as rsi incrementing it each loop interaction
+	#code="${code}$(xor rdx rdx)"; # ensure rdx = 0
+	code="${code}$(mov  rsi rdx  | xdr | base64 -w0 | b64_to_hex_dump)"; # let's use rdx as rsi incrementing it each loop interaction
 	# save rip
 	# leaq (%rip), %rbx # 
 	#code=${code}${LEAQ_RIP_rbx};
 	# get the data byte at addr+rdx into rax
-	code="${code}$(mov "(rdx)" rax | b64_to_hex_dump)"; # resolve current rdx pointer to rax
+	code="${code}$(mov  "(rdx)" rax  | xdr | base64 -w0 | b64_to_hex_dump)"; # resolve current rdx pointer to rax
 	#code="${code}${MOV_DATA_rax}";
 	# inc rdx
 	code="${code}${INC_rdx}";
@@ -1424,13 +1651,13 @@ function system_call_write()
 		echo -n "$(system_call_write_addr "${OUT}" "${DATA_ADDR_V}" "${DATA_LEN}")";
 	elif [ "${TYPE}" == "${SYMBOL_TYPE_HARD_CODED}" ]; then
 	{
-		code="${code}$(push_v_stack "${DATA_ADDR_V}" | b64_to_hex_dump)";
+		code="${code}$(push_v_stack "${DATA_ADDR_V}" | xdr | base64 -w0 | b64_to_hex_dump)";
 		code="${code}${MOV_V4_rax}$(printEndianValue $SYS_WRITE $SIZE_32BITS_4BYTES)";
 		code="${code}${MOV_V4_rdi}$(printEndianValue $OUT $SIZE_32BITS_4BYTES)";
 		code="${code}${MOV_rsp_rsi}";
 		code="${code}${MOV_V4_rdx}$(printEndianValue "8" $SIZE_32BITS_4BYTES)";
 		code="${code}${SYSCALL}";
-		code="${code}$(pop rax | b64_to_hex_dump)";
+		code="${code}$(pop rax | xdr | base64 -w0 | b64_to_hex_dump)";
 		echo -ne "${code}" | base64 -w0;
 	}
 	elif [ "${TYPE}" == "${SYMBOL_TYPE_DYNAMIC}" ]; then
@@ -1459,7 +1686,7 @@ function system_call_exit()
 	local symbol_type="$2";
 	local code="";
 	code="${code}${MOV_V4_rax}$(printEndianValue $SYS_EXIT $SIZE_32BITS_4BYTES)";
-	code="${code}$(mov ${exit_code:=0} rdi | b64_to_hex_dump)";
+	code="${code}$(mov  ${exit_code:=0} rdi  | xdr | base64 -w0 | b64_to_hex_dump)";
 	if [ "$symbol_type" != $SYMBOL_TYPE_HARD_CODED ]; then
 		code="${code}${MOV_rdi_rdi}";
 	fi;
@@ -1496,10 +1723,11 @@ function system_call_wait4()
 	# printEndianValue seems buggy with negative values
 	#wait_code="${wait_code}${MOV_V4_rdi}$(printEndianValue -1 ${SIZE_32BITS_4BYTES}) ";# pid_t pid
 	# so lets change to decrement rdi
-	code="${code}${XOR_rdi_rdi}${DEC_rdi}";
-	code="${code}${XOR_rsi_rsi}";# int __user *stat_addr
-	code="${code}${XOR_rdx_rdx}";# int options
-	code="${code}${XOR_r10_r10}";# struct rusage
+	code="${code}$(xor rdi rdi | xdr | base64 -w0 | b64_to_hex_dump)";
+	code="${code}${DEC_rdi}";
+	code="${code}$(xor rsi rsi | xdr | base64 -w0 | b64_to_hex_dump)";# int __user *stat_addr
+	code="${code}$(xor rdx rdx | xdr | base64 -w0 | b64_to_hex_dump)";# int options
+	code="${code}$(xor r10 r10 | xdr | base64 -w0 | b64_to_hex_dump)";# struct rusage
 	code="${code}${SYSCALL}";
 	echo -en "${code}" | base64 -w0;
 }
@@ -1540,9 +1768,9 @@ function system_call_exec()
 		dup2_child="$(system_call_dup2 "$pipe_out" "$stdout" | b64_to_hex_dump)";
 		# read_pipe will run on the parent pid.
 		read_pipe="${read_pipe}${MOV_V4_rax}$(printEndianValue "${SYS_READ}" "${SIZE_32BITS_4BYTES}")";
-		read_pipe="${read_pipe}${MOV_V4_rdi}$(printEndianValue "${pipe_in}" "${SIZE_32BITS_4BYTES}")$(mov "(edi)" edi | b64_to_hex_dump)"; # fd
+		read_pipe="${read_pipe}${MOV_V4_rdi}$(printEndianValue "${pipe_in}" "${SIZE_32BITS_4BYTES}")$(mov  "(edi)" edi  | xdr | base64 -w0 | b64_to_hex_dump)"; # fd
 		read_pipe="${read_pipe}${MOV_V4_rsi}$(printEndianValue "${pipe_buffer_addr}" "${SIZE_32BITS_4BYTES}")"; # buff
-		read_pipe="${read_pipe}$(mov rsi "$((pipe_buffer_addr - 8))" | b64_to_hex_dump )"; # set the pointer to the buffer allowing concat to work
+		read_pipe="${read_pipe}$(mov  rsi "$((pipe_buffer_addr - 8))"  | xdr | base64 -w0 | b64_to_hex_dump )"; # set the pointer to the buffer allowing concat to work
 		read_pipe="${read_pipe}${MOV_V4_rdx}$(printEndianValue "${pipe_buffer_size}" "${SIZE_32BITS_4BYTES}")"; # count
 		read_pipe="${read_pipe}${SYSCALL}";
 	fi;
@@ -1556,12 +1784,12 @@ function system_call_exec()
 	do {
 		exec_code="${exec_code}${MOV_V8_rax}$(printEndianValue "${args[$i]}" "${SIZE_64BITS_8BYTES}")";
 		if [ "${static_map[$i]}" == 0 ]; then # it's a dynamic command, resolve it
-			exec_code="${exec_code}$(mov "(rax)" rax | b64_to_hex_dump)";
+			exec_code="${exec_code}$(mov  "(rax)" rax  | xdr | base64 -w0 | b64_to_hex_dump)";
 		fi;
-		exec_code="${exec_code}$(mov rax "$(( PTR_ARGS + i*8 ))" | b64_to_hex_dump)";
+		exec_code="${exec_code}$(mov  rax "$(( PTR_ARGS + i*8 ))"  | xdr | base64 -w0 | b64_to_hex_dump)";
 	}; done
-	exec_code="${exec_code}${XOR_rax_rax}";
-	exec_code="${exec_code}$(mov rax "$(( PTR_ARGS + ${#args[@]} * 8 ))" | b64_to_hex_dump)";
+	exec_code="${exec_code}$(xor rax rax | xdr | base64 -w0 | b64_to_hex_dump)";
+	exec_code="${exec_code}$(mov  rax "$(( PTR_ARGS + ${#args[@]} * 8 ))"  | xdr | base64 -w0 | b64_to_hex_dump)";
 	exec_code="${exec_code}${MOV_V8_rdi}$(printEndianValue ${args[0]} ${SIZE_64BITS_8BYTES})";
 	if [ "${static_map[0]}" == 0 ]; then # it's a dynamic command, resolve it
 		exec_code="${exec_code}${MOV_rdi_rdi}";
@@ -1584,7 +1812,7 @@ function system_call_exec()
 	local fork_code="$(system_call_fork | cut -d, -f1 | b64_to_hex_dump)";
 	# TODO: CMP ? then (0x3d) rAx, lz
 	local TWOBYTE_INSTRUCTION_PREFIX="\0f"; # The first byte "0F" is the opcode for the two-byte instruction prefix that indicates the following instruction is a conditional jump.
-	fork_code="${fork_code}${CMP_rax_V1}\x00"; # 64bit cmp rax, 00
+	fork_code="${fork_code}$(cmp rax 0 | xdr | base64 -w0 | b64_to_hex_dump)"; # 64bit cmp rax, 00
 	# rax will be zero on child, on parent will be the pid of the forked child
 	# so if non zero (on parent) we will jump over the sys_execve code to not run it twice,
 	# and because it will exit after run
@@ -1628,19 +1856,35 @@ function get_arg_count()
 
 function get_arg()
 {
-	local ADDR="$1";
-	local ARGN="$2";
-	local CODE="";
+	local addr="$1";
+	local argn="$2";
+	local code="";
 	# MOV %rsp %rsi
-	CODE="${CODE}${MOV_rsp_rsi}";
+	code="${code}$(mov  rsp rsi  | xdr | base64 -w0 | b64_to_hex_dump)";
 	# ADD rsi 8
-	CODE="${CODE}$(add $(( 8 * (1 + ARGN) )) rsi | b64_to_hex_dump)";
-	CODE="${CODE}${ADD_r15_rsi}";
+	code="${code}$(add $(( 8 * (1 + argn) )) rsi | xdr | base64 -w0 | b64_to_hex_dump)";
+	code="${code}$(add r15 rsi | xdr | base64 -w0 | b64_to_hex_dump)";
 	# RESOLVE rsi (Copy pointer address content to rsi)
-	CODE="${CODE}${MOV_rsi_rsi}";
-	# MOV rsi ADDR
-	CODE="${CODE}$(mov rsi "$ADDR" | b64_to_hex_dump)";
-	echo -en "${CODE}" | base64 -w0;
+	code="${code}$(mov  "(rsi)" rsi  | xdr | base64 -w0 | b64_to_hex_dump)";
+	# TODO: detect string size:
+	#code="${code}$(detect_string_length)"; # rdx has the string size
+	# if multiple of 8; set it to addr and we are done;
+	# modulus8(int, int):
+	#        mov     edx, edi
+	#        sar     edx, 31
+	#        shr     edx, 29
+	#        lea     eax, [rdi+rdx]
+	#        and     eax, 7
+	#        sub     eax, edx
+	#        ret
+	# if not multiple of 8; we need to pad zeros to align 64 bits;
+	# 	otherwise we will have issues with bsr and other number functions on registers
+	# TODO: move string to memory:
+	# 	because we need to zero higher bits in byte, avoiding further issues with bsr
+	# TODO: set me address to the target address
+	# MOV rsi addr
+	code="${code}$(mov  rsi "$addr"  | xdr | base64 -w0 | b64_to_hex_dump)";
+	echo -en "${code}" | base64 -w0;
 }
 
 ARCH_CONST_ARGUMENT_ADDRESS="_ARG_ADDR_ARG_ADDR_";
@@ -1660,9 +1904,9 @@ concat_symbol_instr(){
 	# so let's mov addr to a reg,
 	# then reg to addr;
 	if [ "$idx" == 1 ]; then # on first item zero r8 to accum the size
-		code="${code}${XOR_r8_r8}";
-		code="${code}$(push r8 | b64_to_hex_dump)"; # create zeroed target space at stack;
-		code="${code}$(mov rsp $dyn_addr | b64_to_hex_dump)";
+		code="${code}$(xor r8 r8 | xdr | base64 -w0 | b64_to_hex_dump)";
+		code="${code}$(push r8 | xdr | base64 -w0 | b64_to_hex_dump)"; # create zeroed target space at stack;
+		code="${code}$(mov  rsp $dyn_addr  | xdr | base64 -w0 | b64_to_hex_dump)";
 	fi;
 	if [ "$size" -eq -1 ]; then
 		code="${code}${MOV_ADDR4_rsi}$(printEndianValue "${addr}" "${SIZE_32BITS_4BYTES}")"; # source addr
@@ -1714,13 +1958,13 @@ compare()
 	fi;
 	if [ "${type_a}" == "$SYMBOL_TYPE_DYNAMIC" ]; then
 		code="${code}${LEA_V4_rax}$(printEndianValue "$a" "${SIZE_32BITS_4BYTES}")";
-		code="${code}$(mov "(rax)" rax | b64_to_hex_dump)";
+		code="${code}$(mov  "(rax)" rax  | xdr | base64 -w0 | b64_to_hex_dump)";
 	fi;
 	if [ "${type_b}" == "$SYMBOL_TYPE_DYNAMIC" ]; then
 		code="${code}${LEA_V4_rcx}$(printEndianValue "$b" "${SIZE_32BITS_4BYTES}")";
 		code="${code}${MOV_rcx_rcx}";
 	fi;
-	code="${code}${CMP_rax_rcx}";
+	code="${code}$(cmp rax rcx | xdr | base64 -w0 | b64_to_hex_dump)";
 	echo -en "${code}" | base64 -w0;
 }
 
@@ -1735,16 +1979,16 @@ set_increment()
 	if [ "$value" == 1 ]; then
 		code="${code}${INC_rdx}";
 	elif [ "$value" -gt -128 -a "$value" -lt 128 ]; then
-		code="${code}$(add "${value}" rdx | b64_to_hex_dump)";
+		code="${code}$(add "${value}" rdx | xdr | base64 -w0 | b64_to_hex_dump)";
 	elif [ "$value_type" == $SYMBOL_TYPE_HARD_CODED ]; then
 		code="${code}${ADD_V4_rdx}$(printEndianValue "${value}" "${SIZE_32BITS_4BYTES}")";
 	else
-		code="${code}${XOR_rsi_rsi}";
+		code="${code}$(xor rsi rsi | xdr | base64 -w0 | b64_to_hex_dump)";
 		code="${code}${MOV_V4_rsi}$(printEndianValue "${value}" "${SIZE_32BITS_4BYTES}")";
 		code="${code}${MOV_rsi_rsi}";
 		code="${code}${ADD_rsi_rdx}";
 	fi;
-	code="${code}$(mov rdx "$addr" | b64_to_hex_dump)";
+	code="${code}$(mov  rdx "$addr"  | xdr | base64 -w0 | b64_to_hex_dump)";
 	echo -en "${code}" | base64 -w0;
 }
 
@@ -1763,36 +2007,36 @@ function bind()
 	# I have found this shell code only and it seems to be a BIND exploit
 	# I believe it can be useful to learn how to listen a port:
 	local code="";
-	code="${code}${XOR_rax_rax}";
+	code="${code}$(xor rax rax | xdr | base64 -w0 | b64_to_hex_dump)";
 	code="${code}${MOV_rax_rdx}";
 	code="${code}${MOV_rax_rsi}";
-	code="${code}$(prefix rdi | b64_to_hex_dump)\x8d\x3d\x04\x00\x00\x00";# lea rdi,[rel 0xb]
-	code="${code}$(add ${SYS_EXECVE} AL | b64_to_hex_dump)";
+	code="${code}$(prefix  rdi  | xdr | base64 -w0 | b64_to_hex_dump)\x8d\x3d\x04\x00\x00\x00";# lea rdi,[rel 0xb]
+	code="${code}$(add ${SYS_EXECVE} al | xdr | base64 -w0 | b64_to_hex_dump)";
 	code="${code}${SYSCALL}";
 	code="${code}\x2f\x62\x69\x6e\x2f\x73\x68\x00\xcc\x90\x90\x90";
 #  https://github.com/0x00pf/0x00sec_code/blob/master/mem_inject/infect.
 #
 # https://www.exploit-db.com/exploits/41128
-#  "$(prefix | b64_to_hex_dump)\x31\xc0"
-#  "$(prefix| b64_to_hex_dump)\x31\xd2"
-#  "$(prefix | b64_to_hex_dump)\x31\xf6\xff\xc6\x6a\x29\x58\x6a\x02\x5f"
+#  "$(prefix   | xdr | base64 -w0 | b64_to_hex_dump)\x31\xc0"
+#  "$(prefix  | xdr | base64 -w0 | b64_to_hex_dump)\x31\xd2"
+#  "$(prefix   | xdr | base64 -w0 | b64_to_hex_dump)\x31\xf6\xff\xc6\x6a\x29\x58\x6a\x02\x5f"
 #  "\x0f\x05"
-#  "$(prefix | b64_to_hex_dump)\x97\x6a\x02\x66\xc7\x44\x24\x02\x15\xe0\x54\x5e\x52\x6a\x31\x58\x6a\x10\x5a"
+#  "$(prefix   | xdr | base64 -w0 | b64_to_hex_dump)\x97\x6a\x02\x66\xc7\x44\x24\x02\x15\xe0\x54\x5e\x52\x6a\x31\x58\x6a\x10\x5a"
 #  "\x0f\x05"
 #  "\x5e\x6a\x32\x58"
 #  "\x0f\x05"
 #  "\x6a\x2b\x58"
 #  "\x0f\x05"
-#  "$(prefix | b64_to_hex_dump)\x97\x6a\x03\x5e\xff\xce\xb0\x21"
+#  "$(prefix   | xdr | base64 -w0 | b64_to_hex_dump)\x97\x6a\x03\x5e\xff\xce\xb0\x21"
 #  "\x0f\x05"
-#  "\x75\xf8\xf7\xe6\x52$(rex | b64_to_hex_dump)\xbb\x2f\x62\x69\x6e\x2f\x2f\x73\x68\x53$(rex | b64_to_hex_dump)\x8d\x3c\x24\xb0\x3b"
+#  "\x75\xf8\xf7\xe6\x52$(rex)\xbb\x2f\x62\x69\x6e\x2f\x2f\x73\x68\x53$(rex)\x8d\x3c\x24\xb0\x3b"
 #  "\x0f\x05";
   :
 }
 init_bloc(){
 	local code="";
-	#code="${code}$(mov 8 r15 | b64_to_hex_dump)";
-	#code="${code}${mov rsp rbp | b64_to_hex_dump)";
+	#code="${code}$(mov  8 r15  | xdr | base64 -w0 | b64_to_hex_dump)";
+	#code="${code}${mov  rsp rbp  | xdr | base64 -w0 | b64_to_hex_dump)";
 	echo -en "${code}" | base64 -w0;
 }
 init_prog(){
@@ -1810,12 +2054,12 @@ array_add(){
 	local item_value="$5";
 	local code="";
 	if [ "$item_addr" == "" ]; then
-		code="${code}$(push_v_stack $item_value | b64_to_hex_dump)";
+		code="${code}$(push_v_stack $item_value)";
 	else
-		code="${code}${MOV_V4_rax}$(printEndianValue "${item_addr}" $SIZE_32BITS_4BYTES)";
-		code="${code}$(push rax | b64_to_hex_dump)";
+		code="${code}$(mov "$item_addr" rax)";
+		code="${code}$(push rax)";
 	fi;
-	echo -ne "${code}" | base64 -w0;
+	echo -ne "${code}" | xdr | base64 -w0;
 }
 array_end(){
 	local array_addr="$1";
@@ -1823,10 +2067,10 @@ array_end(){
 	local code="";
 	# save the array addr outside the stack(in the main memory)
 	code="${code}${MOV_rsp_rax}";
-	code="${code}$(add $(( array_size * 8 -8)) rax | b64_to_hex_dump)";
-	code="${code}$(mov rax "$array_addr" | b64_to_hex_dump)";
+	code="${code}$(add $(( array_size * 8 -8)) rax | xdr | base64 -w0 | b64_to_hex_dump)";
+	code="${code}$(mov  rax "$array_addr"  | xdr | base64 -w0 | b64_to_hex_dump)";
 	# put the array size in the stack
-	code="${code}$(push_v_stack $array_size | b64_to_hex_dump)";
+	code="${code}$(push_v_stack $array_size | xdr | base64 -w0 | b64_to_hex_dump)";
 	echo -ne "${code}" | base64 -w0;
 }
 sys_geteuid(){
@@ -1835,7 +2079,7 @@ sys_geteuid(){
 	local SYS_GETEUID=107;
 	code="${code}${MOV_V4_rax}$(printEndianValue "$SYS_GETEUID" $SIZE_32BITS_4BYTES)"
 	code="${code}${SYSCALL}";
-	code="${code}$(mov rax "$addr" | b64_to_hex_dump)";
+	code="${code}$(mov  rax "$addr"  | xdr | base64 -w0 | b64_to_hex_dump)";
 	echo -en "${code}" | base64 -w0;
 }
 
@@ -1847,8 +2091,7 @@ div10(){
 	local float_by_10="\xcd\xcc\xcc\xcc";
 	MOV_V4_EDX="\xba";
 	code="${code}${MOV_V4_EDX}${float_by_10}";
-	# 48 0f af c2          	imul   %rdx,%rax
-	code="${code}${IMUL_rdx_rax}";
+	code="${code}$(imul rdx rax | xdr | base64 -w0 | b64_to_hex_dump)";
 	echo -ne "$code" | base64 -w0;
 }
 
@@ -1885,7 +2128,7 @@ bsr(){
 		modrm="$MODRM_MOD_DISPLACEMENT_REG_POINTER";
 	fi
 	local rc=$(( modrm + ( ${r2,,} << 3 ) + ( ${r1,,} ) ));
-	BSR="$(prefix $r2 $r1 | b64_to_hex_dump)\x0F\xBD$(printEndianValue ${rc} $SIZE_8BITS_1BYTE)";
+	BSR="$(prefix  $r2 $r1  | xdr | base64 -w0 | b64_to_hex_dump)\x0F\xBD$(printEndianValue ${rc} $SIZE_8BITS_1BYTE)";
 	code="${code}${BSR}";
 	echo -ne "$code" | base64 -w0;
 }
@@ -1925,9 +2168,9 @@ ilog10(){
 		# 	16 = ilog10 addr
 		# 	24 = first arg
 		# so we want n=24
-		code="${code}${MOV_rsp_rax}";
-		code="${code}$(add 24 rax | b64_to_hex_dump)";
-		code="${code}$(mov "(rax)" rax | b64_to_hex_dump)";
+		code="${code}$(mov  rsp rax  | xdr | base64 -w0 | b64_to_hex_dump)";
+		code="${code}$(add 24 rax | xdr | base64 -w0 | b64_to_hex_dump)";
+		code="${code}$(mov  "(rax)" rax  | xdr | base64 -w0 | b64_to_hex_dump)";
 		# should be the same as: movsbl 0x18(%rsp), %eax
 		#code="${code}${MOVSBL_V4rsp_EAX}$(printEndianValue 24 $SIZE_8BITS_1BYTE)";
 		retcode="$(bytecode_ret | b64_to_hex_dump)";
@@ -1951,51 +2194,84 @@ ilog10(){
 		#code="${code}${MOV_rsi_rsi}";
 		#1 0000 480FB6FA 	movzx %dl,%rdi
 		code="${code}${MOVZX_DL_rdi}";
-		#code="${code}$(mov rsi $ret_addr | b64_to_hex_dump)";
+		#code="${code}$(mov  rsi $ret_addr  | xdr | base64 -w0 | b64_to_hex_dump)";
 	fi;
 	echo -en "${code}${retcode}" | base64 -w0;
 }
 
-# i2s integer to string
-# registers:
-# rsp: stack changed and restored
-# rax: number to convert
-# rcx: digit value
-# rdx: decrement by power(10, digit) until less than zero
-# rdi: used by ilog10; strlen position
-# rsi: used by ilog10
-i2s(){
-	local int_symbol_value="$1";
-	local int_symbol_type="$2";
-	local str_addr="$3";# return address(stored pointer)
-	local ilog10_addr="$4";
-	local power10_addr="$5";
-	local CURRENT_RIP="$6";
-	local code="";
-	local codepart1="";
-	if [ "$int_symbol_type" == $SYMBOL_TYPE_DYNAMIC ]; then
-		codepart1="${codepart1}${MOV_ADD4_rax}$(printEndianValue "${int_symbol_value}" $SIZE_32BITS_4BYTES)";
-	elif [ "$int_symbol_type" == $SYMBOL_TYPE_HARD_CODED ]; then
-		codepart1="${codepart1}$(mov "${int_symbol_value}" rax | b64_to_hex_dump)";
-	else
-		:
-		# expect to have the value on rax already;
-	fi;
-	codepart1="${codepart1}$(mov rsp rax | b64_to_hex_dump)";
-	codepart1="${codepart1}$(add 24 rax | b64_to_hex_dump)";
-	codepart1="${codepart1}$(mov "(rax)" rax | b64_to_hex_dump)";
-	# TODO: Problem: if the string is not aligned with 8 bytes,
-	# 	 	then we need to ensure it is zero on higher bits in last string byte;
-	# TODO: 	how to know if the string is less than 8 bytes?
-	# 		check for byte "00"; How ?
-	# 			we can:
-	codepart1="${codepart1}$(mov "(rax)" rdi | b64_to_hex_dump)";	# mov %rax, %rsi;	# backup the value in another register;
-	codepart1="${codepart1}$(cmp sil 0 | b64_to_hex_dump)";		# cmp %dl, 0;		# check low 8 bits for 0x00;
-	#codepart1="${codepart1}$(jg 3 | b64_to_hex_dump)"; # jg ...; if true rcx is the strlen
-	# 				- shift right 8 bits
-	# 				- cmp %rcx, 3; # loop test
-	# 				- jl ...; # jump back to check 3 times;
-	# 				- mov %rsi, %rax; # restore the value;
+# s2i string to integer
+# given a string address convert it to integer
+s2i(){
+	local reg_str_addr="rax";
+	local reg_tmp_s="rsi";
+	local reg_tmp_s8="sil";
+	local reg_int_addr="rdi";
+	local reg_tmp_i="rcx";
+	local reg_tmp_i8="cl";
+	local c="";
+	local init=""
+	# tmp code start
+	#
+	init="${init}$(mov rsp $reg_str_addr)";
+	init="${init}$(add 24 $reg_str_addr)";
+	#
+	# tmp code end
+	init="${init}$(xor $reg_tmp_i $reg_tmp_i)";	# clean up target int reg
+	init="${init}$(mov "(${reg_str_addr})" $reg_tmp_s)";	# load the first 8 bytes at the tmp register
+	local loop="";
+	loop="${loop}$(cmp $reg_tmp_s8 0)";
+	local r="";
+	r="${r}$(sub 48 $reg_tmp_s8)";		# convert to int
+	r="${r}$(imul 10 $reg_tmp_i)";		# multiply target by 10;
+	r="${r}$(add $reg_tmp_s8 $reg_tmp_i8)";	# add to target int
+	r="${r}$(shrq 8 $reg_tmp_s)";		# get next byte
+	local ss=$(( $(echo $loop$r | xdr | wc -c) ));
+	r="${r}$(jmp $(( - ss)))";	# jump back to loop start
+	local rs=$(echo -n "$r"| xdr | wc -c);
+	loop="${loop}$(jz $rs)"; 		# if found null the string is over;
+	loop="${loop}${r}";
+	local done="";
+	done="${done}$(mov $reg_tmp_s "(${reg_str_addr})")";	# record the value at target address
+	#
+	# this should work only for 8 bytes string, more than 8 needs another logic;
+	#
+	local ret=$(bytecode_ret | base64 -d | xd );
+	code="${code}${init}";
+	code="${code}${loop}";
+	code="${code}${done}";
+	code="${code}$(mov "(rax)" rdi)";
+	code="${code}${ret}";
+	echo -n ${code};
+
+	return;
+
+	# if the string is not aligned with 8 bytes,
+	# 	then we need to ensure it is zero on higher bits in last string byte;
+	#
+	# 	how to know if the string is less than 8 bytes?
+	# 		check for byte "00"; we can:
+	c="${c}$(mov rax rdi)";	# mov %rax, %rdi;	# backup the value in another register;
+	local c1="";
+	c1="${c1}$(cmp dil 0)";		# cmp %dil, 0;		# check low 8 bits for 0x00;
+	local c2="";
+	c2="${c2}$(shrq 8 rdi)"; # - shift right 8 bits
+	c2="${c2}$(cmp rcx 7)"; # loop test
+	c2="${c2}$(inc rcx)";
+	local c2s="$(echo -en "$c2" | xdr | wc -c)";
+	local jmp_size=2;
+	c1="${c1}$(jz $(( c2s + jmp_size )))"; # if true rcx is the strlen
+	c1="${c1}${c2}"
+	local c1s="$(echo -en "$c1" | xdr | wc -c)";
+	c="${c}${c1}";
+	# rcx should be < 8 if small string;
+	c="${c}$(jmp $(( - c1s - jmp_size )))";
+	c="${c}$(mov "(rax)" rax)";
+	c="${c}$(shlq 3 cl)"; # mov 3 bits left == multiply per 8;
+	c="${c}$(mov 64 dl)";
+	c="${c}$(sub cl dl)";
+	c="${c}$(mov dl cl)";
+	c="${c}$(shlq cl rax)";
+	c="${c}$(shrq cl rax)";
 	# 				- shl 64 - %rcx * 8, %rax; # shift left rcx bits on rax;
 	# 				- shr 64 - %rcx * 8, %rax; # shift right
 	# 			or we can:
@@ -2010,26 +2286,55 @@ i2s(){
 	# 	- then we can test and 
 	# 	- if less than 8bytes, 
 	# 		- clean up (not rsp) with the exceeding bits
-	codepart1="${codepart1}$(mov "(rax)" rax | b64_to_hex_dump)";
-	codepart1="${codepart1}${CMP_rax_V1}$(printEndianValue 0 $SIZE_8BITS_1BYTE)";
+	echo -en "$c";
+}
+
+# i2s integer to string
+# registers:
+# rsp: stack changed and restored
+# rax: number to convert
+# rcx: digit value
+# rdx: decrement by power(10, digit) until less than zero
+# rdi: used by ilog10; strlen position
+# rsi: used by ilog10
+i2s(){
+	local int_symbol_value="$1";
+	local int_symbol_type="$2";
+	local str_addr="$3";# return address(stored pointer)
+	debug "i2s to store at $(printf 0x%x $str_addr)";
+	local ilog10_addr="$4";
+	local power10_addr="$5";
+	local CURRENT_RIP="$6";
+	local code="";
+	local codepart1="";
+	if [ "$int_symbol_type" == $SYMBOL_TYPE_DYNAMIC ]; then
+		codepart1="${codepart1}${MOV_ADD4_rax}$(printEndianValue "${int_symbol_value}" $SIZE_32BITS_4BYTES)";
+	elif [ "$int_symbol_type" == $SYMBOL_TYPE_HARD_CODED ]; then
+		codepart1="${codepart1}$(mov "${int_symbol_value}" rax  | xdr | base64 -w0 | b64_to_hex_dump)";
+	else
+		:
+		# expect to have the value on rax already;
+	fi;
+	codepart1="${codepart1}$(mov rsp rax  | xdr | base64 -w0 | b64_to_hex_dump)";
+	codepart1="${codepart1}$(add 24 rax | xdr | base64 -w0 | b64_to_hex_dump)";
+	codepart1="${codepart1}$(mov "(rax)" rax  | xdr | base64 -w0 | b64_to_hex_dump)";
+	codepart1="${codepart1}$(mov "(rax)" rax  | xdr | base64 -w0 | b64_to_hex_dump)";
+	codepart1="${codepart1}$(cmp rax 0  | xdr | base64 -w0 | b64_to_hex_dump)";
 	local codeforzero="";
-	codeforzero="${codeforzero}$(add 48 rax| b64_to_hex_dump)";
+	codeforzero="${codeforzero}$(add 48 rax | xdr | base64 -w0 | b64_to_hex_dump)";
 	codeforzero="${codeforzero}${MOV_AL_ADDR4}$(printEndianValue $str_addr $SIZE_32BITS_4BYTES)";
 	codeforzero="${codeforzero}${MOV_V4_rdi}$(printEndianValue $str_addr $SIZE_32BITS_4BYTES)";
 	codeforzero="${codeforzero}$(bytecode_ret | b64_to_hex_dump)";
 	codepart1="${codepart1}${JG_V1}$(printEndianValue $( echo -en "$codeforzero" | wc -c) $SIZE_8BITS_1BYTE)";
 	codepart1="${codepart1}${codeforzero}";
-	codepart1="${codepart1}$(push rax | b64_to_hex_dump)";
-	codepart1="${codepart1}$(push rax | b64_to_hex_dump)";
-	codepart1="${codepart1}$(push rax | b64_to_hex_dump)";
-	codepart1="${codepart1}$(call_procedure ${ilog10_addr} $(( CURRENT_RIP + $( echo -en "${codepart1}" | wc -c) )) | b64_to_hex_dump)";
+	codepart1="${codepart1}$(call_procedure ${ilog10_addr} $(( CURRENT_RIP + $( echo -en "${codepart1}" | wc -c) -7 )) | b64_to_hex_dump)";
 	# at this point rdx == 3 (log 10 (n))
 	# rax is the value (1000)
-	codepart1="${codepart1}${XOR_rdi_rdi}";
+	codepart1="${codepart1}$(xor rdi rdi | xdr | base64 -w0 | b64_to_hex_dump)";
 	codepart1="${codepart1}";
 	code="${code}${codepart1}";
 	local codepart2="";
-	codepart2="${codepart2}${XOR_rcx_rcx}";
+	codepart2="${codepart2}$(xor rcx rcx | xdr | base64 -w0 | b64_to_hex_dump)";
 	local code_dec_part="";
 	code_dec_part="${code_dec_part}${SUB_ADDR4_rax_rax}$(printEndianValue $power10_addr $SIZE_32BITS_4BYTES)";
 	code_dec_part="${code_dec_part}$(inc rcx | b64_to_hex_dump)";
@@ -2037,13 +2342,13 @@ i2s(){
 	# cmp %rax, $power10_addr(,%rdx,8);
 	loopcode="${loopcode}${CMP_rax_ADDR4_rdx_8}$(printEndianValue "$power10_addr" $SIZE_32BITS_4BYTES)";
 		local printDigitCode="";
-		printDigitCode="${printDigitCode}$(add $(printf %d \'0) rcx | b64_to_hex_dump)"; # add the zero asc value (0x30)
+		printDigitCode="${printDigitCode}$(add $(printf %d \'0) rcx | xdr | base64 -w0 | b64_to_hex_dump)"; # add the zero asc value (0x30)
 		printDigitCode="${printDigitCode}${MOV_CL_ADDR4_rdi}$(printEndianValue $str_addr $SIZE_32BITS_4BYTES)"; # append the rcx low byte to str addr
 		printDigitCode="${printDigitCode}$(inc rdi | b64_to_hex_dump)";
 		#⤚·······rdx=$((rdx-1));
 		printDigitCode="${printDigitCode}${DEC_rdx}";
 		# $rdx -lt 0 ] && break;
-		printDigitCode="${printDigitCode}${CMP_rdx_V1}$(printEndianValue 0 $SIZE_8BITS_1BYTE)";
+		printDigitCode="${printDigitCode}$(cmp rdx 0 | xdr | bas64 -w0 | b64_to_hex_dump)";
 		xor_size=3; # size of "xor rcx, rcx" instr bytes
 		printDigitCode="${printDigitCode}${JGE_V1}$(printEndianValue $(( 0 - $( echo -e "$printDigitCode" | wc -c ) - xor_size - 11 )) $SIZE_8BITS_1BYTE)"; # TODO why do i need to substract 11?
 		local jmpv1_size=2; # it is not in code_dec_part yet because it depends on this block size
@@ -2060,12 +2365,8 @@ i2s(){
 	# jmp back
 	code="${code}${codepart2}";
 	code="${code}${JMP_V1}$(printEndianValue $(( - $(echo -en "${codepart2}" | wc -c) +1 )) $SIZE_8BITS_1BYTE )"; # TODO: why +1 ?
-	code="${code}$(pop rax | b64_to_hex_dump)";
-	code="${code}$(pop rax | b64_to_hex_dump)";
-	code="${code}$(pop rax | b64_to_hex_dump)";
 	# TODO code="${code}${MOV_v0_ADDR4_rdi}$(printEndianValue $str_addr $SIZE_32BITS_4BYTES)"; # append the 00 to close the string
-	code="${code}$(mov $str_addr rdi | b64_to_hex_dump)";
+	code="${code}$(mov  $str_addr rdi  | xdr | base64 -w0 | b64_to_hex_dump)";
 	code="${code}$(bytecode_ret | b64_to_hex_dump)";
 	echo -en "$code" | base64 -w0;
 }
-

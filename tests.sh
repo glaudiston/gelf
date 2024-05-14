@@ -424,14 +424,36 @@ EOF
 	expect $? 0
 }
 
+test_s2i(){
+	compile_test <<EOF
+:	stdout	1
+:	nstr	@1
+:	na	[]	.s2i	nstr
+:	n	!	na
+!	sys_exit	n
+EOF
+	n=$(( RANDOM % 126 ));
+	{
+		o=$(run_test 0);
+		expect $? 0;
+		o=$(run_test $n);
+		expect $? $n;
+	} | tr '\n' ';';
+	echo
+}
+
 test_i2s(){
 	compile_test <<EOF
 :	stdout	1
-:	n	@1
+:	nstr	@1
+# convert the arg to integer
+:	na	[]	.s2n	nstr
+!	n	!	na
+# convert integer to string
 :	sna	[]	.i2s	n
 :	sn	!	sna
-!	write	stdout	sn
-exit	n
+!	sys_write	stdout	sn
+!	sys_exit	n
 EOF
 	n=$(( RANDOM % 126 ));
 	{
