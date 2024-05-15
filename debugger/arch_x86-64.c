@@ -294,20 +294,20 @@ void get_modrm_source(struct instruction instr, char *a){
 		return;
 	}
 	if (instr.modrm.mod == 3) {
-		if (instr.prefix.rex.W && instr.prefix.rex.R && !instr.prefix.rex.B) {
-			sprintf(a, r64b[instr.modrm.source]);
-			return;
-		}
-		if (!instr.prefix.rex.W && instr.prefix.rex.B) {
+		if (!instr.prefix.rex.W && !instr.prefix.rex.R) {
 			sprintf(a, r32a[instr.modrm.source]);
 			return;
 		}
 		if (!instr.prefix.rex.W && instr.prefix.rex.R) {
-			sprintf(a, r32a[instr.modrm.source]);
+			sprintf(a, r32b[instr.modrm.source]);
 			return;
 		}
-		if (instr.prefix.rex.W && instr.prefix.rex.B) {
+		if (instr.prefix.rex.W && !instr.prefix.rex.R) {
 			sprintf(a, r64a[instr.modrm.source]);
+			return;
+		}
+		if (instr.prefix.rex.W && instr.prefix.rex.R) {
+			sprintf(a, r64b[instr.modrm.source]);
 			return;
 		}
 	}
@@ -328,16 +328,20 @@ void get_modrm_target(struct instruction instr, char *b){
 		return;
 	}
 	if (instr.modrm.mod == 3) {
-		if (instr.prefix.rex.W && instr.prefix.rex.R && !instr.prefix.rex.B) {
-			sprintf(b, r64a[instr.modrm.target]);
+		if (!instr.prefix.rex.W && !instr.prefix.rex.B) {
+			sprintf(b, r32a[instr.modrm.target]);
 			return;
 		}
-		if (instr.prefix.rex.W && instr.prefix.rex.R && instr.prefix.rex.B) {
-			sprintf(b, r64b[instr.modrm.target]);
+		if (!instr.prefix.rex.W && instr.prefix.rex.B) {
+			sprintf(b, r32b[instr.modrm.target]);
+			return;
+		}
+		if (instr.prefix.rex.W && !instr.prefix.rex.B) {
+			sprintf(b, r64a[instr.modrm.target]);
 			return;
 		}
 		if (instr.prefix.rex.W && instr.prefix.rex.B) {
-			sprintf(b, r64a[instr.modrm.target]);
+			sprintf(b, r64b[instr.modrm.target]);
 			return;
 		}
 	}
@@ -431,6 +435,7 @@ instruction_info parse_next_instruction(pid_t pid, struct user_regs_struct regs)
 		case 0x31:	// xor
 		{
 			sprintf(rv.colored_hexdump, "%s%s%02x%s", rv.colored_hexdump, get_color("xor"), bytes[instr_size-1], get_color(""));
+			sprintf(rv.colored_hexdump, "%s%s%02x%s", rv.colored_hexdump, get_color(""), bytes[instr_size], get_color(""));
 			instr.modrm=parse_modrm(instr, bytes[instr_size++]);
 			get_modrm_source(instr, (char*)&a);
 			get_modrm_target(instr, (char*)&b);
@@ -509,7 +514,7 @@ instruction_info parse_next_instruction(pid_t pid, struct user_regs_struct regs)
 				{
 					get_modrm_target(instr, (char*)&b);
 				}
-				sprintf(rv.asm_code, "mov %s, %s", a, b);
+				sprintf(rv.asm_code, "%smov%s %s, %s", get_color("mov"), get_color(""), a, b);
 				sprintf(rv.comment, "");
 				break;
 			}
@@ -533,9 +538,16 @@ instruction_info parse_next_instruction(pid_t pid, struct user_regs_struct regs)
 		{
 			sprintf(rv.colored_hexdump, "%s%s%02x%s", rv.colored_hexdump, get_color("call"), bytes[instr_size-1], get_color(""));
 			long int v = ptrace(PTRACE_PEEKTEXT, pid, (void*)regs.rip+instr_size, 0);
+			sprintf(rv.colored_hexdump, "%s%s%02x%02x%02x%02x%s", 
+					rv.colored_hexdump, get_color("int"), 
+					(unsigned char)(v << 24 >> 24), 
+					(unsigned char)(v << 16 >> 24), 
+					(unsigned char)(v << 8 >> 24), 
+					(unsigned char)(v << 0 >> 24), 
+					get_color(""));
 			instr_size += 4; // 4 bytes addr
 			instr.displacement.v32bit = (v);
-			sprintf(rv.asm_code, "call .%i", instr.displacement.v32bit);
+			sprintf(rv.asm_code, "call .%s%i%s", get_color("int"), instr.displacement.v32bit, get_color(""));
 			sprintf(rv.comment,"0x%x", regs.rip + instr_size + instr.displacement.v32bit);
 			break;
 		}
@@ -565,7 +577,7 @@ instruction_info parse_next_instruction(pid_t pid, struct user_regs_struct regs)
 							get_color(""));
 					sprintf(a, "0x%x", tgt_addr);
 					sprintf(b, r64a[instr.modrm.source]);
-					sprintf(rv.asm_code, "mov %s%s%s, %s", get_color("int"), a, get_color(""), b);
+					sprintf(rv.asm_code, "%smov %s%s%s, %s", get_color("mov"), get_color("int"), a, get_color(""), b);
 					sprintf(rv.comment, "");
 				}
 			}
@@ -585,8 +597,8 @@ void print_next_instruction(pid_t pid, long int ic, struct user_regs_struct regs
 		unsigned char colored_hexdump[256];
 		printf("%sIC:%li|PID:%i|rip:0x%lx|%s|", get_color("gray"),
 				ic, pid, regs.rip, ptr_parsed_instruction->colored_hexdump);fflush(stdout);
-		int carry_flag = (regs.eflags & (1 << 0)) ? 1 : 0;
-		int zero_flag = (regs.eflags & (1 << 6)) ? 1 : 0;
+		int carry_flag = (regs.eflags & (1 << 0));
+		int zero_flag = (regs.eflags & (1 << 6));
 		/* substr(ptr_parsed_instruction->comment, "{ZF}", zero_flag ? "true" : "false"); */
 		printf("%s%s%s|%s\n", get_color("white"), ptr_parsed_instruction->asm_code, get_color("gray"), ptr_parsed_instruction->comment);
 		return;

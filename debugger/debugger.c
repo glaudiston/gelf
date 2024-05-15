@@ -129,8 +129,8 @@ void interactive_help(){
 		step next instruction\n\
 	c\n\
 		continue execution\n\
-	b [address]\n\
-		set breakpoint at target address. eg: b [10078]\n\
+	b address\n\
+		set breakpoint at target address. eg: b 10078\n\
 	p r\n\
 		print the register value. eg: p rax\n\
 	ctrl-r,arrow up/down\n\
@@ -182,7 +182,8 @@ void interact_user(pid_t pid, void * regs)
 		}
 		if (strncmp(user_input, "b ", 2) == 0) {
 			sprintf(user_request.breakpoint,&user_input[2]);
-			break;
+			printf("breakpoint set to 0x%s. use \"c\" to continue until hit the breakpoint\n:", &user_input[2]);
+			continue;
 		}
 		arch_interact_user(pid, regs, user_input);
 	}
