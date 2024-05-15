@@ -62,6 +62,7 @@ extern void copy_bytes(pid_t child, long unsigned addr, char * target, size_t si
 extern void peek_string(pid_t child, void *addr, char* out);
 extern void peek_array(pid_t child, void *addr, char* out);
 extern void arch_interact_user(pid_t pid, struct user_regs_struct * regs, char * user_input);
+extern void get_current_address(char *s_curr_addr, struct user_regs_struct *regs);
 #ifdef __aarch64__
 #include "arch_aarch64.c"
 #endif

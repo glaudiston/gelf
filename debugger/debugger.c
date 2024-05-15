@@ -77,8 +77,10 @@ struct report_values {
 
 };
 
-void run_next_instruction(pid_t pid)
+void run_next_instruction(pid_t pid, instruction_info *ptr_parsed_instruction)
 {
+	ptr_parsed_instruction->asm_code[0]=0;
+	ptr_parsed_instruction->print_request_size=0;
 	unsigned long data = ptrace(PTRACE_SINGLESTEP, pid, 0, NULL);		// execute next instruction
 	if ( data != 0 ) {
 		printf("SINGLE STEP EXPECTED 0 but was %08x\n", data);
@@ -114,30 +116,72 @@ void printMemoryValue(pid_t child, unsigned long r, int deep)
 
 struct {
 	unsigned char step;
+	unsigned char breakpoint[32];
 } user_request = {
 	.step=false
 };
 
-char * history_file="history_file";
+void interactive_help(){
+	printf("\n\
+	?,help\n\
+		show this help\n\
+	s\n\
+		step next instruction\n\
+	c\n\
+		continue execution\n\
+	b [address]\n\
+		set breakpoint at target address. eg: b [10078]\n\
+	p r\n\
+		print the register value. eg: p rax\n\
+	ctrl-r,arrow up/down\n\
+		search prompt history\n\
+	ctrl-d\n\
+		quit\n\
+	\n\
+	\n");
+}
+
+char * history_file=".gelf-debugger-history";
 void interact_user(pid_t pid, void * regs)
 {
+	char previous_input[256];
 	while (true){
-		char * user_input = readline("> ");
+		char prompt[50];
+		char color_reset[16]="\e[0m";
+		if (!cmd_options.show_colors){
+			color_reset[0]=0;
+		}
+		sprintf(prompt,"%s > ", color_reset);
+		char * user_input = readline(prompt);
 		if (user_input == NULL){
 			fprintf(stderr,"input closed.\n");
 			exit(2);
 		}
-		add_history(user_input);
+		if (strlen(user_input) == 0){
+			continue;
+		}
+		if (strcmp(previous_input,user_input) != 0){
+			add_history(user_input);
+		}
+		sprintf(previous_input, "%s", user_input);
+		if (strcmp(user_input,"?")==0 || strcmp(user_input,"help")==0){
+			interactive_help();
+			continue;
+		}
 		int i = write_history(history_file);
-		if ( i != 0 ){
+		if (i != 0){
 			perror("Failed to write history file: ");
 		}
-		if ( strcmp(user_input,"s") == 0 ) {
+		if (strcmp(user_input,"s") == 0) {
 			user_request.step=true;
 			break;
 		}
-		if ( strcmp(user_input,"c") == 0) {
+		if (strcmp(user_input,"c") == 0) {
 			user_request.step=false;
+			break;
+		}
+		if (strncmp(user_input, "b ", 2) == 0) {
+			sprintf(user_request.breakpoint,&user_input[2]);
 			break;
 		}
 		arch_interact_user(pid, regs, user_input);
@@ -147,6 +191,9 @@ void interact_user(pid_t pid, void * regs)
 void trace_watcher(pid_t pid)
 {
 	if (cmd_options.interactive_mode){
+		if (access(history_file, R_OK) == -1) {
+			fclose(fopen(history_file,"w+"));
+		}
 		using_history();
 		read_history(history_file);
 		user_request.step=true;
@@ -156,7 +203,6 @@ void trace_watcher(pid_t pid)
 		.print_request_size=0,
 	};
 	int status;
-	unsigned long straddr;
 	int once_set=0;
 	unsigned long int ic=0;
 	while ( running_forks ) {
@@ -193,14 +239,25 @@ void trace_watcher(pid_t pid)
 		    return;
 		}
 		get_registers(pid, &regs);
-		if (cmd_options.interactive_mode && user_request.step){
-			interact_user(pid, &regs);
-		}
-		ic++;
-		print_previous_instruction_trace(pid, ic, regs, &ptr_parsed_instruction);
+		unsigned char prompt_user=true;
+		prompt_user=prompt_user && user_request.step;
+		char s_cur_addr[16];
+		get_current_address((char*)&s_cur_addr, &regs);
+		unsigned char breakpoint_hit=strcmp(s_cur_addr, user_request.breakpoint) == 0;
+		prompt_user=prompt_user || breakpoint_hit;
+		prompt_user=prompt_user && cmd_options.interactive_mode;
 		ptr_parsed_instruction = parse_next_instruction(pid, regs);
 		print_next_instruction(pid, ic, regs, &ptr_parsed_instruction);
-		run_next_instruction(pid);
+		if (prompt_user){
+			if (breakpoint_hit){
+				printf("breakpoint hit 0x%s\n", user_request.breakpoint);
+			}
+			interact_user(pid, &regs);
+			//print_next_instruction(pid, ic, regs, &ptr_parsed_instruction);
+		}
+		run_next_instruction(pid, &ptr_parsed_instruction);
+		ic++;
+		print_previous_instruction_trace(pid, ic, regs, &ptr_parsed_instruction);
 	}
 }
 
@@ -213,7 +270,7 @@ Usage: %s <executable>\n\
 	--no-colors\n\
 		do not print terminal color bytes\n\
 	--interactive\n\
-		prompt user for commands, useful to set breakpoints and check registers and memory values\n\
+		prompt user for commands, useful to set breakpoints and check registers and memory values. While in prompt use \"help\" or \"?\" for instructions\n\
 	--binary-tips\n\
 		show bit values for known composed bytes\n\
 \n\

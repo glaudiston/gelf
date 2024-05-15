@@ -42,6 +42,7 @@ typedef enum {
 #  |0|1|0|0|W|R|X|B|
 */
 struct rex {
+	unsigned char byte;
 	char W;	// W bit = Operand size 1==64-bits, 0 == legacy, Operand size determined by CS.D (Code Segment)
 	char R;	// R bit = Extends the ModR/M reg field to 4 bits. 0 selects rax-rsi, 1 selects r8-r15
 	char X;	// X bit = extends SIB 'index' field, same as R but for the SIB byte (memory operand)
@@ -91,6 +92,12 @@ char *get_color(char *item)
 		return "\033[38;2;100;44;130m";
 	}
 	if ( strcmp(item, "jmp") == 0){
+		return "\033[38;2;0;120;135m";
+	}
+	if ( strcmp(item, "mov") == 0){
+		return "\033[38;2;0;120;135m";
+	}
+	if ( strcmp(item, "add") == 0){
 		return "\033[38;2;0;120;135m";
 	}
 	if ( strcmp(item, "int") == 0){
@@ -188,8 +195,6 @@ void print_previous_instruction_trace(pid_t pid, unsigned long int ic, struct us
 		struct print_addr_request pr = ptr_parsed_instruction->print_request[i];
 		printMemoryValue(pid, pr.addr, 0);
 	}
-	ptr_parsed_instruction->asm_code[0]=0;
-	ptr_parsed_instruction->print_request_size=0;
 }
 
 /*
@@ -288,6 +293,24 @@ void get_modrm_source(struct instruction instr, char *a){
 		sprintf(a,r32b[instr.modrm.source]);
 		return;
 	}
+	if (instr.modrm.mod == 3) {
+		if (instr.prefix.rex.W && instr.prefix.rex.R && !instr.prefix.rex.B) {
+			sprintf(a, r64b[instr.modrm.source]);
+			return;
+		}
+		if (!instr.prefix.rex.W && instr.prefix.rex.B) {
+			sprintf(a, r32a[instr.modrm.source]);
+			return;
+		}
+		if (!instr.prefix.rex.W && instr.prefix.rex.R) {
+			sprintf(a, r32a[instr.modrm.source]);
+			return;
+		}
+		if (instr.prefix.rex.W && instr.prefix.rex.B) {
+			sprintf(a, r64a[instr.modrm.source]);
+			return;
+		}
+	}
 	if (instr.prefix.rex.W && instr.prefix.rex.R) {
 		sprintf(a,r8a[instr.modrm.source]);
 		return;
@@ -304,9 +327,19 @@ void get_modrm_target(struct instruction instr, char *b){
 		sprintf(b,r32b[instr.modrm.target]);
 		return;
 	}
-	if (instr.modrm.mod == 3 && instr.prefix.rex.W && instr.prefix.rex.B) {
-		sprintf(b, r64a[instr.modrm.target]);
-		return;
+	if (instr.modrm.mod == 3) {
+		if (instr.prefix.rex.W && instr.prefix.rex.R && !instr.prefix.rex.B) {
+			sprintf(b, r64a[instr.modrm.target]);
+			return;
+		}
+		if (instr.prefix.rex.W && instr.prefix.rex.R && instr.prefix.rex.B) {
+			sprintf(b, r64b[instr.modrm.target]);
+			return;
+		}
+		if (instr.prefix.rex.W && instr.prefix.rex.B) {
+			sprintf(b, r64a[instr.modrm.target]);
+			return;
+		}
 	}
 	if (instr.modrm.mod == 0 && instr.prefix.rex.W && instr.prefix.rex.B) {
 		sprintf(b, r8a[instr.modrm.target]);
@@ -330,6 +363,7 @@ long long unsigned int get_reg_val(char *r)
  * try to parse the bytes populating the instr_struct;
  * if succeed set instr_struct->parsed=TRUE;
  * */
+struct instruction instr;
 instruction_info parse_next_instruction(pid_t pid, struct user_regs_struct regs){
 	unsigned char bytes[8];
 	get_instruction_bytes(pid, regs.rip, (unsigned char *)&bytes);
@@ -342,11 +376,11 @@ instruction_info parse_next_instruction(pid_t pid, struct user_regs_struct regs)
 		bytes[0], bytes[1], bytes[2], bytes[3],
 		bytes[4], bytes[5], bytes[6], bytes[7]);
 	sprintf(rv.colored_hexdump, "");
-	struct instruction instr;
 	instr.prefix.type = prefix_type_of(bytes[0]);
 	unsigned char instr_size = 0;
 	switch (instr.prefix.type) {
 		case REX:
+			instr.prefix.rex.byte=bytes[0];
 			instr.prefix.rex.W = bytes[0] & (1 << 3);
 			instr.prefix.rex.R = bytes[0] & (1 << 2);
 			instr.prefix.rex.X = bytes[0] & (1 << 1);
@@ -370,7 +404,7 @@ instruction_info parse_next_instruction(pid_t pid, struct user_regs_struct regs)
 					instr.prefix.rex.B ? "¹" : "°", get_color(""));
 				sprintf(rex_binary_tips,"(REX°¹°°%s%s%s%s)", w, r , x, b );
 			}
-			sprintf(rv.colored_hexdump, "%s%x%s%s", get_color("REX"), bytes[0], rex_binary_tips, get_color(""));
+			sprintf(rv.colored_hexdump, "%s%02x%s%s", get_color("REX"), bytes[0], rex_binary_tips, get_color(""));
 			break;
 		default:
 			instr.opcode=bytes[instr_size++];
@@ -382,12 +416,13 @@ instruction_info parse_next_instruction(pid_t pid, struct user_regs_struct regs)
 	switch (instr.opcode) {
 		case 0x01:	// add
 		{
-			sprintf(rv.colored_hexdump, "%s%s%x%s", rv.colored_hexdump, get_color("add"), bytes[instr_size-1], get_color(""));
+			sprintf(rv.colored_hexdump, "%s%s%02x%s", rv.colored_hexdump, get_color("add"), bytes[instr_size-1], get_color(""));
+			sprintf(rv.colored_hexdump, "%s%s%02x%s", rv.colored_hexdump, get_color(""), bytes[instr_size], get_color(""));
 			instr.modrm=parse_modrm(instr,bytes[instr_size++]);
 			if ( instr.modrm.mod == 3 ){
 				get_modrm_source(instr, (char*)&a);
 				get_modrm_target(instr, (char*)&b);
-				sprintf(rv.asm_code, "add %s, %s", a, b);
+				sprintf(rv.asm_code, "%sadd%s %s%s, %s", get_color("add"), get_color("") ,a, get_color(""), b);
 				sprintf(rv.comment,"");
 				break;
 			}
@@ -395,7 +430,7 @@ instruction_info parse_next_instruction(pid_t pid, struct user_regs_struct regs)
 		}
 		case 0x31:	// xor
 		{
-			sprintf(rv.colored_hexdump, "%s%s%x%s", rv.colored_hexdump, get_color("xor"), bytes[instr_size-1], get_color(""));
+			sprintf(rv.colored_hexdump, "%s%s%02x%s", rv.colored_hexdump, get_color("xor"), bytes[instr_size-1], get_color(""));
 			instr.modrm=parse_modrm(instr, bytes[instr_size++]);
 			get_modrm_source(instr, (char*)&a);
 			get_modrm_target(instr, (char*)&b);
@@ -404,14 +439,14 @@ instruction_info parse_next_instruction(pid_t pid, struct user_regs_struct regs)
 		}
 		case 0x50:	// push %rax
 		{
-			sprintf(rv.colored_hexdump, "%s%s%x%s", rv.colored_hexdump, get_color("push"), bytes[instr_size-1], get_color(""));
-			sprintf(rv.asm_code, "push %rax");
+			sprintf(rv.colored_hexdump, "%s%s%02x%s", rv.colored_hexdump, get_color("push"), bytes[instr_size-1], get_color(""));
+			sprintf(rv.asm_code, "push rax");
 			sprintf(rv.comment, "0x%x", regs.rax);
 			break;
 		}
 		case 0x74:	// jz short
 		{
-			sprintf(rv.colored_hexdump, "%s%s%x%s", rv.colored_hexdump, get_color("jz"), bytes[instr_size-1], get_color(""));
+			sprintf(rv.colored_hexdump, "%s%s%02x%s", rv.colored_hexdump, get_color("jz"), bytes[instr_size-1], get_color(""));
 			signed char v = bytes[instr_size++];
 			sprintf(rv.asm_code, "jz .%i", v);
 			sprintf(rv.comment, "0x%x:{ZF}", regs.rip + instr_size + v);
@@ -419,7 +454,7 @@ instruction_info parse_next_instruction(pid_t pid, struct user_regs_struct regs)
 		}
 		case 0x80:	// cmp
 		{
-			sprintf(rv.colored_hexdump, "%s%s%x%s", rv.colored_hexdump, get_color("cmp"), bytes[instr_size-1], get_color(""));
+			sprintf(rv.colored_hexdump, "%s%s%02x%s", rv.colored_hexdump, get_color("cmp"), bytes[instr_size-1], get_color(""));
 			instr.modrm=parse_modrm(instr, bytes[instr_size++]);
 			sprintf(a, "0x%x", bytes[instr_size++]);
 			get_modrm_target(instr, (char*)&b);
@@ -429,13 +464,15 @@ instruction_info parse_next_instruction(pid_t pid, struct user_regs_struct regs)
 		}
 		case 0x83:	// add
 		{
-			sprintf(rv.colored_hexdump, "%s%s%x%s", rv.colored_hexdump, get_color("add"), bytes[instr_size-1], get_color(""));
+			sprintf(rv.colored_hexdump, "%s%s%02x%s", rv.colored_hexdump, get_color("add"), bytes[instr_size-1], get_color(""));
+			sprintf(rv.colored_hexdump, "%s%s%02x%s", rv.colored_hexdump, get_color("modrm"), bytes[instr_size], get_color(""));
 			instr.modrm=parse_modrm(instr,bytes[instr_size++]);
 			if ( instr.modrm.mod == 3 ) { // 11
+				sprintf(rv.colored_hexdump, "%s%s%02x%s", rv.colored_hexdump, get_color("int"), bytes[instr_size], get_color(""));
 				instr.displacement.v8bit = bytes[instr_size++];
 				sprintf(a, "%i", instr.displacement.v8bit);
 				get_modrm_target(instr, (char*)&b);
-				sprintf(rv.asm_code, "add %s, %s", a, b);
+				sprintf(rv.asm_code, "%sadd %s%s%s, %s", get_color("add"), get_color("int"), a, get_color(""), b);
 				sprintf(rv.comment, "");
 				break;
 			}
@@ -443,22 +480,30 @@ instruction_info parse_next_instruction(pid_t pid, struct user_regs_struct regs)
 		}
 		case 0x89:	// mov
 		{
-			sprintf(rv.colored_hexdump, "%s%s%x%s", rv.colored_hexdump, get_color("mov"), bytes[instr_size-1], get_color(""));
-			sprintf(rv.colored_hexdump, "%s%s%x%s", rv.colored_hexdump, get_color(""), bytes[instr_size], get_color(""));
+			sprintf(rv.colored_hexdump, "%s%s%02x%s", rv.colored_hexdump, get_color("mov"), bytes[instr_size-1], get_color(""));
+			sprintf(rv.colored_hexdump, "%s%s%02x%s", rv.colored_hexdump, get_color(""), bytes[instr_size], get_color(""));
 			instr.modrm=parse_modrm(instr,bytes[instr_size++]);
 			if ( instr.modrm.mod == 3 ) { // 11
 				get_modrm_source(instr, (char*)&a);
 				get_modrm_target(instr, (char*)&b);
-				sprintf(rv.asm_code, "mov %s, %s", a, b);
+				sprintf(rv.asm_code, "%smov %s%s%s, %s%s%s", get_color("mov"), get_color("src_reg"), a, get_color(""), get_color("tgt_reg"), b, get_color(""));
 				sprintf(rv.comment, "");
 				break;
 			}
 			if ( instr.modrm.mod == 0 ) { // 00
+				sprintf(rv.colored_hexdump, "%s%s%02x%s", rv.colored_hexdump, get_color(""), bytes[instr_size], get_color(""));
 				unsigned char HAS_DISPLACEMENT=4;
 				sprintf(a, r64a[instr.modrm.source]);
 				if ( instr.modrm.target == HAS_DISPLACEMENT ) {
 					unsigned int tgt_addr = ptrace(PTRACE_PEEKTEXT, pid, (void*)regs.rip+(++instr_size), 0);
-					sprintf(b, "[0x%x]", tgt_addr);
+					sprintf(rv.colored_hexdump, "%s%s%02x%02x%02x%02x%s", 
+							rv.colored_hexdump, get_color("int"), 
+							(unsigned char)(tgt_addr << 24 >> 24), 
+							(unsigned char)(tgt_addr << 16 >> 24), 
+							(unsigned char)(tgt_addr << 8 >> 24), 
+							(unsigned char)(tgt_addr << 0 >> 24), 
+							get_color(""));
+					sprintf(b, "[%s0x%x%s]", get_color("int"),tgt_addr, get_color(""));
 				}
 				else
 				{
@@ -472,12 +517,13 @@ instruction_info parse_next_instruction(pid_t pid, struct user_regs_struct regs)
 		}
 		case 0x8b:	// mov (%r), %r;
 		{
-			sprintf(rv.colored_hexdump, "%s%s%x%s", rv.colored_hexdump, get_color("mov"), bytes[instr_size-1], get_color(""));
+			sprintf(rv.colored_hexdump, "%s%s%02x%s", rv.colored_hexdump, get_color("mov"), bytes[instr_size-1], get_color(""));
+			sprintf(rv.colored_hexdump, "%s%02x", rv.colored_hexdump, bytes[instr_size]);
 			instr.modrm=parse_modrm(instr,bytes[instr_size++]);
 			if ( instr.modrm.mod == 0 ) { // 00
 				get_modrm_source(instr, (char*)&b);
 				get_modrm_target(instr, (char*)&a);
-				sprintf(rv.asm_code, "mov (%s), %s", a, b);
+				sprintf(rv.asm_code, "%smov%s [%s], %s", get_color("mov"), get_color(""), a, b);
 				sprintf(rv.comment, "");
 				break;
 			}
@@ -485,7 +531,7 @@ instruction_info parse_next_instruction(pid_t pid, struct user_regs_struct regs)
 		}
 		case 0xe8:	// call
 		{
-			sprintf(rv.colored_hexdump, "%s%s%x%s", rv.colored_hexdump, get_color("call"), bytes[instr_size-1], get_color(""));
+			sprintf(rv.colored_hexdump, "%s%s%02x%s", rv.colored_hexdump, get_color("call"), bytes[instr_size-1], get_color(""));
 			long int v = ptrace(PTRACE_PEEKTEXT, pid, (void*)regs.rip+instr_size, 0);
 			instr_size += 4; // 4 bytes addr
 			instr.displacement.v32bit = (v);
@@ -495,8 +541,8 @@ instruction_info parse_next_instruction(pid_t pid, struct user_regs_struct regs)
 		}
 		case 0xeb:	// jmp
 		{
-			sprintf(rv.colored_hexdump, "%s%s%x%s", rv.colored_hexdump, get_color("jmp"), bytes[instr_size-1], get_color(""));
-			sprintf(rv.colored_hexdump, "%s%s%x%s", rv.colored_hexdump, get_color("int"), bytes[instr_size], get_color(""));
+			sprintf(rv.colored_hexdump, "%s%s%02x%s", rv.colored_hexdump, get_color("jmp"), bytes[instr_size-1], get_color(""));
+			sprintf(rv.colored_hexdump, "%s%s%02x%s", rv.colored_hexdump, get_color("int"), bytes[instr_size], get_color(""));
 			instr.displacement.v8bit = bytes[instr_size++];
 			sprintf(rv.asm_code, "%sjmp%s .%s%i%s", get_color("jmp"), get_color(""), get_color("int"), instr.displacement.v8bit, get_color(""));
 			sprintf(rv.comment, "0x%x", regs.rip + instr_size + instr.displacement.v8bit);
@@ -504,14 +550,22 @@ instruction_info parse_next_instruction(pid_t pid, struct user_regs_struct regs)
 		}
 		case 0xc7:	// mov v4, %r
 		{
-			sprintf(rv.colored_hexdump, "%s%s%x%s", rv.colored_hexdump, get_color("mov"), bytes[instr_size-1], get_color(""));
+			sprintf(rv.colored_hexdump, "%s%s%02x%s", rv.colored_hexdump, get_color("mov"), bytes[instr_size-1], get_color(""));
+			sprintf(rv.colored_hexdump, "%s%s%02x%s", rv.colored_hexdump, get_color(""), bytes[instr_size], get_color(""));
 			instr.modrm=parse_modrm(instr,bytes[instr_size++]);
 			if (instr.modrm.mod = 3){
 				if ( instr.modrm.source == 0 ) {
 					long unsigned tgt_addr = ptrace(PTRACE_PEEKTEXT, pid, regs.rip+(instr_size), 0);
+					sprintf(rv.colored_hexdump, "%s%s%02x%02x%02x%02x%s", 
+							rv.colored_hexdump, get_color("int"), 
+							(unsigned char)(tgt_addr << 24 >> 24), 
+							(unsigned char)(tgt_addr << 16 >> 24), 
+							(unsigned char)(tgt_addr << 8 >> 24), 
+							(unsigned char)(tgt_addr << 0 >> 24), 
+							get_color(""));
 					sprintf(a, "0x%x", tgt_addr);
 					sprintf(b, r64a[instr.modrm.source]);
-					sprintf(rv.asm_code, "mov %s, %s", a, b);
+					sprintf(rv.asm_code, "mov %s%s%s, %s", get_color("int"), a, get_color(""), b);
 					sprintf(rv.comment, "");
 				}
 			}
@@ -535,8 +589,6 @@ void print_next_instruction(pid_t pid, long int ic, struct user_regs_struct regs
 		int zero_flag = (regs.eflags & (1 << 6)) ? 1 : 0;
 		/* substr(ptr_parsed_instruction->comment, "{ZF}", zero_flag ? "true" : "false"); */
 		printf("%s%s%s|%s\n", get_color("white"), ptr_parsed_instruction->asm_code, get_color("gray"), ptr_parsed_instruction->comment);
-		ptr_parsed_instruction->asm_code[0]=0;
-		ptr_parsed_instruction->comment[0]=0;
 		return;
 	}
 	int ok;
@@ -569,10 +621,163 @@ bytecode_parse_actions {
 	do_parse_rex -> (another state machine)
 }
 */
-/* arch_interact_user receives a user input and answer it
+
+void explain_modrm()
+{
+	char w[50], r[50], x[50], b[50];
+	sprintf(w, "%sW%s%s", 
+		instr.prefix.rex.W ? get_color("REX.W") : get_color("gray"),
+		instr.prefix.rex.W ? "¹" : "°", get_color(""));
+	sprintf(r, "%sR%s%s", 
+		instr.prefix.rex.R ? get_color("REX.R") : get_color("gray"),
+		instr.prefix.rex.R ? "¹" : "°", get_color(""));
+	sprintf(x, "%sX%s%s", 
+		instr.prefix.rex.X ? get_color("REX.X") : get_color("gray"),
+		instr.prefix.rex.X ? "¹" : "°", get_color(""));
+	sprintf(b, "%sB%s%s", 
+		instr.prefix.rex.B ? get_color("REX.B") : get_color("gray"),
+		instr.prefix.rex.B ? "¹" : "°", get_color(""));
+	printf("REX is \"%02x\": %s%s%s%s\n", instr.prefix.rex.byte, w, r , x, b );
+	printf("ModR/M Byte \"%02x\"\n", instr.modrm.byte);
+	printf("\twhere:\n\t\tmod=%i;\n", (instr.modrm.byte & 0xc0) >> 6);
+	printf("\t\ta=%i\n", (instr.modrm.byte & 0x38) >> 3);
+	printf("\t\tb=%i\n", instr.modrm.byte & 0x7);
+}
+
+/*
+* arch_interact_user receives a user input and answer it
 */
 void arch_interact_user(pid_t pid, struct user_regs_struct * regs, char * user_input) {
 	if ( strcmp(user_input, "p rax") == 0 ) {
 		printf("rax = 0x%lx\n", regs->rax);
 	}
+	if ( strcmp(user_input, "p rcx") == 0 ) {
+		printf("rcx = 0x%lx\n", regs->rcx);
+	}
+	if ( strcmp(user_input, "p rdx") == 0 ) {
+		printf("rdx = 0x%lx\n", regs->rdx);
+	}
+	if ( strcmp(user_input, "p rbx") == 0 ) {
+		printf("rbx = 0x%lx\n", regs->rbx);
+	}
+	if ( strcmp(user_input, "p rsp") == 0 ) {
+		printf("rsp = 0x%lx\n", regs->rsp);
+	}
+	if ( strcmp(user_input, "p rbp") == 0 ) {
+		printf("rbp = 0x%lx\n", regs->rbp);
+	}
+	if ( strcmp(user_input, "p rsi") == 0 ) {
+		printf("rsi = 0x%lx\n", regs->rsi);
+	}
+	if ( strcmp(user_input, "p rdi") == 0 ) {
+		printf("rdi = 0x%lx\n", regs->rdi);
+	}
+	if ( strcmp(user_input, "p r8") == 0 ) {
+		printf("r8 = 0x%lx\n", regs->r8);
+	}
+	if ( strcmp(user_input, "p r9") == 0 ) {
+		printf("r9 = 0x%lx\n", regs->r9);
+	}
+	if ( strcmp(user_input, "p r10") == 0 ) {
+		printf("r10 = 0x%lx\n", regs->r10);
+	}
+	if ( strcmp(user_input, "p r11") == 0 ) {
+		printf("r11 = 0x%lx\n", regs->r11);
+	}
+	if ( strcmp(user_input, "p r12") == 0 ) {
+		printf("r12 = 0x%lx\n", regs->r12);
+	}
+	if ( strcmp(user_input, "p r13") == 0 ) {
+		printf("r13 = 0x%lx\n", regs->r13);
+	}
+	if ( strcmp(user_input, "p r14") == 0 ) {
+		printf("r14 = 0x%lx\n", regs->r14);
+	}
+	if ( strcmp(user_input, "p r15") == 0 ) {
+		printf("r15 = 0x%lx\n", regs->r15);
+	}
+
+	if ( strcmp(user_input, "p eax") == 0 ) {
+		printf("eax = 0x%x\n", (unsigned long)regs->rax);
+	}
+	if ( strcmp(user_input, "p ecx") == 0 ) {
+		printf("ecx = 0x%x\n", (unsigned long)regs->rcx);
+	}
+	if ( strcmp(user_input, "p edx") == 0 ) {
+		printf("edx = 0x%x\n", (unsigned long)regs->rdx);
+	}
+	if ( strcmp(user_input, "p ebx") == 0 ) {
+		printf("ebx = 0x%x\n", (unsigned long)regs->rbx);
+	}
+	if ( strcmp(user_input, "p esp") == 0 ) {
+		printf("esp = 0x%x\n", (unsigned long)regs->rsp);
+	}
+	if ( strcmp(user_input, "p ebp") == 0 ) {
+		printf("ebp = 0x%x\n", (unsigned long)regs->rbp);
+	}
+	if ( strcmp(user_input, "p esi") == 0 ) {
+		printf("esi = 0x%x\n", (unsigned long)regs->rsi);
+	}
+	if ( strcmp(user_input, "p edi") == 0 ) {
+		printf("edi = 0x%x\n", (unsigned long)regs->rdi);
+	}
+	if ( strcmp(user_input, "p r8d") == 0 ) {
+		printf("r8d = 0x%x\n", (unsigned long)regs->r8);
+	}
+	if ( strcmp(user_input, "p r9d") == 0 ) {
+		printf("r9d = 0x%x\n", (unsigned long)regs->r9);
+	}
+	if ( strcmp(user_input, "p r10d") == 0 ) {
+		printf("r10d = 0x%x\n", (unsigned long)regs->r10);
+	}
+	if ( strcmp(user_input, "p r11d") == 0 ) {
+		printf("r11d = 0x%x\n", (unsigned long)regs->r11);
+	}
+	if ( strcmp(user_input, "p r12d") == 0 ) {
+		printf("r12d = 0x%x\n", (unsigned long)regs->r12);
+	}
+	if ( strcmp(user_input, "p r13d") == 0 ) {
+		printf("r13d = 0x%x\n", (unsigned long)regs->r13);
+	}
+	if ( strcmp(user_input, "p e14") == 0 ) {
+		printf("r14d = 0x%x\n", (unsigned long)regs->r14);
+	}
+	if ( strcmp(user_input, "p e15") == 0 ) {
+		printf("r15d = 0x%x\n", (unsigned long) regs->r15);
+	}
+//char **r16a = (char *[]){ "ax", "cx", "dx", "bx", "sp", "bp", "si", "di" };
+//char **r16b = (char *[]){ "r8w", "r9w", "r10w", "r11w", "r12w", "r13w", "r14w", "r15w" };
+//char **r8a = (char *[]){ "al", "cl", "dl", "bl", "spl", "bpl", "sil", "dil" };
+//char **r8b = (char *[]){ "r8b", "r9b", "r10b", "r11b", "r12b", "r13b", "r14b", "r15b" };
+//char **r8bh = (char *[]){ "ah", "ch", "dh", "bh" };
+	if ( strcmp(user_input, "p dil") == 0 ) {
+		printf("dil = 0x%02x\n", (unsigned char)regs->rdi);
+	}
+	if ( strcmp(user_input, "p sil") == 0 ) {
+		printf("sil = 0x%02x\n", (unsigned char)regs->rsi);
+	}
+	if ( strcmp(user_input, "p rip") == 0 ) {
+		printf("rip = 0x%lx\n", regs->rip);
+	}
+	if ( strncmp(user_input, "px ", 3) == 0 ) {
+		long unsigned vaddr;
+		sscanf(&user_input[3], "%lx", &vaddr);
+		long unsigned v = ptrace(PTRACE_PEEKTEXT, pid, (void*)vaddr, 0);
+		printf("[0x%s]: %02x%02x %02x%02x %02x%02x %02x%02x\n", &user_input[3]
+			, (unsigned char)(v << 56 >> 56)
+			, (unsigned char)(v << 48 >> 56)
+			, (unsigned char)(v << 40 >> 56)
+			, (unsigned char)(v << 32 >> 56)
+			, (unsigned char)(v << 24 >> 56)
+			, (unsigned char)(v << 16 >> 56)
+			, (unsigned char)(v << 8 >> 56)
+			, (unsigned char)(v << 0 >> 56)
+		);
+	}
+	if ( strcmp(user_input, "explain modrm") == 0 ) {
+		explain_modrm();
+	}
+}
+void get_current_address(char *s_curr_addr, struct user_regs_struct *regs){
+	sprintf(s_curr_addr, "%x", regs->rip);
 }
