@@ -452,34 +452,108 @@ instruction_info parse_next_instruction(pid_t pid, struct user_regs_struct regs)
 		case 0x74:	// jz short
 		{
 			sprintf(rv.colored_hexdump, "%s%s%02x%s", rv.colored_hexdump, get_color("jz"), bytes[instr_size-1], get_color(""));
+			sprintf(rv.colored_hexdump, "%s%s%02x%s", rv.colored_hexdump, get_color("int"), bytes[instr_size], get_color(""));
 			signed char v = bytes[instr_size++];
-			sprintf(rv.asm_code, "jz .%i", v);
-			sprintf(rv.comment, "0x%x:{ZF}", regs.rip + instr_size + v);
+			sprintf(rv.asm_code, "jz .%s%i%s", get_color("int"), v, get_color(""));
+			int carry_flag = (regs.eflags & (1 << 0));
+			int zero_flag = (regs.eflags & (1 << 6));
+			sprintf(rv.comment, "0x%x:%s", regs.rip + instr_size + v, zero_flag ? "true" : "false");
 			break;
 		}
-		case 0x80:	// cmp
+		case 0x80:	// multiple one byte operations:
+				// 	00-3f byte [64bit(a) reg]
+				// 		add(00-07);
+				// 		or(08-0F);
+				// 		adc(10-17);
+				// 		sbb(18-1F);
+				// 		and(20-27);
+				// 		sub(28-2F);
+				// 		xor(30-37);
+				// 		cmp(38-3F);
+				// 	c0-ff byte reg
+				//
+				// 	no rex:	(al,cl,dl,bl,ah,ch,dh,bh)
+				// 	rex:	(al,cl,dl,bl,spl,bpl,sil,dil)
+				// 	rex.B:	(r8b-r15b)
 		{
 			sprintf(rv.colored_hexdump, "%s%s%02x%s", rv.colored_hexdump, get_color("cmp"), bytes[instr_size-1], get_color(""));
+			sprintf(rv.colored_hexdump, "%s%s%02x%s", rv.colored_hexdump, get_color(""), bytes[instr_size], get_color(""));
 			instr.modrm=parse_modrm(instr, bytes[instr_size++]);
+			sprintf(rv.colored_hexdump, "%s%s%02x%s", rv.colored_hexdump, get_color("int"), bytes[instr_size], get_color(""));
 			sprintf(a, "0x%x", bytes[instr_size++]);
-			get_modrm_target(instr, (char*)&b);
-			sprintf(rv.asm_code, "cmp %s, %s", a, b);
-			sprintf(rv.comment, "%s:0x%x:{ZF}", b, (unsigned char)get_reg_val(b));
+			if (!instr.prefix.rex.B){
+				sprintf(b, r8a[instr.modrm.target]);
+			}
+			if (instr.prefix.rex.B){
+				sprintf(b, r8b[instr.modrm.target]);
+			}
+			sprintf(rv.asm_code, "cmp %s%s%s, %s", get_color("int"), a, get_color(""), b);
+			unsigned char regv=(unsigned char) get_reg_val(b);
+			sprintf(rv.comment, "%s:0x%x:%s", b, regv, regv == *b ? "true": "false");
 			break;
 		}
-		case 0x83:	// add
-		{
+		case 0x83:
+		{	// multiple one byte operations: 
+			// 	00-3f(dword [32b reg]);
+			// 		add(00-07);
+			// 		or(08-0F);
+			// 		adc(10-17);
+			// 		sbb(18-1F);
+			// 		and(20-27);
+			// 		sub(28-2F);
+			// 		xor(30-37);
+			// 		cmp(38-3F);
+			// 	C0-FF(32b reg):
+			// 		add(C0-C7);
+			// 		or(C8-CF);
+			// 		adc(D0-D7);
+			// 		sbb(D8-DF);
+			// 		and(E0-E7);
+			// 		sub(E8-EF);
+			// 		xor(F0-F7);
+			// 		cmp(F8-FF);
+			//
+			// 	no rex:	(eax,ecx,edx,ebx,esp,ebp,esi,edi)
+			// 	rex.B:	(r8d-r15d)
+			// 	rex.W:	(rax,rcx,rdx,rbx,rsp,rbp,rsi,rdi)
+			// 	rex.WB:	(r8-r15)
+
+			//for ((i=0;i<256;i++)); do { xxd --ps -r | ndisasm -b 64 -; } <<<"83$( printf %02x $((16#00 + i)))00"; done | grep 83 | grep -v db
 			sprintf(rv.colored_hexdump, "%s%s%02x%s", rv.colored_hexdump, get_color("add"), bytes[instr_size-1], get_color(""));
 			sprintf(rv.colored_hexdump, "%s%s%02x%s", rv.colored_hexdump, get_color("modrm"), bytes[instr_size], get_color(""));
-			instr.modrm=parse_modrm(instr,bytes[instr_size++]);
-			if ( instr.modrm.mod == 3 ) { // 11
-				sprintf(rv.colored_hexdump, "%s%s%02x%s", rv.colored_hexdump, get_color("int"), bytes[instr_size], get_color(""));
-				instr.displacement.v8bit = bytes[instr_size++];
-				sprintf(a, "%i", instr.displacement.v8bit);
-				get_modrm_target(instr, (char*)&b);
-				sprintf(rv.asm_code, "%sadd %s%s%s, %s", get_color("add"), get_color("int"), a, get_color(""), b);
-				sprintf(rv.comment, "");
-				break;
+			unsigned char opcode=bytes[instr_size++];
+			signed char v8bit=bytes[instr_size++];
+			sprintf(rv.colored_hexdump, "%s%s%02x%s", rv.colored_hexdump, get_color("int"), v8bit, get_color(""));
+			instr.displacement.v8bit = v8bit;
+			sprintf(a, "%i", instr.displacement.v8bit);
+			unsigned char regv=opcode % 8;
+			char **regt = r32a;
+			if (instr.prefix.type == REX){
+				unsigned char W=instr.prefix.rex.W;
+				unsigned char B=instr.prefix.rex.B;
+				if (!W && B){
+					regt = r32b;
+				}
+				if (W && !B){
+					regt = r64a;
+				}
+				if (W && B){
+					regt = r64b;
+				}
+			}
+			printf("opcode=%x; regv[%i];\n", opcode,regv);
+			sprintf(b,"%s", (char *)regt[regv]);
+			sprintf(rv.comment, "");
+			char * opmap[8] = {"add","or","adc","ssb","and","sub","xor","cmp"};
+			char *op_s=opmap[(opcode & 0x38) >> 3]; // The operation is the 3 bits so use "and" over 00111000 and shift right to match the opmap index;
+			printf("found operation [%s]\n",op_s);
+			switch (opcode & 0xc0){
+				case 0x00:
+					sprintf(rv.asm_code, "%s%s %s%s%s, [%s]", get_color("op_s"), op_s, get_color("int"), a, get_color(""), b);
+					break;
+				case 0xc0:
+					sprintf(rv.asm_code, "%s%s %s%s%s, %s", get_color(op_s), op_s, get_color("int"), a, get_color(""), b);
+					break;
 			}
 			break;
 		}
@@ -589,6 +663,14 @@ instruction_info parse_next_instruction(pid_t pid, struct user_regs_struct regs)
 
 //string_replace(target, template
 
+void ndisasm(char *hexdump)
+{
+	char ndisasm[256];
+	sprintf(ndisasm, "/bin/sh -c '{ xxd --ps -r | ndisasm -b %i - | head -1 | tr -s \\  | cut -d \\  -f3-; } <<<\"%s\" '", 64, hexdump);
+	//printf("%s", ndisasm);
+	printf("ndisasm: ");fflush(stdout);
+	system(ndisasm);fflush(stdout);
+}
 void print_next_instruction(pid_t pid, long int ic, struct user_regs_struct regs, instruction_info * ptr_parsed_instruction){
 	unsigned long addr = regs.rip;
 	unsigned char bytes[8];
@@ -606,10 +688,7 @@ void print_next_instruction(pid_t pid, long int ic, struct user_regs_struct regs
 	int ok;
 	// failed to detect the instruction, fallback to ndisasm without colors;
 	printf("%sIC:%li|PID:%i|rip:0x%lx|%s|", get_color("gray"), ic, pid, regs.rip, ptr_parsed_instruction->hexdump);fflush(stdout);
-	char ndisasm[256];
-	sprintf(ndisasm, "/bin/sh -c '{ xxd --ps -r | ndisasm -b %i - | head -1 | tr -s \\  | cut -d \\  -f3-; } <<<\"%s\" '", 64, ptr_parsed_instruction->hexdump);
-	printf("ndisasm: ");fflush(stdout);
-	system(ndisasm);fflush(stdout);
+	ndisasm(ptr_parsed_instruction->hexdump);
 }
 
 /*
@@ -786,8 +865,39 @@ void arch_interact_user(pid_t pid, struct user_regs_struct * regs, char * user_i
 			, (unsigned char)(v << 0 >> 56)
 		);
 	}
-	if ( strcmp(user_input, "explain modrm") == 0 ) {
+	if ( strncmp(user_input, "bc ", 3) == 0 ) {
+		char cmd[4096];
+		char vars[1024];
+		vars[0]=0;
+		sprintf(vars, "%srax=%lu;eax=%u;ax=%u;al=%u;ah=%u;", vars, regs->rax, (unsigned int)regs->rax, (unsigned short)regs->rax, (unsigned char)regs->rax, (unsigned char) (regs->rax >> 56));
+		sprintf(vars, "%srcx=%lu;ecx=%u;cx=%u;cl=%u;ch=%u;", vars, regs->rcx, (unsigned int)regs->rcx, (unsigned short)regs->rcx, (unsigned char)regs->rcx, (unsigned char) (regs->rcx >> 56));
+		sprintf(vars, "%srdx=%lu;edx=%u;dx=%u;dl=%u;dh=%u;", vars, regs->rdx, (unsigned int)regs->rdx, (unsigned short)regs->rdx, (unsigned char)regs->rdx, (unsigned char) (regs->rdx >> 56));
+		sprintf(vars, "%srbx=%lu;ebx=%u;bx=%u;bl=%u;bh=%u;", vars, regs->rbx, (unsigned int)regs->rbx, (unsigned short)regs->rbx, (unsigned char)regs->rbx, (unsigned char) (regs->rbx >> 56));
+		sprintf(cmd, "/bin/sh -c 'bc <<<\"%s%s\"'", vars, &user_input[3]);
+		//printf("bc: %s\n",cmd);fflush(stdout);
+		system(cmd);fflush(stdout);
+	}
+	if ( strcmp(user_input, "explain modrm") == 0 ){
 		explain_modrm();
+	}
+	if ( strncmp(user_input, "ndisasm", 7) == 0 ){
+		long unsigned vaddr = regs->rip;
+		if (strlen(user_input) > 8){
+			sscanf(&user_input[8], "%lx", &vaddr);
+		}
+		long unsigned v = ptrace(PTRACE_PEEKTEXT, pid, (void*)vaddr, 0);
+		char hexdump[17];
+		sprintf(hexdump,"%02x%02x%02x%02x%02x%02x%02x%02x"
+			, (unsigned char)(v << 56 >> 56)
+			, (unsigned char)(v << 48 >> 56)
+			, (unsigned char)(v << 40 >> 56)
+			, (unsigned char)(v << 32 >> 56)
+			, (unsigned char)(v << 24 >> 56)
+			, (unsigned char)(v << 16 >> 56)
+			, (unsigned char)(v << 8 >> 56)
+			, (unsigned char)(v << 0 >> 56)
+		);
+		ndisasm((char*)&hexdump);
 	}
 }
 void get_current_address(char *s_curr_addr, struct user_regs_struct *regs){
