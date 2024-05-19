@@ -53,7 +53,7 @@ dh=0;	dl=2;	dx=2;	edx=2;	rdx=2;	# 010
 bh=0;	bl=3;	bx=3;	ebx=3;	rbx=3;	# 011
 	spl=4;	sp=4;	esp=4;	rsp=4;	# 100	processor controlled pointing to stack pointer
 	bpl=5;	bp=5;	ebp=5;	rbp=5;	# 101
-	sil=6;	si=6;	rsi=6;	rsi=6;	# 110
+	sil=6;	si=6;	esi=6;	rsi=6;	# 110
 	dil=7;	di=7;	edi=7;	rdi=7;	# 111
 	r8b=0;	r8w=0;	r8d=0;	r8=0;	# 000
 	r9b=1;	r9w=1;	r9d=1;	r9=1;	# 001
@@ -438,7 +438,8 @@ mov(){
 	{
 		if is_8bit_register "$v2"; then
 			mov_8bit="88";
-			code="${code}${mov_8bit}";
+			rex="40";
+			code="${rex}${mov_8bit}";
 			code="${code}$(px $(( MODRM_MOD_DISPLACEMENT_REG + $(( v1 << 3 )) + v2 )) $SIZE_8BITS_1BYTE)";
 			echo -en "${code}";
 			return;
@@ -597,6 +598,7 @@ shrq(){
 		local code="";
 		code="${code}${p}${opcode1}${opcode2}$(px $((v1)) $SIZE_8BITS_1BYTE)";
 		echo -n "${code}";
+		debug "asm: shrq $@; # $code"
 		return;
 	fi;
 	if [ "$v1" == "cl" ]; then
@@ -605,17 +607,125 @@ shrq(){
 		local code="";
 		code="${code}${p}${opcode1}${opcode2}";
 		local rv=$(echo -n "${code}");
-		debug "shrq $@; # $rv"
+		debug "asm: shrq $@; # $rv"
 		echo -n $rv;
 		return;
 	fi;
 	error not implemented/supported
 }
+# JMP
+# We have some types of jump
+# Relative jumps (short and near):
+JMP_V1="\xeb"; # followed by a 8-bit signed char (-128 to 127) to move relative to BIP.
+JMP_V4="\xe9"; # followed by a 32-bit signed integer(-2147483648 to 2147483647).
+# Jump to the full virtual address
+JMP_rax="\xff";
+JMP_rdi="\xe0";
+JNE="\x0f\x85"; # The second byte "85" is the opcode for the JNE(Jump if Not Equal) same of JNZ(Jump if Not Zero) instruction. The following four bytes "06 00 00 00" represent the signed 32-bit offset from the current instruction to the target label.
+JZ="\x0f\x84";
+JNC_BYTE="\x73"; # jae, jnb and jnc are all the same condition code CF = 0.
+JZ_BYTE="74"; # follow by a signed byte from FF (-126) to 7f (127)
+JNZ_BYTE="\x75";
+JNA_BYTE="\x76";
+JA_BYTE="\x77"; # CF = 0, ZF = 0
+JS_BYTE="\x77";
+JL_V1="\x7c";
+JG_V1="\x7F";
+JGE_V1="\x7D";
+JNG_V1="\x7E";
+JL_V4="\x0f\x8c";
+JGE_V4="\x0f\x8d"; # Jump if greater than or igual to zero flags: SF = OF
+JG="\x0F\x8F"; # Jump if Greater than zero; flags: SF = OF, ZF = 0
+#jbe, jna	CF = 1 or ZF = 1
+#jb, jc, jnae	CF = 1
+#jle, jng	SF != OF or ZF = 1
+#jl, jnge	SF != OF
+
+#js	SF = 1
+#jns	SF = 0
+#	
+#jo	OF = 1
+#jno	OF = 0
+#	
+#jp, jpe (e = even)	PF = 1
+#jnp, jpo (o = odd)	PF = 0
+
+
+#jcxz, jecxz	cx = 0 (16b mode)
+#jcxz, jecxz	ecx = 0 (32b mode)
+
+#http://unixwiz.net/techtips/x86-jumps.html
+#Instruction 	Description 			signed-ness 	Flags 	short jump 	near jump
+#									opcodes		opcodes
+#JO		Jump if overflow 			  	OF = 1		70	0F 80
+#JNO 		Jump if not overflow 	  			OF = 0	 		71 	0F 81
+#JS 		Jump if sign 	  				SF = 1 			78 	0F 88
+#JNS 		Jump if not sign 		  		SF = 0 			79 	0F 89
+#JE		Jump if equal/
+#JZ		Jump if zero					ZF = 1 			74 	0F 84
+#JNE
+#JNZ	 	Jump if not equal/
+#		Jump if not zero 			  	ZF = 0 			75 	0F 85
+#JB		Jump if below
+#JNAE		Jump if not above or equal
+#JC		Jump if carry 	unsigned 			CF = 1 			72 	0F 82
+#JNB		Jump if not below/
+#JAE		Jump if above or equal/
+#JNC 		Jump if not carry		unsigned 	CF = 0 			73 	0F 83
+#JBE		Jump if below or equal
+#JNA 		Jump if not above		unsigned 	CF = 1 or ZF = 1 	76 	0F 86
+#JA		Jump if above
+#JNBE 		Jump if not below or equal 	unsigned 	CF = 0 and ZF = 0 	77 	0F 87
+#JL 		Jump if less
+#JNGE		Jump if not greater or equal 	signed 		SF <> OF 		7C 	0F 8C
+#JGE 		Jump if greater or equal
+#JNL		Jump if not less 		signed 		SF = OF 		7D 	0F 8D
+#JLE	 	Jump if less or equal
+#JNG		Jump if not greater 		signed 		ZF = 1 or SF <> OF 	7E 	0F 8E
+#JG 		Jump if greater
+#JNLE		Jump if not less or equal 	signed 		ZF = 0 and SF = OF 	7F 	0F 8F
+#JP		Jump if parity
+#JPE 		Jump if parity even 	  			PF = 1 			7A 	0F 8A
+#JNP 		Jump if not parity
+#JPO		Jump if parity odd 	  			PF = 0 			7B 	0F 8B
+#JCXZ		Jump if %CX register is 0
+#JECXZ		Jump if %ECX register is 0 	  		%CX = 0 %ECX = 0 	E3
+jz(){
+	local v="$1";
+	local code=""
+	code="${code}${JZ_BYTE}";
+	code="${code}$(px "$v" $SIZE_8BITS_1BYTE)";
+	echo -e "${code}";
+}
+jg(){
+	local v="$1";
+	local code=""
+	code="${code}${JG_V1}";
+	code="${code}$(printf '\\x%02x' "$v")";
+	echo -en "${code}" | base64 -w0;
+}
 jmp(){
+	# JMP_V4="\xe9"; # followed by a 32-bit signed integer(-2147483648 to 2147483647).
 	local v1=$1;
-	local code="eb";
-	code="${code}$(px "${v1}" $SIZE_8BITS_1BYTE)";
-	echo -en "${code}";
+	if is_8bit_sint "$v1"; then
+	{
+		local code="eb";
+		code="${code}$(px "${v1}" $SIZE_8BITS_1BYTE)";
+		echo -en "${code}";
+		debug "asm: jmp .$v1; # $code"
+		return;
+	}
+	fi;
+	if is_32bit_sint "$v1"; then
+	{
+		local code="e9";
+		code="${code}$(px "${v1}" $SIZE_32BITS_4BYTES)";
+		echo -en "${code}";
+		debug "asm: jmp .$v1; # $code"
+		return;
+	}
+	fi;
+	debug "asm: jmp .$v1; #  not supported $code: jmp $@"
 }
 
 MOV_AL_ADDR4="\x88\x04\x25";
@@ -775,7 +885,7 @@ sub(){
 		echo -n "$c";
 		return;
 	fi;
-	if is_valid_number "$v1" && is_8bit_int "$v1"; then
+	if is_valid_number "$v1" && is_8bit_sint "$v1"; then
 	{
 		#4883E801          sub rax,byte +0x1
 		#48832801          sub qword [rax],byte +0x1
@@ -791,9 +901,21 @@ sub(){
 	fi;
 	error not implemented sub $@
 }
-is_8bit_int(){
+is_8bit_uint(){
 	local v="$1";
-	[ "$(( (v >= - ( 1 << 7 )) && (v <= ( 1 << 7 ) -1) ))" -eq 1 ];
+	[ "$(( (v >= 0 && (v < (1 << 8)) ) ))" -eq 1 ];
+}
+is_8bit_sint(){
+	local v="$1";
+	[ "$(( (v > - ( 1 << 7 )) && (v < ( 1 << 7 ) -1) ))" -eq 1 ];
+}
+is_32bit_uint(){
+	local v="$1";
+	[ "$(( (v >= 0 && (v < (1 << 32)) ) ))" -eq 1 ];
+}
+is_32bit_sint(){
+	local v="$1";
+	[ "$(( (v > - ( 1 << 31 )) && (v < ( 1 << 31 ) -1) ))" -eq 1 ];
 }
 # signed integer multiply
 imul(){
@@ -906,97 +1028,6 @@ TEST_rax_rax="$(prefix  rax rax  | xdr | base64 -w0 | b64_to_hex_dump)\x85\xc0";
 IMUL_rdx_rax="$(prefix  rdx rax  | xdr | base64 -w0 | b64_to_hex_dump)\x0f\xaf\xc2";
 SHR_V1_rax="$(prefix  v1 rax  | xdr | base64 -w0 | b64_to_hex_dump)\xc1\xe8";
 
-# JMP
-# We have some types of jump
-# Relative jumps (short and near):
-JMP_V1="\xeb"; # followed by a 8-bit signed char (-128 to 127) to move relative to BIP.
-JMP_V4="\xe9"; # followed by a 32-bit signed integer(-2147483648 to 2147483647).
-# Jump to the full virtual address
-JMP_rax="\xff";
-JMP_rdi="\xe0";
-JNE="\x0f\x85"; # The second byte "85" is the opcode for the JNE(Jump if Not Equal) same of JNZ(Jump if Not Zero) instruction. The following four bytes "06 00 00 00" represent the signed 32-bit offset from the current instruction to the target label.
-JZ="\x0f\x84";
-JNC_BYTE="\x73"; # jae, jnb and jnc are all the same condition code CF = 0.
-JZ_BYTE="74"; # follow by a signed byte from FF (-126) to 7f (127)
-JNZ_BYTE="\x75";
-JNA_BYTE="\x76";
-JA_BYTE="\x77"; # CF = 0, ZF = 0
-JS_BYTE="\x77";
-JL_V1="\x7c";
-JG_V1="\x7F";
-JGE_V1="\x7D";
-JNG_V1="\x7E";
-JL_V4="\x0f\x8c";
-JGE_V4="\x0f\x8d"; # Jump if greater than or igual to zero flags: SF = OF
-JG="\x0F\x8F"; # Jump if Greater than zero; flags: SF = OF, ZF = 0
-#jbe, jna	CF = 1 or ZF = 1
-#jb, jc, jnae	CF = 1
-#jle, jng	SF != OF or ZF = 1
-#jl, jnge	SF != OF
-
-#js	SF = 1
-#jns	SF = 0
-#	
-#jo	OF = 1
-#jno	OF = 0
-#	
-#jp, jpe (e = even)	PF = 1
-#jnp, jpo (o = odd)	PF = 0
-
-
-#jcxz, jecxz	cx = 0 (16b mode)
-#jcxz, jecxz	ecx = 0 (32b mode)
-
-#http://unixwiz.net/techtips/x86-jumps.html
-#Instruction 	Description 			signed-ness 	Flags 	short jump 	near jump
-#									opcodes		opcodes
-#JO		Jump if overflow 			  	OF = 1		70	0F 80
-#JNO 		Jump if not overflow 	  			OF = 0	 		71 	0F 81
-#JS 		Jump if sign 	  				SF = 1 			78 	0F 88
-#JNS 		Jump if not sign 		  		SF = 0 			79 	0F 89
-#JE		Jump if equal/
-#JZ		Jump if zero					ZF = 1 			74 	0F 84
-#JNE
-#JNZ	 	Jump if not equal/
-#		Jump if not zero 			  	ZF = 0 			75 	0F 85
-#JB		Jump if below
-#JNAE		Jump if not above or equal
-#JC		Jump if carry 	unsigned 			CF = 1 			72 	0F 82
-#JNB		Jump if not below/
-#JAE		Jump if above or equal/
-#JNC 		Jump if not carry		unsigned 	CF = 0 			73 	0F 83
-#JBE		Jump if below or equal
-#JNA 		Jump if not above		unsigned 	CF = 1 or ZF = 1 	76 	0F 86
-#JA		Jump if above
-#JNBE 		Jump if not below or equal 	unsigned 	CF = 0 and ZF = 0 	77 	0F 87
-#JL 		Jump if less
-#JNGE		Jump if not greater or equal 	signed 		SF <> OF 		7C 	0F 8C
-#JGE 		Jump if greater or equal
-#JNL		Jump if not less 		signed 		SF = OF 		7D 	0F 8D
-#JLE	 	Jump if less or equal
-#JNG		Jump if not greater 		signed 		ZF = 1 or SF <> OF 	7E 	0F 8E
-#JG 		Jump if greater
-#JNLE		Jump if not less or equal 	signed 		ZF = 0 and SF = OF 	7F 	0F 8F
-#JP		Jump if parity
-#JPE 		Jump if parity even 	  			PF = 1 			7A 	0F 8A
-#JNP 		Jump if not parity
-#JPO		Jump if parity odd 	  			PF = 0 			7B 	0F 8B
-#JCXZ		Jump if %CX register is 0
-#JECXZ		Jump if %ECX register is 0 	  		%CX = 0 %ECX = 0 	E3
-jz(){
-	local v="$1";
-	local code=""
-	code="${code}${JZ_BYTE}";
-	code="${code}$(px "$v" $SIZE_8BITS_1BYTE)";
-	echo -e "${code}";
-}
-jg(){
-	local v="$1";
-	local code=""
-	code="${code}${JG_V1}";
-	code="${code}$(printf '\\x%02x' "$v")";
-	echo -en "${code}" | base64 -w0;
-}
 #Processor Flags
 #
 #The x86 processors have a large set of flags that represent the state of the processor, and the conditional jump instructions can key off of them in combination.
@@ -1013,6 +1044,9 @@ jg(){
 #    Set if result is too large a positive number or too small a negative number (excluding sign bit) to fit in destination operand; cleared otherwise 
 
 SYSCALL="$( printEndianValue $(( 16#050f )) $SIZE_16BITS_2BYTES)"
+function syscall(){
+	echo -n 0f05
+}
 SYS_READ=0;
 SYS_WRITE=1;
 SYS_OPEN=2;
@@ -1547,14 +1581,13 @@ function system_call_write_addr()
 	local OUT="$1";
 	local DATA_ADDR_V="$2";
 	local DATA_LEN="$3";
-	local DATA_ADDR="$(printEndianValue "$DATA_ADDR_V" "$SIZE_64BITS_8BYTES")";
 	local CODE="";
-	CODE="${CODE}${MOV_V8_rax}$(printEndianValue $SYS_WRITE $SIZE_64BITS_8BYTES)";
-	CODE="${CODE}${MOV_V8_rdi}$(printEndianValue $OUT $SIZE_64BITS_8BYTES)";
-	CODE="${CODE}${MOV_V8_rsi}${DATA_ADDR}";
-	CODE="${CODE}${MOV_V8_rdx}$(printEndianValue "${DATA_LEN}" $SIZE_64BITS_8BYTES)";
-	CODE="${CODE}${SYSCALL}";
-	echo -en "${CODE}" | base64 -w0;
+	CODE="${CODE}$(mov $SYS_WRITE rax)";
+	CODE="${CODE}$(mov $OUT rdi)";
+	CODE="${CODE}$(mov ${DATA_ADDR_V} rsi)";
+	CODE="${CODE}$(mov "${DATA_LEN}" rdx)";
+	CODE="${CODE}$(syscall)";
+	echo -n "${CODE}" | xxd --ps -r | base64 -w0;
 }
 
 function detect_argsize()
@@ -1685,13 +1718,13 @@ function system_call_exit()
 	local exit_code="$1"
 	local symbol_type="$2";
 	local code="";
-	code="${code}${MOV_V4_rax}$(printEndianValue $SYS_EXIT $SIZE_32BITS_4BYTES)";
-	code="${code}$(mov  ${exit_code:=0} rdi  | xdr | base64 -w0 | b64_to_hex_dump)";
+	code="${code}$(mov $SYS_EXIT rax)";
+	code="${code}$(mov  ${exit_code:=0} rdi)";
 	if [ "$symbol_type" != $SYMBOL_TYPE_HARD_CODED ]; then
-		code="${code}${MOV_rdi_rdi}";
+		code="${code}$(mov "(rdi)" rdi)";
 	fi;
-	code="${code}${SYSCALL}"
-	echo -en "${code}" | base64 -w0;
+	code="${code}$(syscall)"
+	echo -n "${code}" | xdr | base64 -w0;
 }
 
 function system_call_fork()
@@ -1860,12 +1893,11 @@ function get_arg()
 	local argn="$2";
 	local code="";
 	# MOV %rsp %rsi
-	code="${code}$(mov  rsp rsi  | xdr | base64 -w0 | b64_to_hex_dump)";
-	# ADD rsi 8
-	code="${code}$(add $(( 8 * (1 + argn) )) rsi | xdr | base64 -w0 | b64_to_hex_dump)";
-	code="${code}$(add r15 rsi | xdr | base64 -w0 | b64_to_hex_dump)";
+	code="${code}$(mov rsp rsi)";
+	code="${code}$(add $(( 8 * (1 + argn) )) rsi)"; # "1 +" the first 8 bytes are the argc
+	code="${code}$(add r15 rsi)";
 	# RESOLVE rsi (Copy pointer address content to rsi)
-	code="${code}$(mov  "(rsi)" rsi  | xdr | base64 -w0 | b64_to_hex_dump)";
+	code="${code}$(mov "(rsi)" rsi)";
 	# TODO: detect string size:
 	#code="${code}$(detect_string_length)"; # rdx has the string size
 	# if multiple of 8; set it to addr and we are done;
@@ -1883,8 +1915,8 @@ function get_arg()
 	# 	because we need to zero higher bits in byte, avoiding further issues with bsr
 	# TODO: set me address to the target address
 	# MOV rsi addr
-	code="${code}$(mov  rsi "$addr"  | xdr | base64 -w0 | b64_to_hex_dump)";
-	echo -en "${code}" | base64 -w0;
+	code="${code}$(mov rsi "$addr")";
+	echo -en "${code}" | xdr | base64 -w0;
 }
 
 ARCH_CONST_ARGUMENT_ADDRESS="_ARG_ADDR_ARG_ADDR_";
@@ -2169,7 +2201,7 @@ ilog10(){
 		# 	24 = first arg
 		# so we want n=24
 		code="${code}$(mov  rsp rax  | xdr | base64 -w0 | b64_to_hex_dump)";
-		code="${code}$(add 24 rax | xdr | base64 -w0 | b64_to_hex_dump)";
+		code="${code}$(add 16 rax | xdr | base64 -w0 | b64_to_hex_dump)";
 		code="${code}$(mov  "(rax)" rax  | xdr | base64 -w0 | b64_to_hex_dump)";
 		# should be the same as: movsbl 0x18(%rsp), %eax
 		#code="${code}${MOVSBL_V4rsp_EAX}$(printEndianValue 24 $SIZE_8BITS_1BYTE)";
@@ -2203,6 +2235,7 @@ ilog10(){
 # given a string address convert it to integer
 s2i(){
 	local reg_str_addr="rax";
+	local reg_str_8="al";
 	local reg_tmp_s="rsi";
 	local reg_tmp_s8="sil";
 	local reg_int_addr="rdi";
@@ -2214,24 +2247,28 @@ s2i(){
 	#
 	init="${init}$(mov rsp $reg_str_addr)";
 	init="${init}$(add 24 $reg_str_addr)";
+	init="${init}$(mov "(${reg_str_addr})" $reg_str_addr)";	# load the first 8 bytes at the tmp register
+	init="${init}$(mov "(${reg_str_addr})" $reg_str_addr)";	# load the first 8 bytes at the tmp register
+	init="${init}$(mov "(${reg_str_addr})" $reg_str_addr)";	# load the first 8 bytes at the tmp register
 	#
 	# tmp code end
 	init="${init}$(xor $reg_tmp_i $reg_tmp_i)";	# clean up target int reg
-	init="${init}$(mov "(${reg_str_addr})" $reg_tmp_s)";	# load the first 8 bytes at the tmp register
+	init="${init}$(xor $reg_tmp_s $reg_tmp_s)";	# clean up target int reg
 	local loop="";
-	loop="${loop}$(cmp $reg_tmp_s8 0)";
+	loop="${loop}$(mov ${reg_str_8} $reg_tmp_s8)";	# load the first 8 bytes at the tmp register
+	loop="${loop}$(cmp $reg_str_8 0)";
 	local r="";
 	r="${r}$(sub 48 $reg_tmp_s8)";		# convert to int
 	r="${r}$(imul 10 $reg_tmp_i)";		# multiply target by 10;
-	r="${r}$(add $reg_tmp_s8 $reg_tmp_i8)";	# add to target int
-	r="${r}$(shrq 8 $reg_tmp_s)";		# get next byte
-	local ss=$(( $(echo $loop$r | xdr | wc -c) ));
+	r="${r}$(add $reg_tmp_s $reg_tmp_i)";	# add to target int
+	r="${r}$(shrq 8 $reg_str_addr)";		# get next byte
+	local ss=$(( $(echo $loop$r | xdr | wc -c) +4 )); # TODO: why +4 ?
 	r="${r}$(jmp $(( - ss)))";	# jump back to loop start
 	local rs=$(echo -n "$r"| xdr | wc -c);
 	loop="${loop}$(jz $rs)"; 		# if found null the string is over;
 	loop="${loop}${r}";
 	local done="";
-	done="${done}$(mov $reg_tmp_s "(${reg_str_addr})")";	# record the value at target address
+	done="${done}$(mov $reg_tmp_i rdi)";	# record the value at target address
 	#
 	# this should work only for 8 bytes string, more than 8 needs another logic;
 	#
@@ -2239,7 +2276,6 @@ s2i(){
 	code="${code}${init}";
 	code="${code}${loop}";
 	code="${code}${done}";
-	code="${code}$(mov "(rax)" rdi)";
 	code="${code}${ret}";
 	echo -n ${code};
 
