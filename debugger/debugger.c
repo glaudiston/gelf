@@ -1,27 +1,40 @@
 #include "debugger.h"
 
 #define BUFF_SIZE 256
-void get_registers(pid_t child, void* regs)
+void get_registers(pid_t pid, void* regs)
 {
-	unsigned data = ptrace(PTRACE_GETREGS, child, NULL, regs);
+	unsigned data = ptrace(PTRACE_GETREGS, pid, NULL, regs);
 	if ( data != 0 ) {
 		perror("unexpected getregs");
 		printf("data: %016x", data);
 	}
 }
 
-void peek_string(pid_t child, void *addr, char* out){
-	if ( addr == 0 )
+char escaped_byte[5];
+char* escape_byte(unsigned char b){
+	if (b==0x20 || b>32 && b<127){
+		escaped_byte[0]=b;
+		escaped_byte[1]=0;
+		return escaped_byte;
+	}
+	sprintf(escaped_byte, "\\x%02x", b);
+	return escaped_byte;
+}
+void peek_string_null(pid_t child, void *addr, char* out, unsigned char stop_on_null)
+{
+	if (addr == 0)
 		return;
 	int done=0;
 	int pos=0;
 	size_t l=0;
+	int i=0;
 	size_t sizeBefore=BUFF_SIZE/3;
 	size_t lastAllocSize=BUFF_SIZE;
 	size_t newSize = 0;
 	char ** data;
+	char escaped_data[33]; // escaped are bytes like "\x00", so 4 bytes * 8 + 1 for null byte
+	out[pos]=0;
 	while(!done) {
-		out[pos]=0;
 		data = (char**) ptrace(PTRACE_PEEKTEXT, child, addr+pos, 0);
 		if ( data == (char**)0xffffffffffffffff )
 			break;
@@ -31,12 +44,25 @@ void peek_string(pid_t child, void *addr, char* out){
 			sizeBefore = lastAllocSize;
 			lastAllocSize = newSize;
 		}
-		sprintf(out,"%s%s", out, &data);
+		escaped_data[0]=0;
+		for (i=0;i<8;i++){
+			char c=*((char*)&data+i);
+			if ( c==0 && stop_on_null ){
+				sprintf(out,"%s%s", out, escaped_data);
+				return;
+			}
+			sprintf(escaped_data,"%s%s", escaped_data, escape_byte(c));
+		}
+		sprintf(out,"%s%s", out, escaped_data);
 		if (strlen((const char *)&data) < 8){
 			break;
 		}
 		pos+=8;
 	}
+}
+// extract and escape strings
+void peek_string(pid_t child, void *addr, char* out){
+	peek_string_null(child,addr,out, false);
 }
 
 void peek_array(pid_t child, void *addr, char* out){
@@ -173,6 +199,7 @@ void interact_user(pid_t pid, void * regs)
 			perror("Failed to write history file: ");
 		}
 		if (strcmp(user_input,"s") == 0) {
+			//printf("step next;\n");fflush(stdout);
 			user_request.step=true;
 			break;
 		}
@@ -254,7 +281,6 @@ void trace_watcher(pid_t pid)
 				printf("breakpoint hit 0x%s\n", user_request.breakpoint);
 			}
 			interact_user(pid, &regs);
-			//print_next_instruction(pid, ic, regs, &ptr_parsed_instruction);
 		}
 		run_next_instruction(pid, &ptr_parsed_instruction);
 		ic++;
@@ -270,7 +296,7 @@ Usage: %s <executable>\n\
 		Show this text\n\
 	--no-colors\n\
 		do not print terminal color bytes\n\
-	--interactive\n\
+	-i,--interactive\n\
 		prompt user for commands, useful to set breakpoints and check registers and memory values. While in prompt use \"help\" or \"?\" for instructions\n\
 	--binary-tips\n\
 		show bit values for known composed bytes\n\
@@ -299,7 +325,7 @@ void parse_options(int argc, char *argv[]){
 			cmd_options.show_colors=false;
 			continue;
 		}
-		if ( strcmp(argv[i], "--interactive") == 0) {
+		if ( strcmp(argv[i], "--interactive") == 0 || strcmp(argv[i], "-i") == 0 ) {
 			cmd_options.interactive_mode = true;
 			continue;
 		}
@@ -330,14 +356,14 @@ int main(int argc, char *argv[])
 		exit(1);
 	}
 
-	int child_pid = fork(); fflush(stdout);
-	if (child_pid == 0) { // child thread
+	int pid = fork(); fflush(stdout);
+	if (pid == 0) { // child thread
 		ptrace(PTRACE_TRACEME, 0, 0, NULL); // this is the child thread, allow it to be traced.
-		char ** env = &argv[1];
+		char ** env = &argv[cmd_options.cmd_index];
 		execvp(filename, env); // replace this child forked thread with the binary to trace
 	} else {
 		// parent thread (pid has the child pid)
-		trace_watcher(child_pid);
+		trace_watcher(pid);
 	}
 
 	return 0;

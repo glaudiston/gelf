@@ -59,10 +59,12 @@ typedef struct {
 extern instruction_info parse_next_instruction(pid_t pid, struct user_regs_struct regs);
 extern void print_next_instruction(pid_t pid, long int ic, struct user_regs_struct regs, instruction_info * ptr_parsed_instruction);
 extern void copy_bytes(pid_t child, long unsigned addr, char * target, size_t size);
+extern void peek_string_null(pid_t child, void *addr, char* out, unsigned char stop_on_null);
 extern void peek_string(pid_t child, void *addr, char* out);
 extern void peek_array(pid_t child, void *addr, char* out);
 extern void arch_interact_user(pid_t pid, struct user_regs_struct * regs, char * user_input);
 extern void get_current_address(char *s_curr_addr, struct user_regs_struct *regs);
+extern void get_registers(pid_t child, void* regs);
 #ifdef __aarch64__
 #include "arch_aarch64.c"
 #endif
