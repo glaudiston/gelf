@@ -428,6 +428,7 @@ test_s2i(){
 	compile_test <<EOF
 :	stdout	1
 :	nstr	@1
+#	convert the arg to integer
 :	na	[]	.s2i	nstr
 :	n	!	na
 !	sys_exit	n
@@ -446,10 +447,10 @@ test_i2s(){
 	compile_test <<EOF
 :	stdout	1
 :	nstr	@1
-# convert the arg to integer
-:	na	[]	.s2n	nstr
-!	n	!	na
-# convert integer to string
+#	convert the arg to integer
+:	na	[]	.s2i	nstr
+:	n	!	na
+#	convert integer to string
 :	sna	[]	.i2s	n
 :	sn	!	sna
 !	sys_write	stdout	sn

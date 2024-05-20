@@ -362,6 +362,7 @@ mov(){
 			code="${code}$(px $(( 16#B0 + v2 )) $SIZE_8BITS_1BYTE)"
 			code="${code}$(px "$v1" $SIZE_8BITS_1BYTE)";
 			echo -en "${code}";
+			debug "asm: mov $@; # $code"
 			return;
 		fi;
 		local mov_v4_reg="c7";
@@ -442,6 +443,7 @@ mov(){
 			code="${rex}${mov_8bit}";
 			code="${code}$(px $(( MODRM_MOD_DISPLACEMENT_REG + $(( v1 << 3 )) + v2 )) $SIZE_8BITS_1BYTE)";
 			echo -en "${code}";
+			debug "asm: mov $@; # $code"
 			return;
 		fi;
 	}
@@ -2200,9 +2202,9 @@ ilog10(){
 		# 	16 = ilog10 addr
 		# 	24 = first arg
 		# so we want n=24
-		code="${code}$(mov  rsp rax  | xdr | base64 -w0 | b64_to_hex_dump)";
+		code="${code}$(mov rsp rax  | xdr | base64 -w0 | b64_to_hex_dump)";
 		code="${code}$(add 16 rax | xdr | base64 -w0 | b64_to_hex_dump)";
-		code="${code}$(mov  "(rax)" rax  | xdr | base64 -w0 | b64_to_hex_dump)";
+		code="${code}$(mov "(rax)" rax  | xdr | base64 -w0 | b64_to_hex_dump)";
 		# should be the same as: movsbl 0x18(%rsp), %eax
 		#code="${code}${MOVSBL_V4rsp_EAX}$(printEndianValue 24 $SIZE_8BITS_1BYTE)";
 		retcode="$(bytecode_ret | b64_to_hex_dump)";
@@ -2363,7 +2365,8 @@ i2s(){
 	codeforzero="${codeforzero}$(bytecode_ret | b64_to_hex_dump)";
 	codepart1="${codepart1}${JG_V1}$(printEndianValue $( echo -en "$codeforzero" | wc -c) $SIZE_8BITS_1BYTE)";
 	codepart1="${codepart1}${codeforzero}";
-	codepart1="${codepart1}$(call_procedure ${ilog10_addr} $(( CURRENT_RIP + $( echo -en "${codepart1}" | wc -c) -7 )) | b64_to_hex_dump)";
+	local ilog10_skip_stack=10;
+	codepart1="${codepart1}$(call_procedure ${ilog10_addr} $(( CURRENT_RIP + $( echo -en "${codepart1}" | wc -c) -ilog10_skip_stack )) | b64_to_hex_dump)"; # -7 is expected to skip part of ilog10 code, so it will not try to recover the value from stack.
 	# at this point rdx == 3 (log 10 (n))
 	# rax is the value (1000)
 	codepart1="${codepart1}$(xor rdi rdi | xdr | base64 -w0 | b64_to_hex_dump)";
