@@ -1384,7 +1384,7 @@ parse_code_bloc(){
 	jump_bytecode_len=$(echo $jump_bytecode | base64 -d| wc -c);
 	instr_offset=$(( instr_offset + jump_bytecode_len ));
 	SNIPPETS="$(echo -en "${SNIPPETS}\n${bloc_snip_preview}")";
-	recursive_parse=$(parse_code_bloc_instr); # parse again with the correct instruction displacement
+	recursive_parse=$(parse_code_bloc_instr); # parse again with the correct instruction displacement because jump instr size can change over the bloc size
 	SNIPPETS="$1";
 	instr_bytes=$(echo "$recursive_parse"  |
 		cut -d, -f$SNIPPET_COLUMN_INSTR_BYTES
@@ -1412,7 +1412,7 @@ parse_code_bloc(){
 		"${data_bytes_sum}" \
 		"${bloc_outer_code_b64}" \
 		"${bloc_source_lines_count}" \
-		"${bloc_usage_count}"
+		"${bloc_usage_count}" \
 		"${bloc_return}" \
 		"${bloc_dependencies}";
 	)";

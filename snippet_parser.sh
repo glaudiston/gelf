@@ -123,8 +123,20 @@ struct_parsed_snippet(){
 	if ! is_valid_number "$snippet_source_lines_count" ||
 	   [ "$snippet_source_lines_count" -ne "${expected_source_lines_count}" ];
 	then
-		debug "??? snippet_source_lines_count=[$snippet_source_lines_count]; expected_source_lines_count=[$expected_source_lines_count";
-		error "at ${snippet_subname} the source lines count(${snippet_source_lines_count}) does not match the actual source lines(${expected_source_lines_count}): [$snippet_type][${snippet_source_code}]";
+		is_builtin=$(
+			if [ $( echo "${snippet_source_code}" | base64 -d | sed 's/\(builtin\)\.\..*/\1/g' ) == "builtin" ]; then
+				echo -n true;
+			else
+				echo -n false;
+			fi;
+		)
+		if [ "$is_builtin" == "false" ]; then
+		{
+			debug "??? snippet_source_lines_count=[$snippet_source_lines_count]; expected_source_lines_count=[$expected_source_lines_count";
+			error "at ${snippet_subname} the source lines count(${snippet_source_lines_count}) does not match the actual source lines(${expected_source_lines_count}): [$snippet_type][${snippet_source_code}]";
+			return;
+		}
+		fi;
 	fi;
 
 	local snippet_usages=0

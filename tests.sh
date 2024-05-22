@@ -406,8 +406,8 @@ test_fibonacci_generate(){
 	:	toStop	?	fibn	limit
 	!	toStop	?>	ret
 	:	narr	[]	.i2s	fibn
-	:	n	!	narr
-	!	sys_write	stdout	n
+	:	nstr	!	narr
+	!	sys_write	stdout	nstr
 	:	f	[]	fib	last	fibn	limit
 	!	f
 	!	ret

@@ -2387,7 +2387,7 @@ i2s(){
 		#⤚·······rdx=$((rdx-1));
 		printDigitCode="${printDigitCode}${DEC_rdx}";
 		# $rdx -lt 0 ] && break;
-		printDigitCode="${printDigitCode}$(cmp rdx 0 | xdr | bas64 -w0 | b64_to_hex_dump)";
+		printDigitCode="${printDigitCode}$(cmp rdx 0 | xdr | base64 -w0 | b64_to_hex_dump)";
 		xor_size=3; # size of "xor rcx, rcx" instr bytes
 		printDigitCode="${printDigitCode}${JGE_V1}$(printEndianValue $(( 0 - $( echo -e "$printDigitCode" | wc -c ) - xor_size - 11 )) $SIZE_8BITS_1BYTE)"; # TODO why do i need to substract 11?
 		local jmpv1_size=2; # it is not in code_dec_part yet because it depends on this block size
