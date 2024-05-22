@@ -2203,7 +2203,7 @@ ilog10(){
 		# 	24 = first arg
 		# so we want n=24
 		code="${code}$(mov rsp rax  | xdr | base64 -w0 | b64_to_hex_dump)";
-		code="${code}$(add 16 rax | xdr | base64 -w0 | b64_to_hex_dump)";
+		code="${code}$(add 24 rax | xdr | base64 -w0 | b64_to_hex_dump)";
 		code="${code}$(mov "(rax)" rax  | xdr | base64 -w0 | b64_to_hex_dump)";
 		# should be the same as: movsbl 0x18(%rsp), %eax
 		#code="${code}${MOVSBL_V4rsp_EAX}$(printEndianValue 24 $SIZE_8BITS_1BYTE)";

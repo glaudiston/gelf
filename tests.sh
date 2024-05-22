@@ -407,7 +407,7 @@ test_fibonacci_generate(){
 	!	toStop	?>	ret
 	:	narr	[]	.i2s	fibn
 	:	n	!	narr
-	#!	sys_write	stdout	n
+	!	sys_write	stdout	n
 	:	f	[]	fib	last	fibn	limit
 	!	f
 	!	ret
@@ -484,15 +484,16 @@ EOF
 test_ilog10(){
 	# good numbers to test
 	numbers_to_test="$({
-	for (( n=1; n < 2 ** 32; n = n * 10 )); do if [ "$n" -gt 1 ]; then echo $(( n -1 )); fi; echo $n; echo $((n+1)); done;
-	for (( n=2; n < 2 ** 32; n = n * 2 )); do echo $(( n -1 )); if [ $n == $(( 2 ** 31 )) ]; then break; fi;echo $n; echo $((n+1)); done;
+	for (( n=1; n < 2 ** 32; n = n * 10 )); do if [ "$n" -gt 1 ]; then echo $(( n -1 )); fi; echo $n; echo $(( n +1 )); done;
+	for (( n=2; n < 2 ** 32; n = n * 2 )); do echo $(( n -1 )); if [ $n == $(( 2 ** 31 )) ]; then break; fi;echo $n; echo $((n +1)); done;
 	} | sort -n | uniq)";
 	numbers_to_test="${RANDOM}"
 	for n in $numbers_to_test; do
 		echo -n "n=$n..." #| tee /dev/stderr;
 		local l=$(echo "scale=18; l($n)/l(10)" | bc -l | sed 's/^[.].*/0/; s/[.].*//');
 		compile_test <<EOF
-:	c	[]	.ilog10	$n
+:	n	$n
+:	c	[]	.ilog10	n
 :	x	!	c
 !	sys_exit	x
 EOF
