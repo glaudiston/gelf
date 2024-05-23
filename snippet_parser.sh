@@ -28,17 +28,19 @@
 #
 # useful constants:
 SNIPPET_COLUMN_TYPE=1;
-SNIPPET_COLUMN_SUBNAME=2;
-SNIPPET_COLUMN_INSTR_OFFSET=3;
-SNIPPET_COLUMN_INSTR_BYTES=4;
-SNIPPET_COLUMN_INSTR_LEN=5;
-SNIPPET_COLUMN_DATA_OFFSET=6;
-SNIPPET_COLUMN_DATA_BYTES=7;
-SNIPPET_COLUMN_DATA_LEN=8;
-SNIPPET_COLUMN_SOURCE_CODE=9;
-SNIPPET_COLUMN_SOURCE_LINES_COUNT=10;
-SNIPPET_COLUMN_USAGE_COUNT=11;
-SNIPPET_COLUMN_RETURN=12;
+SNIPPET_COLUMN_SYMBOL_TYPE=2;
+SNIPPET_COLUMN_SUBNAME=3;
+SNIPPET_COLUMN_INSTR_OFFSET=4;
+SNIPPET_COLUMN_INSTR_BYTES=5;
+SNIPPET_COLUMN_INSTR_LEN=6;
+SNIPPET_COLUMN_DATA_OFFSET=7;
+SNIPPET_COLUMN_DATA_BYTES=8;
+SNIPPET_COLUMN_DATA_LEN=9;
+SNIPPET_COLUMN_SOURCE_CODE=10;
+SNIPPET_COLUMN_SOURCE_LINES_COUNT=11;
+SNIPPET_COLUMN_USAGE_COUNT=12;
+SNIPPET_COLUMN_RETURN=13;
+SNIPPET_COLUMN_DEPENDENCIES=14;
 
 SNIPPET_PARSER_ERROR_INVALID_SNIPPET_TYPE=1
 SNIPPET_PARSER_ERROR_INVALID_SNIPPET_UNSUPPORTED_UNSTRUCTION=2
@@ -58,9 +60,11 @@ struct_parsed_snippet(){
 		error "Invalid snippet type: $@";
 		exit $SNIPPET_PARSER_ERROR_INVALID_SNIPPET_TYPE;
 	fi;
+	
+	local snippet_symbol_type="$(eval echo -n \${$SNIPPET_COLUMN_SYMBOL_TYPE})";
 
 	local snippet_subname="$(eval echo -n \${$SNIPPET_COLUMN_SUBNAME})";
-	if [ "${snippet_type}" == INSTRUCTION ] && ! [[ "${snippet_subname}" =~ (sys_exit|sys_write|sys_ret|sys_execve|bytecode|_init_|_before_) ]];then
+	if [ "${snippet_type}" == INSTRUCTION ] && ! [[ "${snippet_subname}" =~ (sys_exit|sys_write|sys_execve|bytecode|_init_|_before_|ret) ]];then
 		error "unsupported instruction $snippet_subname";
 		exit $SNIPPET_PARSER_ERROR_INVALID_SNIPPET_UNSUPPORTED_UNSTRUCTION;
 	fi;
@@ -77,7 +81,7 @@ struct_parsed_snippet(){
 	local expected_instr_len="$(
 		echo -n "$snippet_instruction_bytes" | base64 -d | wc -c || error 
 	)";
-	if [ "${snippet_instruction_len}" -ne "$expected_instr_len" ]; then
+	if ! [ "${snippet_instruction_len}" -eq "$expected_instr_len" ]; then
 		error "at ${snippet_subname} the instruction len and the instruction bytes does not match, expected ${expected_instr_len} but got ${snippet_instruction_len}"
 		exit 4;
 	fi;
@@ -119,16 +123,30 @@ struct_parsed_snippet(){
 	if ! is_valid_number "$snippet_source_lines_count" ||
 	   [ "$snippet_source_lines_count" -ne "${expected_source_lines_count}" ];
 	then
-		debug "??? snippet_source_lines_count=[$snippet_source_lines_count]; expected_source_lines_count=[$expected_source_lines_count";
-		error "at ${snippet_subname} the source lines count(${snippet_source_lines_count}) does not match the actual source lines(${expected_source_lines_count}): [$snippet_type][${snippet_source_code}]";
+		is_builtin=$(
+			if [ $( echo "${snippet_source_code}" | base64 -d | sed 's/\(builtin\)\.\..*/\1/g' ) == "builtin" ]; then
+				echo -n true;
+			else
+				echo -n false;
+			fi;
+		)
+		if [ "$is_builtin" == "false" ]; then
+		{
+			debug "??? snippet_source_lines_count=[$snippet_source_lines_count]; expected_source_lines_count=[$expected_source_lines_count";
+			error "at ${snippet_subname} the source lines count(${snippet_source_lines_count}) does not match the actual source lines(${expected_source_lines_count}): [$snippet_type][${snippet_source_code}]";
+			return;
+		}
+		fi;
 	fi;
 
 	local snippet_usages=0
 
 	local snippet_return="$(eval echo -n \${$SNIPPET_COLUMN_RETURN})";
+	local snippet_dependencies="$(eval echo -n \${$SNIPPET_COLUMN_DEPENDENCIES})";
 
 	local snippet_result="";
 	snippet_result="${snippet_result}${snippet_type}";
+	snippet_result="${snippet_result},${snippet_symbol_type}";
 	snippet_result="${snippet_result},${snippet_subname}";
 	snippet_result="${snippet_result},${snippet_instruction_offset}";
 	snippet_result="${snippet_result},${snippet_instruction_bytes}";
@@ -140,6 +158,7 @@ struct_parsed_snippet(){
 	snippet_result="${snippet_result},${snippet_source_lines_count}"
 	snippet_result="${snippet_result},${snippet_usages}";
 	snippet_result="${snippet_result},${snippet_return}";
+	snippet_result="${snippet_result},${snippet_dependencies}";
 
 	local snippet_output_lines=$(echo "${snippet_result}" | wc -l)
 	if ! [ "${snippet_output_lines}" -eq 1 ]; then

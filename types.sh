@@ -16,11 +16,13 @@ SYMBOL_TYPE_HARD_CODED=0;
 SYMBOL_TYPE_STATIC=1;
 # Runtime variables stored at memory. Unable to recover the address at built time.
 SYMBOL_TYPE_DYNAMIC=2;
+SYMBOL_TYPE_ARRAY=3;
 # Values Stored at processor register fields.
-SYMBOL_TYPE_REGISTER=3;
+SYMBOL_TYPE_REGISTER=4;
 # Instructions stored
-SYMBOL_TYPE_PROCEDURE=4;
-
+SYMBOL_TYPE_PROCEDURE=5;
+# system calls that can return values into variables
+SYMBOL_TYPE_SYSCALL=6;
 # receives the type as first argument
 # and the value as second argument
 # and return the hex string representation
