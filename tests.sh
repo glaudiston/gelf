@@ -395,7 +395,8 @@ EOF
 	expect $? 0 "ab" "$o"
 }
 
-test_fibonacci_generate(){
+test_fibonacci_generate()
+{
 	compile_test <<EOF
 :	stdout	1
 :	fib	{
