@@ -283,7 +283,8 @@ read_code_bloc()
 	while read; do
 		echo "$REPLY";
 		# end of bloc
-		if [[ "$(echo -n "$REPLY" | xxd --ps )" =~ ^(09)*7d$ ]]; then # ignore tabs and has closed brackets("}") at end of line
+    # TODO it should consider the correct identation(tabs) and definition mark(:)
+		if [[ "$(echo -n "$REPLY" | xxd --ps )" =~ 7d$ ]]; then # has closed brackets("}") at end of line
 			if [ ! "$inbloc" == true ]; then
 				return
 			fi;
@@ -1980,7 +1981,7 @@ create_internal_ilog10_snippet()
 		done;
 	)";
 	local data_bytes_sum=$(echo $data_bytes | base64 -d | wc -c);
-	local bloc_outer_code_b64="";
+	local bloc_outer_code_b64="$(echo -n "builtin..ilog10" | base64 -w0)";
 	local bloc_source_lines_count=0;
 	local bloc_usage_count=1;
 	local bloc_return="";
