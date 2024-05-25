@@ -1,4 +1,7 @@
+#ifndef _ARCH_X86_64_
+#define _ARCH_X86_64_
 #include "debugger.h"
+#include <sys/stat.h>
 typedef enum {
 	NONE,
 	REX,	// REX Prefix (0x40 - 0x4F):
@@ -159,16 +162,17 @@ void detect_friendly_instruction(pid_t child, unsigned long addr, char * friendl
 			sprintf(friendly_instr, "sys_fstat(%lli, 0x%016llx)",regs.rdi,regs.rsi);
 			break;
 		case SYS_PIPE:
-			sprintf(friendly_instr, "sys_pipe(0x%x);", regs.rdi);
+			sprintf(friendly_instr, "sys_pipe(0x%llx);", regs.rdi);
 			break;
 		case SYS_DUP2:
-			sprintf(friendly_instr, "sys_dup2(%i,%i);", regs.rdi, regs.rsi);
+			sprintf(friendly_instr, "sys_dup2(%llu,%llu);", regs.rdi, regs.rsi);
 			break;
 		case SYS_FORK:
 			sprintf(friendly_instr, "sys_fork()");
 			running_forks++;
 			break;
 		case SYS_EXECVE:
+		{
 			char filename[4096];
 			char args[4096];
 			char env[4096];
@@ -177,6 +181,7 @@ void detect_friendly_instruction(pid_t child, unsigned long addr, char * friendl
 			peek_array(child, (void*)regs.rdx, env);
 			sprintf(friendly_instr, "sys_execve(file: \"%s\", args: %s, env: %s)", filename, args, env);
 			break;
+		}
 		case SYS_EXIT:
 			sprintf(friendly_instr, "sys_exit(%lli)%s",regs.rdi, get_color(""));
 			break;
@@ -953,13 +958,28 @@ instruction_info parse_next_instruction(pid_t pid, struct user_regs_struct regs)
 			sprintf(rv.comment,"0x%x", regs.rip + instr_size + instr.displacement.s4B);
 			break;
 		}
+		case 0xe9:	// jmp
+		{
+			sprintf(rv.colored_hexdump, "%s%s%02x%s", rv.colored_hexdump, get_color("jmp"), bytes[instr_size-1], get_color(""));
+			memcpy(&instr.immediate.imm32, &bytes[instr_size], 4);
+			sprintf(rv.colored_hexdump, "%s%s%02x%02x%02x%02x%s", rv.colored_hexdump, get_color("int")
+					, bytes[instr_size+0]
+					, bytes[instr_size+1]
+					, bytes[instr_size+2]
+					, bytes[instr_size+3]
+					, get_color(""));
+			instr_size += 4;
+			sprintf(rv.asm_code, "%sjmp%s .%s%i%s", get_color("jmp"), get_color(""), get_color("int"), (signed char)instr.immediate.imm8, get_color(""));
+			sprintf(rv.comment, "0x%x", regs.rip + instr_size + instr.immediate.imm8);
+			break;
+		}
 		case 0xeb:	// jmp
 		{
 			sprintf(rv.colored_hexdump, "%s%s%02x%s", rv.colored_hexdump, get_color("jmp"), bytes[instr_size-1], get_color(""));
 			sprintf(rv.colored_hexdump, "%s%s%02x%s", rv.colored_hexdump, get_color("int"), bytes[instr_size], get_color(""));
 			instr.immediate.imm8 = bytes[instr_size++];
 			sprintf(rv.asm_code, "%sjmp%s .%s%i%s", get_color("jmp"), get_color(""), get_color("int"), (signed char)instr.immediate.imm8, get_color(""));
-			sprintf(rv.comment, "0x%x", regs.rip + instr_size + instr.immediate.imm8);
+			sprintf(rv.comment, "0x%llx", regs.rip + instr_size + instr.immediate.imm8);
 			break;
 		}
 	}
@@ -968,7 +988,7 @@ instruction_info parse_next_instruction(pid_t pid, struct user_regs_struct regs)
 
 //string_replace(target, template
 
-void ndisasm(char *hexdump)
+void ndisasm(unsigned char *hexdump)
 {
 	char ndisasm[256];
 	sprintf(ndisasm, "/bin/sh -c '{ xxd --ps -r | ndisasm -b %i - | head -1 | tr -s \\  | cut -d \\  -f3-; } <<<\"%s\" '", 64, hexdump);
@@ -976,24 +996,95 @@ void ndisasm(char *hexdump)
 	printf("ndisasm: ");fflush(stdout);
 	system(ndisasm);fflush(stdout);
 }
+
+void capture_code_snipet(unsigned char *code_snippet, unsigned char *code_snippets, long long unsigned address)
+{
+	int i;
+	size_t l=strlen(code_snippets);
+	unsigned char line_buf[1<<16];
+	int line_buf_pos=0;
+	unsigned char field_str[1<<16];
+	int field_pos=0;
+	int field_address=4;
+	int field_count=0;
+	char addr_str[20];
+	sprintf(addr_str, "%llu", address);
+	unsigned char found=false;
+	code_snippet[0]=0;
+	for (i=0; i<l; i++){
+		char c = code_snippets[i];
+		line_buf[line_buf_pos++] = c;
+		if (c == '\n'){
+			if (found){
+				strcpy(code_snippet, line_buf);
+				break;
+			}
+			line_buf_pos=0;
+			field_count=0;
+			field_pos=0;
+			continue;
+		}
+		if (c == ','){// expect to have parsed a field
+			field_count++;
+			if (field_count==field_address){// if found the field we are looking for
+				if ( strcmp(field_str, addr_str) == 0 ) { // match found
+					found=true;
+				}
+			}
+			field_pos=0;
+			field_str[0]=0;
+			continue;
+		}
+		field_str[field_pos++] = c;
+		field_str[field_pos]=0;
+	}
+}
+
+void print_source_code(long long unsigned address)
+{
+	char filename[1024];
+	sprintf(filename,"%s.snippets.round-3", cmd_options.filename);
+	struct stat statbuf;
+	if (lstat(filename, &statbuf) == -1){
+		perror("fail to load snippet file");
+		return;
+	}
+	FILE *f=fopen(filename, "r");
+	char code_snippets[1 << 16];
+	ssize_t n = fread(code_snippets, statbuf.st_size, 1, f);
+	char code_snippet[1 << 16];
+	code_snippet[0]=0;
+	capture_code_snipet(code_snippet, code_snippets, address);
+	if ( strlen(code_snippet) > 0 ){ // found snip
+		//printf("** FOUND SNIP: \n%s", code_snippet);fflush(stdout);
+		char cmd_buf[1024];
+		sprintf(cmd_buf, "/bin/sh -c 'echo \"%s\" | cut -d, -f10 | base64 -d 2>/dev/null'", code_snippet);
+		system(cmd_buf);
+		printf("\n");fflush(stdout);
+	}
+	fclose(f);
+}
+
 void print_next_instruction(pid_t pid, long int ic, struct user_regs_struct regs, instruction_info * ptr_parsed_instruction){
 	unsigned long addr = regs.rip;
 	unsigned char bytes[8];
 	get_instruction_bytes(pid, addr, (unsigned char *)&bytes);
 	if ( ptr_parsed_instruction->asm_code[0] != 0 ){
 		unsigned char colored_hexdump[256];
-		printf("%sIC:%li|PID:%i|rip:0x%lx|%s|", get_color("gray"),
+		printf("%sIC:%li|PID:%i|rip:0x%llx|%s|", get_color("gray"),
 				ic, pid, regs.rip, ptr_parsed_instruction->colored_hexdump);fflush(stdout);
 		int carry_flag = (regs.eflags & (1 << 0));
 		int zero_flag = (regs.eflags & (1 << 6));
 		/* substr(ptr_parsed_instruction->comment, "{ZF}", zero_flag ? "true" : "false"); */
 		printf("%s%s%s|%s\n", get_color("white"), ptr_parsed_instruction->asm_code, get_color("gray"), ptr_parsed_instruction->comment);
+		print_source_code(regs.rip);
 		return;
 	}
 	int ok;
 	// failed to detect the instruction, fallback to ndisasm without colors;
-	printf("%sIC:%li|PID:%i|rip:0x%lx|%s|", get_color("gray"), ic, pid, regs.rip, ptr_parsed_instruction->hexdump);fflush(stdout);
+	printf("%sIC:%li|PID:%i|rip:0x%llx|%s|", get_color("gray"), ic, pid, regs.rip, ptr_parsed_instruction->hexdump);fflush(stdout);
 	ndisasm(ptr_parsed_instruction->hexdump);
+	print_source_code(regs.rip);
 }
 
 /*
@@ -1040,10 +1131,37 @@ void explain_modrm()
 	printf("\t\tb=%i\n", instr.modrm.byte & 0x7);
 }
 
+void sprintx(unsigned char *buff, long unsigned v){
+	sprintf(buff,"%02x%02x%02x%02x%02x%02x%02x%02x"
+		, (unsigned char)(v << 56 >> 56)
+		, (unsigned char)(v << 48 >> 56)
+		, (unsigned char)(v << 40 >> 56)
+		, (unsigned char)(v << 32 >> 56)
+		, (unsigned char)(v << 24 >> 56)
+		, (unsigned char)(v << 16 >> 56)
+		, (unsigned char)(v << 8 >> 56)
+		, (unsigned char)(v << 0 >> 56)
+	);
+}
+
+void sprintx_le(unsigned char *buff, long unsigned v){
+	sprintf(buff,"%02x%02x%02x%02x%02x%02x%02x%02x"
+		, (unsigned char)(v << 0 >> 56)
+		, (unsigned char)(v << 8 >> 56)
+		, (unsigned char)(v << 16 >> 56)
+		, (unsigned char)(v << 24 >> 56)
+		, (unsigned char)(v << 32 >> 56)
+		, (unsigned char)(v << 40 >> 56)
+		, (unsigned char)(v << 48 >> 56)
+		, (unsigned char)(v << 56 >> 56)
+	);
+}
+
 /*
 * arch_interact_user receives a user input and answer it
 */
 void arch_interact_user(pid_t pid, struct user_regs_struct * regs, char * user_input) {
+	unsigned char hexstr[30];
 	if (strncmp(user_input, "p ", 2) == 0) {
 		const char *r=(const char *)&user_input[2];
 		printf("%s: 0x%lx\n", r, get_reg_value(r));
@@ -1052,31 +1170,15 @@ void arch_interact_user(pid_t pid, struct user_regs_struct * regs, char * user_i
 		long unsigned vaddr;
 		sscanf(&user_input[3], "%lx", &vaddr);
 		long unsigned v = ptrace(PTRACE_PEEKTEXT, pid, (void*)vaddr, 0);
-		printf("[0x%s]: %02x%02x%02x%02x%02x%02x%02x%02x\n", &user_input[3]
-			, (unsigned char)(v << 56 >> 56)
-			, (unsigned char)(v << 48 >> 56)
-			, (unsigned char)(v << 40 >> 56)
-			, (unsigned char)(v << 32 >> 56)
-			, (unsigned char)(v << 24 >> 56)
-			, (unsigned char)(v << 16 >> 56)
-			, (unsigned char)(v << 8 >> 56)
-			, (unsigned char)(v << 0 >> 56)
-		);
+		sprintx(hexstr, v);
+		printf("[0x%s]: %s\n", &user_input[3], hexstr);
 	}
 	if (strncmp(user_input, "px-le ", 6) == 0) {
 		long unsigned vaddr;
 		sscanf(&user_input[6], "%lx", &vaddr);
 		long unsigned v = ptrace(PTRACE_PEEKTEXT, pid, (void*)vaddr, 0);
-		printf("[0x%s]: %02x%02x%02x%02x%02x%02x%02x%02x\n", &user_input[3]
-			, (unsigned char)(v << 0 >> 56)
-			, (unsigned char)(v << 8 >> 56)
-			, (unsigned char)(v << 16 >> 56)
-			, (unsigned char)(v << 24 >> 56)
-			, (unsigned char)(v << 32 >> 56)
-			, (unsigned char)(v << 40 >> 56)
-			, (unsigned char)(v << 48 >> 56)
-			, (unsigned char)(v << 56 >> 56)
-		);
+		sprintx_le(hexstr, v);
+		printf("[0x%s]: %s\n", &user_input[3], hexstr);
 	}
 	if (strncmp(user_input, "ps ", 3) == 0) {
 		long unsigned vaddr;
@@ -1112,21 +1214,12 @@ void arch_interact_user(pid_t pid, struct user_regs_struct * regs, char * user_i
 			sscanf(&user_input[8], "%lx", &vaddr);
 		}
 		long unsigned v = ptrace(PTRACE_PEEKTEXT, pid, (void*)vaddr, 0);
-		char hexdump[17];
-		sprintf(hexdump,"%02x%02x%02x%02x%02x%02x%02x%02x"
-			, (unsigned char)(v << 56 >> 56)
-			, (unsigned char)(v << 48 >> 56)
-			, (unsigned char)(v << 40 >> 56)
-			, (unsigned char)(v << 32 >> 56)
-			, (unsigned char)(v << 24 >> 56)
-			, (unsigned char)(v << 16 >> 56)
-			, (unsigned char)(v << 8 >> 56)
-			, (unsigned char)(v << 0 >> 56)
-		);
-		ndisasm((char*)&hexdump);
+		sprintx(hexstr, v);
+		ndisasm(hexstr);
 	}
 }
 void get_current_address(char *s_curr_addr, struct user_regs_struct *regs){
-	sprintf(s_curr_addr, "%x", regs->rip);
+	sprintf(s_curr_addr, "%llx", regs->rip);
 }
 
+#endif
