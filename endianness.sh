@@ -1,5 +1,8 @@
 #!/bin/bash
 # given a value and a size(defalt 8), return the expected hex dumped bytes in little endianness
+
+false && . ./utils.sh; # just for reference, we already sourced at main
+
 export LC_ALL=C
 function printBigEndian(){
 	local VALUE="$1"

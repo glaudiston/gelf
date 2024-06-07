@@ -258,7 +258,7 @@ print_elf_body()
 			local ds=$(echo -en "$d" | cut -d, -f$SNIPPET_COLUMN_DATA_LEN);
 			local symbol_name=$(echo -en "$d" | cut -d, -f$SNIPPET_COLUMN_SUBNAME);
 			local symbol_data=$(echo -en "$d" | cut -d, -f$SNIPPET_COLUMN_DATA_BYTES);
-			local dbl=$( echo $symbol_data | base64 -d | wc -c);
+			local dbl=$( echo $symbol_data | b64cnt);
 			if ! is_hard_coded_value "$symbol_data" "$symbol_name"; then
 				echo -en "$d" | cut -d, -f$SNIPPET_COLUMN_DATA_BYTES;
 				echo -en "\x00" | base64 -w0; # ensure a null byte to split data
@@ -283,7 +283,8 @@ read_code_bloc()
 	while read; do
 		echo "$REPLY";
 		# end of bloc
-		if [[ "$(echo -n "$REPLY" | xxd --ps )" =~ ^(09)*7d$ ]]; then # ignore tabs and has closed brackets("}") at end of line
+    # TODO it should consider the correct identation(tabs) and definition mark(:)
+		if [[ "$(echo -n "$REPLY" | xxd --ps )" =~ 7d$ ]]; then # has closed brackets("}") at end of line
 			if [ ! "$inbloc" == true ]; then
 				return
 			fi;
@@ -335,7 +336,7 @@ get_b64_symbol_value()
 	# hard coded number
 	if is_valid_number "$symbol_name"; then {
 		out=$(echo -n "$symbol_name" | base64 -w0);
-		outsize=$(echo -n "${out}" | base64 -d | wc -c)
+		outsize=$(echo -n "${out}" | b64cnt)
 		echo -n ${out},${outsize},${SYMBOL_TYPE_HARD_CODED}
 		return
 	}
@@ -349,7 +350,7 @@ get_b64_symbol_value()
 		if [ "$out" == "" ]; then
 			out=$(echo -n 'ascii' | base64 -w0);
 		fi;
-		local outsize="$(echo -n "${out}" | base64 -d | wc -c)";
+		local outsize="$(echo -n "${out}" | b64cnt)";
 		echo -n "${out},${outsize},${SYMBOL_TYPE_HARD_CODED}";
 		return;
 	}
@@ -366,13 +367,13 @@ get_b64_symbol_value()
 		# check syscalls that returns data
 		if is_system_function "${symbol_name}"; then
 			out=$(echo -n "$symbol_name" | base64 -w0);
-			outsize=$(echo -n "${out}" | base64 -d | wc -c)
+			outsize=$(echo -n "${out}" | b64cnt)
 			echo -n ${out},${outsize},${SYMBOL_TYPE_SYSCALL}
 			return 1;
 		fi;
 		if is_internal_function "${symbol_name}"; then
 			out=$(echo -n "$symbol_name" | base64 -w0);
-			outsize=$(echo -n "${out}" | base64 -d | wc -c);
+			outsize=$(echo -n "${out}" | b64cnt);
 			echo -n ${out},${outsize},${SYMBOL_TYPE_SYSCALL},0
 			return 1;
 		fi;
@@ -405,13 +406,13 @@ get_b64_symbol_value()
 	fi
 	if is_valid_number "$(echo "${symbol_value}" | base64 -d)"; then {
 		out="$symbol_value";
-		outsize=$(echo -n "${out}" | base64 -d | wc -c)
+		outsize=$(echo -n "${out}" | b64cnt)
 		echo -n ${out},${outsize},${SYMBOL_TYPE_HARD_CODED}
 		return
 	}
 	fi;
 	out=$(echo -n "${symbol_value}")
-	outsize=$(echo -n "${out}" | base64 -d | wc -c)
+	outsize=$(echo -n "${out}" | b64cnt)
 	echo -n ${out},${outsize},${SYMBOL_TYPE_STATIC},${symbol_addr}
 	return
 	# TODO, increment usage count in SNIPPETS SYMBOL_TABLE
@@ -536,7 +537,7 @@ is_internal_snippet()
 is_dynamic_snippet()
 {
 	local l="$1";
-	local snip_data_wc=$(echo "${l}" | cut -d, -f$SNIPPET_COLUMN_DATA_BYTES | base64 -d | wc -c);
+	local snip_data_wc=$(echo "${l}" | cut -d, -f$SNIPPET_COLUMN_DATA_BYTES | b64cnt);
 	local snip_data_len=$(echo "${l}" | cut -d, -f$SNIPPET_COLUMN_DATA_LEN );
 	if [ "$snip_data_wc" -lt "$snip_data_len" ]; then
 		return 0;
@@ -628,7 +629,7 @@ is_static_data_snippet()
 		return 1;
 	fi;
 	local snip_data_size=$(echo "$snip" | cut -d, -f"$SNIPPET_COLUMN_DATA_LEN");
-	if [ "$snip_data_size" != "$(echo "$snip_data_bytes" | base64 -d | wc -c)" ]; then
+	if [ "$snip_data_size" != "$(echo "$snip_data_bytes" | b64cnt)" ]; then
 		return 1;
 	fi;
 	return 0;
@@ -708,7 +709,7 @@ define_variable_increment()
 		symbol_value=$(echo "$symbol_data" | cut -d, -f${B64_SYMBOL_VALUE_RETURN_OUT} | base64 -d);
 		instr_bytes="${instr_bytes}$(set_increment $dyn_data_offset $symbol_value $symbol_type)";
 	done
-	local instr_len="$(echo "${instr_bytes}" | base64 -d | wc -c)";
+	local instr_len="$(echo "${instr_bytes}" | b64cnt)";
 	local data_bytes="";
 	local data_len="8";
 	struct_parsed_snippet \
@@ -731,7 +732,7 @@ define_variable_arg()
 	local arg_number="${sec_arg/@/}"
 	# create a new dynamic symbol called ${symbol_name}
 	local instr_bytes="$(get_arg $dyn_data_offset $arg_number)";
-	local instr_len=$(echo -n "${instr_bytes}" | base64 -d | wc -c );
+	local instr_len=$(echo -n "${instr_bytes}" | b64cnt );
 	# this address will receive the point to the arg variable set in rsp currently;
 	# a better solution would be not have this space in binary but in memory.
 	# but it is good enough for now. because we don't really have a dynamic memory now
@@ -776,23 +777,23 @@ define_variable_read_from_file()
 	# Reading file involve some steps.
 	# 1. Opening the file, if succeed, we have a file descriptor
 	#    in success the rax will have the fd
-	local open_code="$(system_call_open "${filename_addr}")";
+	local open_code="$(system_call_open "${filename_addr}" | xd2b64)";
 	# 2. fstat that fd, so we have the information on data size, to allocate properly the memory.
 	# TODO guarantee a valid writable memory location
-	local fstat_code="$(sys_fstat "${stat_addr}")";
+	local fstat_code="$(sys_fstat "${stat_addr}" | xd2b64)";
 	# 	To do this we need to have some memory space to set the stat data struct.
 	# 	TODO decide if we should mmap every time, or have a program buffer to use.
 	# 3.a. in normal files, allocate memory with mmap using the fd.
 	local mmap_code="";
 	# 3.b. in case of virtual file like pipes or nodes(/proc/...) we can't map directly, but we still need to have a memory space to read the data in, so the fstat is still necessary. We should then use the sys_read to copy the data into memory.
 	# 4. So we can access the data directly using memory addresses.
-	local read_code="$(read_file "${symbol_type}" "${stat_addr}" "${data_offset}")"
+	local read_code="$(read_file "${symbol_type}" "${stat_addr}" "${data_offset}")";
 	# it should return the bytecode, the size
 	#fd="$(set_symbol_value "${symbol_value} fd" "${SYS_OPEN}")";
 	# We should create a new dynamic symbol to have the file descriptor number
 	#CODE="${CODE}$(sys_read $)"
 	instr_bytes="${open_code}${fstat_code}${mmap_code}${read_code}"
-	instr_len=$(echo -n "${instr_bytes}" | base64 -d | wc -c )
+	instr_len=$(echo -n "${instr_bytes}" | b64cnt )
 	data_bytes="";
 	data_len="$(( stat_struct_size + ptr_data_size ))"; # Dynamic length, only at runtime we can know so give it the pointer size
 	struct_parsed_snippet \
@@ -853,7 +854,7 @@ define_variable_from_exec()
 	local staticmapparam="${static_map[@]}";
 	local data_len=$(( ptr_to_buffer_size + pipe_buffer_size + pipe_struct_size + args_size + env_size ));
 	local instr_bytes="$(system_call_exec "${args_addr}" "${argsparam}" "${staticmapparam}" "${env_addr}" "${pipe_addr}" "${pipe_buffer_addr}" "${pipe_buffer_size}")";
-	local instr_len="$(echo "${instr_bytes}" | base64 -d | wc -c)";
+	local instr_len="$(echo "${instr_bytes}" | b64cnt)";
 	struct_parsed_snippet \
 		"SYMBOL_TABLE" \
 		"${SYMBOL_TYPE_PROCEDURE}" \
@@ -900,7 +901,7 @@ define_concat_variable(){
 		local instr_bytes="";
 		local instr_len=0;
 		local data_bytes="${static_value}";
-		local data_len=$(echo -n "$data_bytes" | base64 -d | wc -c);
+		local data_len=$(echo -n "$data_bytes" | b64cnt);
 		struct_parsed_snippet \
 			"SYMBOL_TABLE" \
 			"${SYMBOL_TYPE_PROCEDURE}" \
@@ -917,7 +918,7 @@ define_concat_variable(){
 	}
 	fi;
 	# if at least one are dynamic we need to set instructions
-	local instr_len=$(echo -n "$instr_bytes" | base64 -d | wc -c);
+	local instr_len=$(echo -n "$instr_bytes" | b64cnt);
 	local data_bytes="";
 	local data_len=8;
 	struct_parsed_snippet \
@@ -949,7 +950,7 @@ define_variable_from_test()
 	local field_type_b=$(echo "${field_data_b}" | cut -d, -f${B64_SYMBOL_VALUE_RETURN_TYPE});
 	local field_b_v=$(echo "${field_data_b}" | cut -d, -f${B64_SYMBOL_VALUE_RETURN_OUT} | base64 -d)
 	local instr_bytes=$(compare "${field_a_v:=0}" "${field_b_v:=0}" "$field_type_a" "$field_type_b")
-	local instr_len=$(echo "$instr_bytes" | base64 -d | wc -c);
+	local instr_len=$(echo "$instr_bytes" | b64cnt);
 	local data_bytes="";
 	local data_len=0;
 	struct_parsed_snippet \
@@ -991,12 +992,12 @@ define_array_variable(){
 			local jump_size=2; # instruction length of the jump over before the code
 			symbol_addr=$(( symbol_addr + jump_size ));
 		fi;
-		instr_bytes="${instr_bytes}$(array_add "${dyn_data_offset}" "$((i-deep-1))" "${symbol_addr}" "$symbol_type" "$symbol_value")";
+		instr_bytes="${instr_bytes}$(array_add "${dyn_data_offset}" "$((i-deep-1))" "${symbol_addr}" "$symbol_type" "$symbol_value"|xd2b64)";
 	done;
 	local array_size=$(( ${#code_line_elements[@]} - (deep + 1) -1));
-	instr_bytes="${instr_bytes}$(array_end "${dyn_data_offset}" "$array_size")";
+	instr_bytes="${instr_bytes}$(array_end "${dyn_data_offset}" "$array_size" | xd2b64)";
 	local symbol_name=$(echo -n "${code_line_elements[$(( 1 + deep-1 ))]}" | cut -d: -f1);
-	local instr_len=$(echo -n "$instr_bytes" | base64 -d | wc -c);
+	local instr_len=$(echo -n "$instr_bytes" | b64cnt);
 	local data_bytes="";
 	local data_len=$(( array_size * 8 ));
 	local usage_count=0;
@@ -1124,7 +1125,7 @@ define_variable_from_fn(){
 	local target_fn="$target";
 	if [[ "$target" == sys_geteuid ]]; then
 	{
-		instr_bytes="$(sys_geteuid "${dyn_data_offset}")";
+		instr_bytes="$(sys_geteuid "${dyn_data_offset}" | xd2b64)";
 		data_len=8;
 		data_bytes="";
 	}
@@ -1148,11 +1149,11 @@ define_variable_from_fn(){
 		local target_addr=$(echo $target_fn_data | cut -d, -f${SNIPPET_COLUMN_INSTR_OFFSET});
 		#data_len=$(echo $target_fn_data | cut -d, -f${SNIPPET_COLUMN_DATA_LEN});
 		local jmp_size=$(get_jmp_size "${SNIPPETS}" "${target_fn}" );
-		target_addr=$(( target_addr + jmp_size ));
+		target_addr=$((target_addr + jmp_size));
 		instr_bytes="$(call_procedure "${target_addr}" "${instr_offset}" "${SYMBOL_TYPE_ARRAY}" "${retval_addr}")";
 	}
 	fi;
-	instr_len="$(echo $instr_bytes | base64 -d | wc -c)";
+	instr_len="$(echo $instr_bytes | b64cnt)";
 	struct_parsed_snippet \
 		"SYMBOL_TABLE" \
 		"${SYMBOL_TYPE_PROCEDURE}" \
@@ -1215,8 +1216,8 @@ define_variable(){
 		# argc_addr: memory address to put the argc 
 		#   should i use the snippets data?
 		argc_pos=$dyn_data_offset;
-		instr_bytes="$(get_arg_count $argc_pos)"
-		instr_len=$(echo -n "${instr_bytes}" | base64 -d | wc -c )
+		instr_bytes="$(get_arg_count $argc_pos | xd2b64)";
+		instr_len=$(echo -n "${instr_bytes}" | b64cnt );
 		data_bytes="";
 		data_len="8"; # pointer size
 		struct_parsed_snippet \
@@ -1261,7 +1262,7 @@ define_variable(){
 		instr_bytes="";
 		instr_len=0;
 		data_bytes="$(set_symbol_value "${symbol_value}" "${SNIPPETS}")";
-		data_len="$( echo -n "${data_bytes}" | base64 -d | wc -c)";
+		data_len="$( echo -n "${data_bytes}" | b64cnt)";
 		local symbol_type=${SYMBOL_TYPE_DYNAMIC}
 		if is_hard_coded_value "${data_bytes}" "${symbol_name}"; then
 			data_len=0; # hard-coded values does not use data space
@@ -1303,7 +1304,7 @@ do_define(){
 parse_code_bloc_instr(){
 	local symbol_name='_init_';
 	local instr_bytes=$(init_bloc);
-	local instr_len=$(echo $instr_bytes | base64 -d | wc -c);
+	local instr_len=$(echo $instr_bytes | b64cnt);
 	local data_bytes="";
 	local data_len=0;
 	struct_parsed_snippet \
@@ -1371,7 +1372,7 @@ parse_code_bloc(){
 	)";
 	debug "bloc dependencies: $bloc_dependencies"
 	local instr_size_sum="$( echo "${instr_bytes}" |
-		base64 -d | wc -c |
+		b64cnt |
 		awk '{s+=$1}END{print s}';
 	)";
 	local jump_bytecode_len=0; # jump is a dynamic instr, it can change size based on how far is the target.
@@ -1380,8 +1381,8 @@ parse_code_bloc(){
 	local target_addr=$((current_addr + jump_bytecode_len + instr_size_sum));
 	local jump_bytecode="";
 	target_addr=$((current_addr + instr_size_sum));
-	jump_bytecode=$(jump "$target_addr" "$current_addr");
-	jump_bytecode_len=$(echo $jump_bytecode | base64 -d| wc -c);
+	jump_bytecode=$(jump "$target_addr" "$current_addr" | xd2b64);
+	jump_bytecode_len=$(echo $jump_bytecode | b64cnt);
 	instr_offset=$(( instr_offset + jump_bytecode_len ));
 	SNIPPETS="$(echo -en "${SNIPPETS}\n${bloc_snip_preview}")";
 	recursive_parse=$(parse_code_bloc_instr); # parse again with the correct instruction displacement because jump instr size can change over the bloc size
@@ -1395,7 +1396,7 @@ parse_code_bloc(){
 	local data_bytes="$(echo "$recursive_parse"  |
 		cut -d, -f$SNIPPET_COLUMN_DATA_BYTES )"
 	local data_bytes_sum="$( echo "${data_bytes}" |
-		base64 -d | wc -c |
+		b64cnt |
 		awk '{s+=$1}END{print s}'
 	)";
 	local bloc_usage_count=0;
@@ -1441,7 +1442,7 @@ conditional_call(){
 	local arguments_map=();
 	# TODO jump or call ?
 	local instr_bytes="$(jump_if_equal "$(( target_offset + 2 - (deep-1) * 2 ))" "${instr_offset}" "${arguments}" "${arguments_map}" )"; # 2 is the jump instr expected to be at the snip first instr, each deep level have 2 bytes for the instr call
-	local instr_len="$(echo "${instr_bytes}" | base64 -d | wc -c)";
+	local instr_len="$(echo "${instr_bytes}" | b64cnt)";
 	local data_bytes="";
 	local data_len=0;
 	struct_parsed_snippet \
@@ -1505,13 +1506,13 @@ snippet_write()
 	else
 		data_addr_v="$( echo ${symbol_value} | base64 -d)"
 	fi;
-	local instr_bytes="$(system_call_write "${symbol_type}" "${data_output}" "$data_addr_v" "$data_bytes_len" "${instr_offset}")";
+	local instr_bytes="$(system_call_write "${symbol_type}" "${data_output}" "$data_addr_v" "$data_bytes_len" "${instr_offset}" | xd2b64)";
 	data_bytes="";
 	data_bytes_len=0;
 	#if [ "${symbol_type}" == "${SYMBOL_TYPE_HARD_CODED}" ]; then
 	#	data_bytes_len=8; # actually we need to calculate how many bytes we need to print using the hardcoded value
 	#fi;
-	local instr_size="$(echo -e "$instr_bytes" | base64 -d | wc -c)";
+	local instr_size="$(echo -e "$instr_bytes" | b64cnt)";
 	struct_parsed_snippet \
 		"INSTRUCTION" \
 		"${SYMBOL_TYPE_PROCEDURE}" \
@@ -1598,7 +1599,7 @@ do_call(){
 	fi;
 	local jmp_size=$(get_jmp_size "${SNIPPETS}" "${target}" );
 	local call_bytes="$(call_procedure "$((target_offset + jmp_size))" "${instr_offset}" )";
-	local call_len="$(echo "${call_bytes}" | base64 -d | wc -c)";
+	local call_len="$(echo "${call_bytes}" | b64cnt)";
 	struct_parsed_snippet \
 		"SNIPPET_CALL" \
 		"${SYMBOL_TYPE_PROCEDURE}" \
@@ -1646,7 +1647,7 @@ do_exec(){
 	local argsparam="${args[@]}";
 	local staticmapparam="${static_map[@]}";
 	local instr_bytes="$(system_call_exec "${args_addr}" "${argsparam}" "${staticmapparam}" "${env_addr}")";
-	local instr_len="$(echo "${instr_bytes}" | base64 -d | wc -c)";
+	local instr_len="$(echo "${instr_bytes}" | b64cnt)";
 	struct_parsed_snippet \
 		"INSTRUCTION" \
 		"${SYMBOL_TYPE_SYSCALL}" \
@@ -1663,7 +1664,7 @@ do_exec(){
 }
 direct_bytecode(){
 	local instr_bytes="$(echo ${CODE_LINE} | xxd --ps -r | base64 -w0)";
-	instr_len="$(echo "${instr_bytes}" | base64 -d | wc -c)";
+	instr_len="$(echo "${instr_bytes}" | b64cnt)";
 	local data_bytes="";
 	local data_len="";
 	struct_parsed_snippet \
@@ -1683,9 +1684,8 @@ direct_bytecode(){
 do_goto(){
 	target="$third_elem"
 	target_offset="$( echo "$SNIPPETS" | grep "PROCEDURE_TABLE,[^,]*,${target}," | cut -d, -f${SNIPPET_COLUMN_INSTR_OFFSET} )";
-	jmp_result="$(jump "$((target_offset + 2))" "${instr_offset}" )";
-	jmp_bytes="$(echo "${jmp_result}" | cut -d, -f1)";
-	jmp_len="$(echo "${jmp_result}" | cut -d, -f2)";
+	jmp_bytes="$(jump "$((target_offset + 2))" "${instr_offset}" | xd2b64)";
+	jmp_len="$(echo "${jmp_bytes}" | b64cnt)";
 	struct_parsed_snippet \
 		"SNIPPET_CALL" \
 		"${SYMBOL_TYPE_PROCEDURE}" \
@@ -1705,9 +1705,8 @@ do_ilog10(){
 	local target="${code_line_elements[$(( 4 + deep-1 ))]}";
 	debug "do ilog on base $base for the target $target"
 	target_offset="$( echo "$SNIPPETS" | grep "PROCEDURE_TABLE,[^,]*,${target}," | cut -d, -f${SNIPPET_COLUMN_INSTR_OFFSET} )";
-	jmp_result="$(jump "$((target_offset + 2))" "${instr_offset}" )";
-	jmp_bytes="$(echo "${jmp_result}" | cut -d, -f1)";
-	jmp_len="$(echo "${jmp_result}" | cut -d, -f2)";
+	jmp_bytes="$(jump "$((target_offset + 2))" "${instr_offset}" | xd2b64)";
+	jmp_len="$(echo "${jmp_bytes}" | b64cnt)";
 	struct_parsed_snippet \
 		"SNIPPET_CALL" \
 		"${SYMBOL_TYPE_PROCEDURE}" \
@@ -1730,11 +1729,11 @@ do_ret(){
 		local symbol_data=$(get_b64_symbol_value "${symbol_id}" "${SNIPPETS}");
 		local symbol_type=$(echo "${symbol_data}" | cut -d, -f${B64_SYMBOL_VALUE_RETURN_TYPE});
 		local symbol_value=$(echo "$symbol_data" | cut -d, -f${B64_SYMBOL_VALUE_RETURN_OUT} | base64 -d | tr -d '\00' );
-		instr_bytes="$(bytecode_ret "${symbol_value}" "${symbol_type}" )";
+		instr_bytes="$(ret "${symbol_value}" "${symbol_type}" | xd2b64)";
 	else
-		instr_bytes="$(bytecode_ret)";
+		instr_bytes="$(ret | xd2b64)";
 	fi;
-	local instr_len=$(echo "${instr_bytes}" | base64 -d | wc -c);
+	local instr_len=$(echo "${instr_bytes}" | b64cnt);
 	struct_parsed_snippet \
 		"INSTRUCTION" \
 		"${SYMBOL_TYPE_SYSCALL}" \
@@ -1754,7 +1753,7 @@ do_exit(){
 	local symbol_type=$(echo "${symbol_data}" | cut -d, -f${B64_SYMBOL_VALUE_RETURN_TYPE});
 	local symbol_value=$(echo "$symbol_data" | cut -d, -f${B64_SYMBOL_VALUE_RETURN_OUT} | base64 -d | tr -d '\00' );
 	local instr_bytes="$(system_call_exit "${symbol_value}" "${symbol_type}" )";
-	local instr_len=$(echo "${instr_bytes}" | base64 -d | wc -c);
+	local instr_len=$(echo "${instr_bytes}" | b64cnt);
 	struct_parsed_snippet \
 		"INSTRUCTION" \
 		"${SYMBOL_TYPE_SYSCALL}" \
@@ -1960,11 +1959,11 @@ create_internal_ilog10_snippet()
 	local static_data_offset="$(( $(get_zero_data_offset "$PH_VADDR_V" "$INSTR_TOTAL_SIZE") + $(get_static_data_size "${SNIPPETS}") ))";
 	local ilog10_map_addr="$((static_data_offset))";
 	local ilog10_return_addr="${static_data_offset}";
-	local instr_bytes="$(ilog10 "" "" "${ilog10_map_addr}" "${ilog10_return_addr}")";
-	local instr_size="$(echo $instr_bytes | base64 -d | wc -c)";
-	local jump_bytes="$(jump_relative $instr_size)";
+	local instr_bytes="$(ilog10 "" "" "${ilog10_map_addr}" "${ilog10_return_addr}" | xdr | base64 -w0)";
+	local instr_size="$(echo $instr_bytes | b64cnt)";
+	local jump_bytes="$(jump_relative $instr_size|xd2b64)";
 	instr_bytes=$(echo "$jump_bytes$instr_bytes");
-	instr_size="$(echo $instr_bytes | base64 -d | wc -c)";
+	instr_size="$(echo $instr_bytes | b64cnt)";
 	local data_bytes="$(
 		for (( i=1; i<32; i++));
 		do
@@ -1979,8 +1978,8 @@ create_internal_ilog10_snippet()
 			echo -en "$(printEndianValue ${v} $SIZE_64BITS_8BYTES)" | base64 -w0;
 		done;
 	)";
-	local data_bytes_sum=$(echo $data_bytes | base64 -d | wc -c);
-	local bloc_outer_code_b64="";
+	local data_bytes_sum=$(echo $data_bytes | b64cnt);
+	local bloc_outer_code_b64="$(echo -n "builtin..ilog10" | base64 -w0)";
 	local bloc_source_lines_count=0;
 	local bloc_usage_count=1;
 	local bloc_return="";
@@ -2037,10 +2036,10 @@ create_internal_s2i_snippet()
 	debug "zero_data_pos=$zero_data_pos; dyn_data_size=$dyn_data_size;\n$SNIPPETS"
 	local dynamic_data_offset="$(( zero_data_pos + dyn_data_size ))"
 	local instr_bytes="$(s2i | xdr | base64 -w0)";
-	local instr_size="$(echo "$instr_bytes" | base64 -d | wc -c)";
-	local jump_bytes="$(jump_relative $instr_size)";
+	local instr_size="$(echo "$instr_bytes" | b64cnt)";
+	local jump_bytes="$(jump_relative $instr_size|xd2b64)";
 	instr_bytes=$(echo "$jump_bytes$instr_bytes");
-	instr_size="$(echo $instr_bytes | base64 -d | wc -c)";
+	instr_size="$(echo $instr_bytes | b64cnt)";
 	local data_bytes="";
 	local data_bytes_size="32";
 	local bloc_outer_code_b64="$(echo -n "builtin.$symbol_name" | base64 -w0)";
@@ -2080,11 +2079,11 @@ create_internal_i2s_snippet()
 	local dynamic_data_offset="$(( zero_data_pos + dyn_data_size ))"
 	local ilog10_addr=$(get_internal_addr .ilog10 "${SNIPPETS}");
 	local power10_addr=$(get_power10_addr "${SNIPPETS}");
-	local instr_bytes="$(i2s "" "" "${dynamic_data_offset}" "${ilog10_addr}" "${power10_addr}" "${instr_offset}")";
-	local instr_size="$(echo "$instr_bytes" | base64 -d | wc -c)";
-	local jump_bytes="$(jump_relative $instr_size)";
+	local instr_bytes="$(i2s "" "" "${dynamic_data_offset}" "${ilog10_addr}" "${power10_addr}" "${instr_offset}" | xd2b64)";
+	local instr_size="$(echo "$instr_bytes" | b64cnt)";
+	local jump_bytes="$(jump_relative $instr_size | xd2b64)";
 	instr_bytes=$(echo "$jump_bytes$instr_bytes");
-	instr_size="$(echo $instr_bytes | base64 -d | wc -c)";
+	instr_size="$(echo $instr_bytes | b64cnt)";
 	local data_bytes="";
 	local data_bytes_size="32";
 	local bloc_outer_code_b64="$(echo -n "builtin.$symbol_name" | base64 -w0)";

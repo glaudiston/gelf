@@ -15,21 +15,20 @@
 #define false 0
 #define true 1
 
-
 struct {
 	unsigned char help;		// show help and exit;
 	unsigned char interactive_mode;
 	unsigned char show_colors;	// use terminal color bytes
 	unsigned char cmd_index;	// argv id of command to run
+	unsigned char *filename;	// binary filename to run
 	unsigned char binary_tips;	// print binary on multi field bytes like REX and ModR/M
 } cmd_options = {
 	// default options
 	.help=false,
-	.show_colors=true,
-	.binary_tips=false,
-	.binary_tips=false,
 	.interactive_mode=false,
+	.show_colors=true,
 	.cmd_index=0,
+	.binary_tips=false,
 };
 //Good ref https://www.felixcloutier.com/x86/
 //

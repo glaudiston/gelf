@@ -351,6 +351,7 @@ int main(int argc, char *argv[])
 	pid_t child;
 
 	char *filename=argv[cmd_options.cmd_index];
+	cmd_options.filename = filename;
 	if (access(filename, X_OK) == -1) {
 		fprintf(stderr, "The file does not exists or does not have the execute permission: %s\n", filename);
 		exit(1);

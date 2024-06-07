@@ -56,12 +56,10 @@ test_arg_count(){
 	compile_test <<EOF
 :	stdout	1
 :	c	@$
-!	sys_write	stdout	c
-:	with no error	0
-!	sys_exit	with no error
+!	sys_exit	c
 EOF
-	o=$(run_test abc def|xxd --ps);
-	expect $? 0 03 "$o"
+	run_test abc def;
+	expect $? 3
 }
 
 test_sys_write_out_arg(){
@@ -263,7 +261,7 @@ test_fn(){
 :	fn	{
 	:	r1	1
 	!	sys_exit	r1
-}
+:	}
 !	fn
 :	r2	2
 !	sys_exit	r2
@@ -279,7 +277,7 @@ test_fn_args(){
 	:	bf	@2
 	:	cf	+	af	bf
 	!	ret	cf
-}
+:	}
 :	a	1
 :	b	2
 :	c	[]	fn	a	b
@@ -295,7 +293,7 @@ test_check_var_is_not_empty(){
 :	ok	{
 	:	suc	1
 	!	sys_exit	suc
-}
+:	}
 :	value	@1
 :	empty	
 :	test	?	value	empty
@@ -312,7 +310,7 @@ test_check_var_is_empty(){
 :	ok	{
 	:	suc	1
 	!	sys_exit	suc
-}
+:	}
 :	value	@1
 :	empty	
 :	test	?	value	empty
@@ -329,7 +327,7 @@ test_condition(){
 :	success	{
 	:	r0	0
 	!	sys_exit	r0
-}
+:	}
 :	r1	1
 :	r2	1
 :	test	?	r1	r2
@@ -344,12 +342,12 @@ test_loop(){
 	compile_test <<EOF
 :	end	{
 	!	sys_exit	0
-}
+:	}
 :	loop	{
 	:	v	+	1
 	:	t	?	v	5
 	!	t	?=	end
-}
+:	}
 !	loop
 :	err	1
 !	sys_exit	err
@@ -362,13 +360,13 @@ test_recursive_call(){
 	compile_test <<EOF
 :	end	{
 	!	sys_exit	0
-}
+:	}
 :	loop	{
 	:	v	+	1
 	:	t	?	v	5
 	!	t	?=	end
 	!	loop
-}
+:	}
 !	loop
 :	err	1
 !	sys_exit	err
@@ -385,7 +383,7 @@ test_start_code(){
 :	f	{
 	:	err	1
 	!	sys_exit	err
-}
+:	}
 :	b	b
 !	sys_write	stdout	b
 :	ok	0
@@ -400,19 +398,32 @@ test_fibonacci_generate()
 	compile_test <<EOF
 :	stdout	1
 :	fib	{
+	#	TODO: this is wrong because 
+	#	i using direct memory addr in a recursive function
+	#	it should trust only on stack memory
+	# 
+	#	prev => (rsp+16) => 0x103c3
 	:	prev	@1
+	#	last => (rsp+24) => 0x103cb
 	:	last	@2
+	#	limit => (rsp=32) => 0x103d3
 	:	limit	@3
+	#	TODO: + is wrong because it is using last=0x103db(8 bytes ahead)
+	#		fibn => 0x103db
 	:	fibn	+	prev	last
+	#	TODO: test is getting wrong address for limit and fibn (both 8 bytes ahead ?)
 	:	toStop	?	fibn	limit
 	!	toStop	?>	ret
+	#	.i2s => 0x100a2/0x100a7
+	#	narr => 0x103e3 ?
 	:	narr	[]	.i2s	fibn
+	#	TODO: i2s is broken here
 	:	nstr	!	narr
 	!	sys_write	stdout	nstr
 	:	f	[]	fib	last	fibn	limit
 	!	f
 	!	ret
-}
+:	}
 :	a	0
 :	b	1
 :	c	1000
@@ -440,6 +451,36 @@ EOF
 		expect $? 0;
 		o=$(run_test $n);
 		expect $? $n;
+	} | tr '\n' ';';
+	echo
+}
+
+test_numeric_str()
+{
+	compile_test <<EOF
+:	stdout	1
+:	nstr	@1
+#	convert the arg to integer
+:	na	[]	.s2i	nstr
+:	n	!	na
+#	convert integer to string
+:	sna	[]	.i2s	n
+:	sn	!	sna
+:	ok	{
+	!	sys_exit	0
+:	}
+:	t	?	nstr	sn
+!	t	?=	ok
+!	sys_exit	1
+EOF
+	n=$(( RANDOM ));
+	{
+		o=$(run_test 0)
+		expect $? 0
+		o=$(run_test $n)
+		expect $? 0
+		o=$(run_test abc)
+		expect $? 1
 	} | tr '\n' ';';
 	echo
 }
