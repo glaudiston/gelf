@@ -56,12 +56,10 @@ test_arg_count(){
 	compile_test <<EOF
 :	stdout	1
 :	c	@$
-!	sys_write	stdout	c
-:	with no error	0
-!	sys_exit	with no error
+!	sys_exit	c
 EOF
-	o=$(run_test abc def|xxd --ps);
-	expect $? 0 03 "$o"
+	run_test abc def;
+	expect $? 3
 }
 
 test_sys_write_out_arg(){
@@ -329,7 +327,7 @@ test_condition(){
 :	success	{
 	:	r0	0
 	!	sys_exit	r0
-}
+:	}
 :	r1	1
 :	r2	1
 :	test	?	r1	r2
@@ -395,7 +393,8 @@ EOF
 	expect $? 0 "ab" "$o"
 }
 
-test_fibonacci_generate(){
+test_fibonacci_generate()
+{
 	compile_test <<EOF
 :	stdout	1
 :	fib	{
@@ -452,6 +451,36 @@ EOF
 		expect $? 0;
 		o=$(run_test $n);
 		expect $? $n;
+	} | tr '\n' ';';
+	echo
+}
+
+test_numeric_str()
+{
+	compile_test <<EOF
+:	stdout	1
+:	nstr	@1
+#	convert the arg to integer
+:	na	[]	.s2i	nstr
+:	n	!	na
+#	convert integer to string
+:	sna	[]	.i2s	n
+:	sn	!	sna
+:	ok	{
+	!	sys_exit	0
+:	}
+:	t	?	nstr	sn
+!	t	?=	ok
+!	sys_exit	1
+EOF
+	n=$(( RANDOM ));
+	{
+		o=$(run_test 0)
+		expect $? 0
+		o=$(run_test $n)
+		expect $? 0
+		o=$(run_test abc)
+		expect $? 1
 	} | tr '\n' ';';
 	echo
 }
