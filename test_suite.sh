@@ -19,7 +19,22 @@ compile_test(){
 }
 
 run_test(){
-	./tests/${FUNCNAME[1]}.elf $@
+	local n="${FUNCNAME[1]}";
+	if [ "${#n}" == 0 ]; then
+		fail "run_test should be called from a function that creates and elf file with it's name";
+		return;
+	fi;
+	local elf_name="./tests/$n.elf";
+	cmd="$elf_name";
+	while (( ${#@} > 0 )); 
+	do {
+		cmd="${cmd} '$1'"
+		shift;
+	};
+	done
+	#echo "run command: [$cmd]" >&2;
+	eval ${cmd}
+	#${elf_name} $@ # this does not work because empty arguments are removed
 }
 
 expect(){
