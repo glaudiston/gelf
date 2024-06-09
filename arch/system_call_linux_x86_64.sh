@@ -50,10 +50,10 @@
 #
 #Here is a table of all the registers in x86_64 with their sizes:
 # 8bit(hi,low)	16bits	32bits	64bits	bitval
-ah=0;	al=0;	ax=0;	eax=0;	rax=0;	# 000
-ch=0;	cl=1;	cx=1;	ecx=1;	rcx=1;	# 001	special because `rep` and others? uses it
-dh=0;	dl=2;	dx=2;	edx=2;	rdx=2;	# 010
-bh=0;	bl=3;	bx=3;	ebx=3;	rbx=3;	# 011
+ah=4;	al=0;	ax=0;	eax=0;	rax=0;	# 000
+ch=5;	cl=1;	cx=1;	ecx=1;	rcx=1;	# 001	special because `rep` and others? uses it
+dh=6;	dl=2;	dx=2;	edx=2;	rdx=2;	# 010
+bh=7;	bl=3;	bx=3;	ebx=3;	rbx=3;	# 011
 	spl=4;	sp=4;	esp=4;	rsp=4;	# 100	processor controlled pointing to stack pointer
 	bpl=5;	bp=5;	ebp=5;	rbp=5;	# 101
 	sil=6;	si=6;	esi=6;	rsi=6;	# 110
@@ -67,6 +67,7 @@ bh=0;	bl=3;	bx=3;	ebx=3;	rbx=3;	# 011
 	r14b=6;	r14w=6;	r14d=6;	r14=6;	# 110
 	r15b=7;	r15w=7;	r15d=7;	r15=7;	# 111
 #		eip	rip		instruction pointer: address of the next instruction to execute.
+declare -a r_8bl=( al cl dl bl ah ch dh bh )
 #
 # Note that the smallers registers uses the same space as the bigger ones. changing the small will affect the bigger
 # These sub-registers are commonly used in instruction encoding and can be useful for optimizing code size.
@@ -86,6 +87,13 @@ bh=0;	bl=3;	bx=3;	ebx=3;	rbx=3;	# 011
 is_8bit_register(){
 	local v="$1";
 	if [[ "${v,,}" =~ ^(al|cl|dl|bl|spl|bpl|sil|dil|r8b|r9b|r10b|r11b|r12b|r13b|r14b|r15b)$ ]]; then
+		return 0;
+	fi
+	return 1;
+}
+is_8bit_legacy_register(){
+	local v="$1";
+	if [[ "${v,,}" =~ ^(al|cl|dl|bl|ah|ch|dh|bh)$ ]]; then
 		return 0;
 	fi
 	return 1;
@@ -369,6 +377,89 @@ MODRM_REG_r15=$(( r15 << 3 )); # 111 7
 MOV="$(( MODRM_MOD_DISPLACEMENT_32 ))";	# \x80 Move using memory as source (32-bit)
 MOVR="$(( MODRM_MOD_NO_EFFECTIVE_ADDRESS ))";	# \xc0 move between registers
 
+modrm(){
+	local v1="$1";
+	local v2="$2";
+	if [[ "$v1" =~ ^\(.*\)$ ]]; then	# resolve pointer address value
+	{
+		local v1_r=$( echo $v1 | tr -d '()' );
+		local mod_reg=$(( v2 << 3 )); # 000 0
+		if is_register "$v1_r"; then
+			if is_register "$v2"; then
+				local modrm_v=$(( MODRM_MOD_DISPLACEMENT_REG_POINTER | mod_reg | v1_r ));
+				px "$modrm_v" $SIZE_8BITS_1BYTE;
+				return;
+			fi;
+		fi;
+		if is_valid_number "$v1_r"; then
+			if is_register "$v2"; then
+				local use_sib=4;
+				local modrm_v=$(( MODRM_MOD_DISPLACEMENT_REG_POINTER | mod_reg | use_sib));
+				px "$modrm_v" $SIZE_8BITS_1BYTE;
+				return;
+			fi;
+		fi
+		error not implemented;
+	}
+	fi;
+	if is_valid_number "$v1"; then
+	{
+		local mod_reg=0;
+		modrm="$(px "$(( MODRM_MOD_NO_EFFECTIVE_ADDRESS + mod_reg + v2 ))" $SIZE_8BITS_1BYTE)";
+		printf $modrm;
+		return;
+	}
+	fi;
+	if is_64bit_register "$v1"; then
+	{
+		local mod_reg=$(( v1 << 3 ));
+		if [[ "$v2" =~ ^\(.*\)$ ]]; then	# resolve pointer address value
+		{
+			local v2_r=$( echo $v2 | tr -d '()' );
+			if is_register "$v2_r"; then
+				local mod_reg=$(( v1 << 3 )); # 000 0
+				if is_register "$v1"; then
+					modrm="$(px "$(( MODRM_MOD_DISPLACEMENT_REG_POINTER + mod_reg + v2_r ))" $SIZE_8BITS_1BYTE)";
+				fi;
+			fi;
+			printf "${modrm}";
+			return;
+		}
+		fi;
+		if is_register "$v2"; then
+			modrm="$(px "$(( MODRM_MOD_NO_EFFECTIVE_ADDRESS + mod_reg + v2 ))" $SIZE_8BITS_1BYTE)";
+			printf "$modrm";
+			return;
+		elif is_valid_number "$v2"; then
+			# the rsp(100) is set to require an additional field the SIB is this additional field
+			local use_sib=4;
+			printf "$(px $(( MODRM_MOD_DISPLACEMENT_REG_POINTER + mod_reg + use_sib )) ${SIZE_8BITS_1BYTE} )";
+			return;
+		fi;
+		error not implemented
+	}
+	fi;
+	if is_8bit_register "$v1"; then
+	{
+		if is_8bit_register "$v2"; then
+			local modrm="$(px $(( MODRM_MOD_NO_EFFECTIVE_ADDRESS + $(( v1 << 3 )) + v2 )) $SIZE_8BITS_1BYTE)";
+			printf $modrm;
+			return;
+		fi;
+		if is_valid_number "$v2"; then
+		{
+			local use_sib=4;
+			local modrm_v=$(( MODRM_MOD_DISPLACEMENT_REG_POINTER | $(( v1 << 3 )) | use_sib ))
+			local modrm=$(px ${modrm_v} $SIZE_8BITS_1BYTE);
+			printf $modrm;
+			return;
+		}
+		fi;
+	}
+	fi;
+	error not implemented;
+}
+
 TEST="\x85"; # 10000101
 IMM="$(( 2#00111000 ))";
 MOV_8BIT="\x88";
@@ -377,9 +468,9 @@ MOV_RESOLVE_ADDRESS="\x8b"; # Replace the address pointer with the value pointed
 mov(){
 	local v1="$1";
 	local v2="$2";
-	local modrm="";
 	local code="";
 	code="${code}$(prefix "$v1" "$v2")";
+	local modrm="";
 	if [[ "$v1" =~ ^\(.*\)$ ]]; then	# resolve pointer address value
 	{
 		local v1_r=$( echo $v1 | tr -d '()' );
@@ -618,6 +709,26 @@ cmp(){
 	}
 	fi;
 	error not implemented
+}
+# perform a bitwise AND using register
+test(){
+	local v1="$1";
+	local v2="$2";
+	v2="${v2:=$v1}";
+	local prefix="$(prefix "$v1" "$v2")";
+	local opcode="";
+	debug "test [$v1] [$v2]";
+	if is_8bit_legacy_register "$v1" && is_8bit_legacy_register "$v2"; then
+		opcode=84;
+	else
+		opcode=85;
+	fi;
+	local modrm="$(px $(( 16#c0 + (v1 << 3) + v2 )) $SIZE_8BITS_1BYTE)";
+	local sib="";
+	local displacement="";
+	local immediate="";
+	local instr="${prefix}${opcode}${modrm}${sib}${displacement}${immediate}";
+	printf $instr;
 }
 CMP_rax_ADDR4_rdx_8="483904D5";
 CMP_rbx_ADDR4_rdx_8="\x48\x39\x1C\xD5";
@@ -1649,7 +1760,8 @@ function system_call_write_addr()
 
 function detect_argsize()
 {
-	local CODE="";
+	r_in=rsi;
+	r_out=rdx;
 	# figure out the data size dynamically.
 	# To do it we can get the next address - the current address
 	# the arg2 - arg1 address - 1(NULL) should be the data size
@@ -1657,48 +1769,63 @@ function detect_argsize()
 	#   because 8 bytes lead to the NULL, 16 leads to the first env var.
 	#
 	# to find the arg size, use rdx as rsi
-	CODE="${CODE}${MOV_rsi_rdx}";
+	mov $r_in $r_out;
 	# increment rdx by 8
 	ARGUMENT_DISPLACEMENT=8
-	CODE="${CODE}$(add $ARGUMENT_DISPLACEMENT rdx | xd2esc)";
+	add $ARGUMENT_DISPLACEMENT $r_out;
 	# mov to the real address (not pointer to address)
-	ModRM=$( printEndianValue $(( MODRM_MOD_NO_EFFECTIVE_ADDRESS + MODRM_REG_rsi + rdx )) ${SIZE_8BITS_1BYTE} )
-	CODE="${CODE}${MOV_rsi_rsi}"; # resolve pointer to address
-	CODE="${CODE}${MOV_rdx_rdx}"; # resolve pointer to address
+	mov "($r_out)" $r_out; # resolve pointer to address
+	cmp $r_out 0;
+	# if rdx is zero, then we the input is the last argument and we are unable to detect size using method;
+	# so fallback to string size detection
+	push $r_in
+	detect_string_length $r_in $r_out
+	pop $r_in
+	mov "($r_in)" $r_in; # resolve pointer to address
 	# and subtract rdx - rsi (resulting in the result(str len) at rdx)
-	CODE="${CODE}${SUB_rdx_rsi}";
-	echo -n "${CODE}";
+	sub $r_out $r_in;
+}
+
+get_8bit_reg(){
+	local r="$1";
+	printf ${r_8bl[$((r))]};
 }
 
 # how dinamically discover the size?
 # one way is to increment the pointer, then subtract the previous pointer, this is fast but this is only garanteed to work in arrays of data, where the address are in same memory block. see detect_argsize
-# another way is to count the bytes until find \x00. but this will block the possibility of write out the \x00 byte. this is what bash does. despite slower and the side effect of not allowing \x00, it is safer.
+# another way is to count the bytes until find \x00. but this will block the possibility of write out the \x00 byte. this is what code does. despite slower and the side effect of not allowing \x00, it is safer.
 function detect_string_length()
 {
+	local r_in="$1";
+	r_in=${r_in:=rsi};
+	local r_out="$2";
+	r_out=${r_out:=rdx};
+	local r_tmp_64="$3";
+	r_tmp_64=${r_tmp_64:=rax};
+	r_tmp=$(get_8bit_reg $r_tmp_64);
 	# xor rdx rdx; # ensure rdx = 0
 	#mov "(rsi)" rsi;
 	# we expect the rsi having the address of the string
-	mov "rsi" rdx; # let's use rdx as rsi incrementing it each loop interaction
+	mov "${r_in}" "${r_out}"; # let's use rdx as rsi incrementing it each loop interaction
 	# save rip
 	# leaq (%rip), %rbx # 
 	# LEAQ_RIP_rbx;
 	# get the data byte at addr+rdx into rax
 	# todo ? USE MOVSB ?
-	mov "(rdx)" rax; # resolve current rdx pointer to rax
+	mov "(${r_out})" $r_tmp_64; # resolve current rdx pointer to rax (al)
 	#code="${code}${MOV_DATA_rax}";
 	# inc rdx
-	inc rdx;
+	inc ${r_out};
 	# test data byte
-	TEST_AL="84c0";
+	test ${r_tmp}
 	# loop back if not null
-	printf "${TEST_AL}"; # perform a bitwise AND using %al
 	# jnz
 	# "ebfe" # jump back 0 bytes
 	JUMP_BACK_BYTES="7ff5"; # jg .-7; Jump back 9 bytes (to mov (rdx) rax) only if AL > 0 (f5 == -11, includes the 2 bytes jmp instr)
 	printf "${JUMP_BACK_BYTES}";
-	dec rdx;
+	dec "${r_out}";
 	# sub %rsi, %rdx
-	sub rsi rdx;
+	sub ${r_in} ${r_out};
 	#JMP_rbx="ff23";
 }
 
@@ -1716,7 +1843,7 @@ function system_call_write_dyn_addr()
 		mov "($data_addr_v)" rsi;
 	fi
 	if [ "${data_len}" == "0" ]; then
-		detect_string_length;
+		detect_string_length rsi rdx rax;
 	else
 		mov $data_len rdx;
 	fi;
@@ -1929,15 +2056,19 @@ function get_arg()
 {
 	local addr="$1";
 	local argn="$2";
-	local code="";
 	# MOV %rsp %rsi
-	code="${code}$(mov rsp rsi)";
-	code="${code}$(add $(( 8 * (1 + argn) )) rsi)"; # "1 +" the first 8 bytes are the argc
-	code="${code}$(add r15 rsi)";
+	mov rsp rsi;
+	add $(( 8 * (1 + argn) )) rsi; # "1 +" the first 8 bytes are the argc
+	add r15 rsi;
 	# RESOLVE rsi (Copy pointer address content to rsi)
-	code="${code}$(mov "(rsi)" rsi)";
 	# TODO: detect string size:
-	#code="${code}$(detect_string_length)"; # rdx has the string size
+	push rsi
+	push rdx
+	#detect_argsize
+	pop rdx
+	pop rsi
+	mov "(rsi)" rsi;
+	#detect_string_length rsi rdx; # rdx has the string size
 	# if multiple of 8; set it to addr and we are done;
 	# modulus8(int, int):
 	#        mov    edx, edi
@@ -1953,8 +2084,7 @@ function get_arg()
 	# 	because we need to zero higher bits in byte, avoiding further issues with bsr
 	# TODO: set me address to the target address
 	# MOV rsi addr
-	code="${code}$(mov rsi "$addr")";
-	echo -en "${code}" | xdr | base64 -w0;
+	mov rsi "$addr";
 }
 
 ARCH_CONST_ARGUMENT_ADDRESS="_ARG_ADDR_ARG_ADDR_";
@@ -1983,7 +2113,7 @@ concat_symbol_instr(){
 	if [ "$size" -eq -1 ]; then
 		code="${code}$({
 			mov "(${addr})" rsi; # source addr
-			detect_string_length; # the return is set at rdx
+			detect_string_length rsi rdx rax; # the return is set at rdx
 			mov rdx rcx;
 		} | xd2esc)"; # but we need it on rcx because REP decrements it
 	elif [ "$size" -eq -2 ]; then # procedure pointer
