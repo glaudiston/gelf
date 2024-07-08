@@ -45,9 +45,10 @@ struct print_addr_request {
 	unsigned long addr;
 };
 typedef struct {
+	unsigned char instr_size;
 	unsigned long address;
-	unsigned char bytes[8];
-	unsigned char hexdump[20];
+	unsigned char bytes[100];
+	unsigned char hexdump[100];
 	unsigned char colored_hexdump[256];
 	unsigned char asm_code[256];
 	unsigned char comment[256];
@@ -64,6 +65,7 @@ extern void peek_array(pid_t child, void *addr, char* out);
 extern void arch_interact_user(pid_t pid, struct user_regs_struct * regs, char * user_input);
 extern void get_current_address(char *s_curr_addr, struct user_regs_struct *regs);
 extern void get_registers(pid_t child, void* regs);
+extern void init_arch();
 #ifdef __aarch64__
 #include "arch_aarch64.c"
 #endif
