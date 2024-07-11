@@ -209,6 +209,8 @@ test_concat_stat_dyn_symbols(){
 EOF
 	o=$(run_test "abc" "def")
 	expect $? 0 "xptoabcdef" "$o"
+	o=$(run_test "abc" "def" "ghi")
+	expect $? 0 "xptoabcdef" "$o"
 }
 
 test_concat_dyn_stat_symbols(){
@@ -288,23 +290,6 @@ EOF
 	expect $? 3
 }
 
-test_check_var_is_not_empty(){
-	compile_test <<EOF
-:	ok	{
-	:	suc	1
-	!	sys_exit	suc
-:	}
-:	value	@1
-:	empty	
-:	test	?	value	empty
-!	test	?=	ok
-:	err	2
-!	sys_exit	err
-EOF
-	o=$(run_test abc)
-	expect $? 2
-}
-
 test_check_var_is_empty(){
 	compile_test <<EOF
 :	ok	{
@@ -318,8 +303,13 @@ test_check_var_is_empty(){
 :	err	2
 !	sys_exit	err
 EOF
-	o=$(run_test)
-	expect $? 1
+	{
+		o=$(run_test "")
+		expect $? 1
+		o=$(run_test "abc")
+		expect $? 2
+	} | tr '\n' ';';
+	echo;
 }
 
 test_condition(){
@@ -393,8 +383,7 @@ EOF
 	expect $? 0 "ab" "$o"
 }
 
-test_fibonacci_generate()
-{
+test_fibonacci_generate(){
 	compile_test <<EOF
 :	stdout	1
 :	fib	{
@@ -455,8 +444,7 @@ EOF
 	echo
 }
 
-test_numeric_str()
-{
+test_numeric_str(){
 	compile_test <<EOF
 :	stdout	1
 :	nstr	@1
