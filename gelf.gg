@@ -7,16 +7,16 @@
 # arg 1: source file
 # arg 2: target file
 #
-source file name:	@1
-elf file name:	@2
-bash:	/bin/bash
-run:	-c
-ph_addr_v:	./ph_vaddr_v
-page header virtual address value:	!	ph_addr_v
-write elf:	. elf_fn.sh; write_elf 
-read from:	 < 
-script:	write elf	elf file name	read from	source file name
-command:	[]	bash	run	script
-command
-succeed:	0
-exit	succeed
+:	source file name	@1
+:	elf file name	@2
+:	bash	/bin/bash
+:	run	-c
+:	ph_addr_v	./ph_vaddr_v
+:	page header virtual address value	!	ph_addr_v
+:	write elf	. elf_fn.sh; write_elf 
+:	read from	 < 
+:	script	write elf	elf file name	read from	source file name
+:	command	[]	bash	run	script
+!	command
+:	succeed	0
+!	sys_exit	succeed
