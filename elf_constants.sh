@@ -3,7 +3,7 @@
 # ELF GLOBAL CONSTANTS
 
 # ELF HEADER CONSTANTS
-ELFMAG="\x7fELF"; 	# ELF Index Magic 4 bytes, positions form 0 to 3
+ELFMAG="7f454c46"; 	# ELF Index Magic 4 bytes, positions form 0 to 3 (0x7f + ELF)
 
 # this are elf contants based on /usr/include/elf
 EH_SIZE=64 # ELF File Header Size: 0x40, 1<<6
