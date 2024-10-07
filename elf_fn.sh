@@ -24,7 +24,7 @@ ARCH=${ARCH:=x86_64}
 
 get_program_headers_count()
 {
-	# for now we only have it hard coded 
+	# for now we only have it hard coded
 	# TODO implement it to dynamically detect and set a value.
 	echo 1;
 }
@@ -38,36 +38,36 @@ print_elf_file_header()
 	local SH_SIZE="$SH_SIZE"; # use the constant in local scope to allow change it locally
 
 	# SECTION ELF HEADER START
-	EI_CLASS="\x00";	# Arch 2 bytes
+	EI_CLASS="00";	# Arch 2 bytes
 	[ "$ARCH" == "x86" ] && {
-		EI_CLASS="\x01";
+		EI_CLASS="01";
 		EM_386=3
 		EM=$EM_386
 	}
 	[ "$ARCH" == "x86_64" ] && {
-		EI_CLASS="\x02";
+		EI_CLASS="02";
 		EM_X86_64=62
 		EM=$EM_X86_64
 	}
 	[ "$ARCH" == "aarch64" ] && {
-		EI_CLASS="\x02";
+		EI_CLASS="02";
 		EM_AARCH64=183
 		EM=$EM_AARCH64
-		ELFCLASS64="\x02";
+		ELFCLASS64="02";
 		EI_CLASS=$ELFCLASS64
 	}
 
-	EI_DATA="$(printEndianValue $(detect_endianness) ${SIZE_8BITS_1BYTE})" # get endianness from current bin
-	EI_VERSION="\x01";	# ELF VERSION 1 (current)
+	EI_DATA="$(px $(detect_endianness) ${SIZE_8BITS_1BYTE})" # get endianness from current bin
+	EI_VERSION="01";	# ELF VERSION 1 (current)
 	ELFOSABI_SYSV=0;
 	ELFOSABI_HPUX=1;
-	EI_OSABI="\x00";	# Operation System Applications Binary Interface (UNIX - System V-NONE)
-	EI_ABIVERSION="\x00";
-	EI_PAD="$(printEndianValue 0 $SIZE_64BITS_8BYTES)"; # reserved non used pad bytes
+	EI_OSABI="00";	# Operation System Applications Binary Interface (UNIX - System V-NONE)
+	EI_ABIVERSION="00";
+	EI_PAD="$(px 0 $SIZE_64BITS_8BYTES)"; # reserved non used pad bytes
 	ET_EXEC=2;	# Executable file
-	EI_ETYPE="$(printEndianValue $ET_EXEC $Elf64_Half)";		# DYN (Shared object file) code 3
-	EI_MACHINE="$(printEndianValue $EM $Elf64_Half)";
-	EI_MACHINE_VERSION="$(printEndianValue 1 $Elf64_Word)";
+	EI_ETYPE="$(px $ET_EXEC $Elf64_Half)";		# DYN (Shared object file) code 3
+	EI_MACHINE="$(px $EM $Elf64_Half)";
+	EI_MACHINE_VERSION="$(px 1 $Elf64_Word)";
 
 	PH_COUNT=$(get_program_headers_count);
 	PH_TOTAL_SIZE=$(( PH_SIZE * PH_COUNT ));
@@ -83,17 +83,17 @@ print_elf_file_header()
 	PH_TOTAL_SIZE +
 	SH_TOTAL_SIZE
 	));
-	EI_ENTRY="$(printEndianValue ${ENTRY_V} $Elf64_Addr)";	# VADDR relative program code entry point uint64_t
-	EI_PHOFF="$(printEndianValue "${EH_SIZE}" $Elf64_Off)";	# program header offset in bytes, starts immediatelly after header, so the offset is the header size
-	EI_SHOFF="$(printEndianValue ${SHOFF_V} $Elf64_Off)";	# section header offset in bytes
-	EI_FLAGS="$(printEndianValue 0 $Elf64_Word)";		# uint32_t
-	EI_EHSIZE="$(printEndianValue ${EH_SIZE} $Elf64_Half)";	# elf header size in bytes
-	EI_PHENTSIZE="$(printEndianValue $PH_SIZE $Elf64_Half)";# program header entry size (constant = sizeof(Elf64_Phdr))
-	EI_PHNUM="$(printEndianValue $PH_COUNT $Elf64_Half)"; 	# number of program header entries
+	EI_ENTRY="$(px ${ENTRY_V} $Elf64_Addr)";	# VADDR relative program code entry point uint64_t
+	EI_PHOFF="$(px "${EH_SIZE}" $Elf64_Off)";	# program header offset in bytes, starts immediatelly after header, so the offset is the header size
+	EI_SHOFF="$(px ${SHOFF_V} $Elf64_Off)";	# section header offset in bytes
+	EI_FLAGS="$(px 0 $Elf64_Word)";		# uint32_t
+	EI_EHSIZE="$(px ${EH_SIZE} $Elf64_Half)";	# elf header size in bytes
+	EI_PHENTSIZE="$(px $PH_SIZE $Elf64_Half)";# program header entry size (constant = sizeof(Elf64_Phdr))
+	EI_PHNUM="$(px $PH_COUNT $Elf64_Half)"; 	# number of program header entries
 	# section table def
-	EI_SHENTSIZE="$(printEndianValue $SH_SIZE $Elf64_Half)";# section header size in bytes(contant sizeof(Elf64_Shdr))
-	EI_SHNUM="$(printEndianValue $SH_COUNT $Elf64_Half)"; 	# section header count
-	EI_SHSTRNDX="$(printEndianValue 0 $Elf64_Half)"; 	# section header table index of entry of section name string table
+	EI_SHENTSIZE="$(px $SH_SIZE $Elf64_Half)";# section header size in bytes(contant sizeof(Elf64_Shdr))
+	EI_SHNUM="$(px $SH_COUNT $Elf64_Half)"; 	# section header count
+	EI_SHSTRNDX="$(px 0 $Elf64_Half)"; 	# section header table index of entry of section name string table
 
 	# 00-0f
 	SECTION_ELF_HEADER="${ELFMAG}${EI_CLASS}${EI_DATA}${EI_VERSION}${EI_OSABI}${EI_PAD}"; # 16 bytes
@@ -105,13 +105,17 @@ print_elf_file_header()
 	SECTION_ELF_HEADER="${SECTION_ELF_HEADER}${EI_FLAGS}${EI_EHSIZE}${EI_PHENTSIZE}${EI_PHNUM}${EI_SHENTSIZE}${EI_SHNUM}${EI_SHSTRNDX}";
 
 	# SECTION ELF HEADER END
-	echo -en "${SECTION_ELF_HEADER}" | base64 -w0;
+	echo -en "${SECTION_ELF_HEADER}";
 }
 
 # https://stackoverflow.com/questions/16812574/elf-files-what-is-a-section-and-why-do-we-need-it
+# program headers are the memory segmentation definition
+# We need at least one, what is where the elf binary will be stored;
+# We can set it to rw and use it for everything, but seems a bad idea;
 get_program_segment_headers()
 {
 	local PH_VADDR_V="$1";
+	local elf_size="$2";
 
 	# https://www.airs.com/blog/archives/45
 	# this point the current segment offset is 0x40
@@ -124,10 +128,11 @@ get_program_segment_headers()
 								# must be after the current program size. Elf64_Addr p_vaddr 8;
 	PH_PADDR="$(printEndianValue 0 $Elf64_Addr)"		# Elf64_Addr p_paddr 8;
 								# Physical address is deprecated and ignored for executables, libs and shared obj files.
-	# PH_FILESZ and PH_MEMSZ should point to the first code position in elf
-	# 16#78 == (EH_SIZE == x40 == 64) + (PH_SIZE == x38 == 56)
-	PH_FILESZ="$(printEndianValue $(( EH_SIZE + PH_SIZE )) $Elf64_Xword)"	# Elf64_Xword p_filesz 8;
-	PH_MEMSZ="$(printEndianValue $(( EH_SIZE + PH_SIZE )) $Elf64_Xword)"	# Elf64_Xword p_memsz 8;
+	# for now let's allocate 16K on our current loaded rwx mem segment space
+	# I think I should set this to the minimum, not writable,
+	# and create other segments for dynamic memory;
+	PH_FILESZ="$(printEndianValue $elf_size $Elf64_Xword)"	# Elf64_Xword p_filesz 8;
+	PH_MEMSZ="$(printEndianValue $(( (1<<16) )) $Elf64_Xword)"	# Elf64_Xword p_memsz 8;
 	# p_align: Loadable process segments must have congruent values for p_vaddr and p_offset,
 	#          modulo the page size.
 	#          This member gives the value to which the segments are aligned in memory and in the file.
@@ -169,7 +174,8 @@ get_tbl_index() {
 	str=$( base64 -w0 <<< $1)
 	idx=$(grep -q "$str" <<< $string_table | cut -d: -f1)
 	if [ "$idx" == "" ]; then
-		string_table="${string_table}$str";
+		string_table="${string_table}
+$str";
 		grep -c "" <<< "$string_table"
 		return
 	fi
@@ -239,9 +245,10 @@ print_elf_body()
 {
 	local PH_VADDR_V="$1";
 	local SH_COUNT="$2";
-	local snippets_file=$3
+	local snippets_file="$3";
+	local elf_size="$4";
 
-	local PROGRAM_HEADERS=$(get_program_segment_headers "$PH_VADDR_V" );
+	local PROGRAM_HEADERS=$(get_program_segment_headers "$PH_VADDR_V" "$elf_size");
 
 	local SH_TOTAL_SIZE="$(( SH_COUNT * SH_SIZE ))";
 	local SECTION_HEADERS="$(get_section_headers)"; # test empty
@@ -251,7 +258,7 @@ print_elf_body()
 	);
 
 	local static_data_count=0;
-	local DATA_ALL="$(cat "${snippets_file}" | 
+	local DATA_ALL="$(cat "${snippets_file}" |
 		while read d;
 		do
 			local dt=$(echo -en "$d" | cut -d, -f${SNIPPET_COLUMN_TYPE});
@@ -264,7 +271,7 @@ print_elf_body()
 				echo -en "\x00" | base64 -w0; # ensure a null byte to split data
 				let static_data_count++;
 			fi;
-		done; 
+		done;
 	)";
 
 	local SECTION_ELF_DATA="";
@@ -400,7 +407,12 @@ get_b64_symbol_value()
 			return
 		fi
 		outsize=8; # memory_addr_size; TODO: this is platform specific, in x64 is 8 bytes
-		echo -n ${out},${outsize},${SYMBOL_TYPE_DYNAMIC},${symbol_addr}
+		data_flags="$(echo "${symbol_data}" | cut -d, -f${SNIPPET_COLUMN_DATA_FLAGS})"
+		if [ "${data_flags}" == "INDIRECT" ]; then
+			echo -n ${out},${outsize},${SYMBOL_TYPE_DYNAMIC_INDIRECT},${symbol_addr}
+		else
+			echo -n ${out},${outsize},${SYMBOL_TYPE_DYNAMIC},${symbol_addr}
+		fi;
 		return;
 	};
 	fi
@@ -456,7 +468,7 @@ set_symbol_value()
 is_a_valid_number_on_base(){
 	SNIPPETS=$2
 	base=$(get_b64_symbol_value "base" "${SNIPPETS}" | cut -d, -f${B64_SYMBOL_VALUE_RETURN_OUT} | base64 -d);
-	echo -n "$(( ${base:10}#${raw_data_bytes} ))" 2>&1 >/dev/null || 
+	echo -n "$(( ${base:10}#${raw_data_bytes} ))" 2>&1 >/dev/null ||
 		return 1;
 	echo "${base:10}"
 	return;
@@ -598,7 +610,7 @@ get_snippets_until_line()
 	local line="$1";
 	local SNIPPETS="$2";
 	echo "$SNIPPETS" | while read l;
-	do 
+	do
 		item=$(echo "$l" | cut -d, -f$SNIPPET_COLUMN_SOURCE_CODE);
 		if [ "$item" == "$symbol_name" ]; then
 			break;
@@ -611,7 +623,7 @@ get_snippets_until_symbol()
 	local symbol_name="$1";
 	local SNIPPETS="$2";
 	echo "$SNIPPETS" | while read l;
-	do 
+	do
 		item=$(echo "$l" | cut -d, -f$SNIPPET_COLUMN_SUBNAME);
 		if [ "$item" == "$symbol_name" ]; then
 			break;
@@ -729,9 +741,11 @@ define_variable_increment()
 
 define_variable_arg()
 {
-	local arg_number="${sec_arg/@/}"
+	local arg_number="${sec_arg/@/}";
 	# create a new dynamic symbol called ${symbol_name}
-	local instr_bytes="$(get_arg $dyn_data_offset $arg_number)";
+	local mmap_addr=$(( (1<<16) + ((1<<12) * arg_number) ));
+	#mmap_arg="$dyn_data_offset";
+	local instr_bytes="$(get_arg $arg_number $dyn_data_offset $mmap_addr | xd2b64)";
 	local instr_len=$(echo -n "${instr_bytes}" | b64cnt );
 	# this address will receive the point to the arg variable set in rsp currently;
 	# a better solution would be not have this space in binary but in memory.
@@ -749,7 +763,11 @@ define_variable_arg()
 		"${data_bytes}" \
 		"${data_len}" \
 		"${CODE_LINE_B64}" \
-		"1";
+		"1" \
+		"" \
+		"" \
+		"" \
+		"INDIRECT";
 	return;
 }
 
@@ -847,7 +865,7 @@ define_variable_from_exec()
 	local args_addr="$(( pipe_addr + pipe_struct_size ))"; # the array address
 	local args_size=$(( 8 * ${#args[@]} + 8 )) # 8 to cmd, 8 for each argument and 8 to null to close the array
 	local env_addr=$(( args_addr + args_size ));
-	local env_size=8; 
+	local env_size=8;
 	env_size=0;
 	env_addr=0; # no support for env, set NULL
 	local argsparam="${args[@]}";
@@ -1063,7 +1081,7 @@ is_function(){
 	local symbol_name="$1";
 	local snippets="$2";
 	if \
-		is_system_function $symbol_name || 
+		is_system_function $symbol_name ||
 		is_internal_function $symbol_name ||
 		is_user_function "$symbol_name" "${SNIPPETS}";
 	then
@@ -1110,7 +1128,7 @@ get_jmp_size(){
 	local target="$2";
 	local jmp_size=2; # all procedures have a jmp instruction at begining. it can be 2 or 5 bytes. 2 if the procedure body is smaller than 128 bytes;
 	local target_instr_size="$( echo "$SNIPPETS" | grep "PROCEDURE_TABLE,[^,]*,${target}," | cut -d, -f${SNIPPET_COLUMN_INSTR_LEN} )";
-	if [ "${target_instr_size:=0}" -gt 127 ]; then 
+	if [ "${target_instr_size:=0}" -gt 127 ]; then
 		jmp_size=5;
 	fi;
 	debug "get_jmp_size for $2 is $jmp_size";
@@ -1213,7 +1231,7 @@ define_variable(){
 	{
 		# create a new dynamic symbol called ${symbol_name}
 		# That should point to the rbp register first 8 bytes (int)
-		# argc_addr: memory address to put the argc 
+		# argc_addr: memory address to put the argc
 		#   should i use the snippets data?
 		argc_pos=$dyn_data_offset;
 		instr_bytes="$(get_arg_count $argc_pos | xd2b64)";
@@ -1423,7 +1441,7 @@ parse_code_bloc(){
 define_code_block(){
 	# TODO add identation validation
 	#
-	# TODO prepend a jump move over the end of this block, so this code will be executed only if a explicit goto or call is requested. 
+	# TODO prepend a jump move over the end of this block, so this code will be executed only if a explicit goto or call is requested.
 	new_bloc="$(parse_code_bloc "$SNIPPETS")";
 	local bloc_name=$(echo "$new_bloc" | cut -d, -f${SNIPPET_COLUMN_SUBNAME})
 	if [ "$SNIPPETS" == "" ]; then
@@ -1497,7 +1515,7 @@ snippet_write()
 		fi;
 	}
 	fi;
-	# TODO: detect if using dyn data addr and pass it 
+	# TODO: detect if using dyn data addr and pass it
 	local input_symbol_return="$( echo "$SNIPPETS" | grep "SYMBOL_TABLE,[^,]*,${input_symbol_name}," | cut -d, -f${SNIPPET_COLUMN_RETURN} )";
 	if [ "${input_symbol_return}" != "" ]; then
 		data_addr_v="${input_symbol_return}";
@@ -1640,7 +1658,7 @@ do_exec(){
 	local args_addr="$(( dyn_data_offset ))"; # the array address
 	local args_size=$(( 8 * ${#args[@]} + 8 )) # 8 to cmd, 8 for each argument and 8 to null to close the array
 	local env_addr=$(( args_addr + args_size ));
-	local env_size=8; 
+	local env_size=8;
 	env_size=0;
 	env_addr=0; # no support for env, set NULL
 	local data_len=$(( args_size + env_size )); # 8 to each array (args and env)
@@ -1921,6 +1939,7 @@ parse_snippets()
 # That includes NONE OF the data section (string table, the elf and program headers
 detect_instruction_size_from_code()
 {
+	[ -e "$1" ] &&
 	cat $1 | grep -E "^(INSTRUCTION|SNIPPET_CALL|SYMBOL_TABLE|PROCEDURE_TABLE)," |
 	cut -d, -f${SNIPPET_COLUMN_INSTR_LEN} |
 	awk '{s+=$1}END{print s}'
@@ -1929,7 +1948,7 @@ detect_instruction_size_from_code()
 detect_static_data_size_from_code()
 {
 	local static_data_size=$(
-		cat $1 | while read l;
+		[ -e "$1" ] && cat $1 | while read l;
 		do
 			if [ "${l}" == "" ]; then
 				continue;
@@ -2148,9 +2167,9 @@ detect_internal_dependencies(){
 			cut -d, -f$SNIPPET_COLUMN_DEPENDENCIES |
 			tr "," "\n" | uniq | sed '/^$/d' |
 		while read dep;
-		do 
-			if is_internal_function $dep; then 
-				echo $dep; 
+		do
+			if is_internal_function $dep; then
+				echo $dep;
 			fi;
 		done;
 	)";
@@ -2171,7 +2190,7 @@ parseRound(){
 	local snippets_file="$2";
 	internal_snippet_filename="${snippets_file}.internal";
 	local snippets=$(
-		echo "${INPUT_SOURCE_CODE}" | 
+		echo "${INPUT_SOURCE_CODE}" |
 			parse_snippets \
 				"${ROUND_FINAL}" \
 				"${PH_VADDR_V}" \
@@ -2188,6 +2207,7 @@ parseRound(){
 	echo "$internal_dependencies" |
 		while read dep;
 		do
+			[ "$dep" == "" ] && continue;
 			out="$(create_internal_snippet \
 				"$dep" \
 				"$(cat ${internal_snippet_filename})" \
@@ -2220,10 +2240,11 @@ write_elf()
 	# Virtual Memory Offset
 	local PH_VADDR_V=$(./ph_vaddr_v)
 	if [ "$PH_VADDR_V" == "" ]; then
+		# mmap_min_addr kernel config says where is the minimum valid segment to load the elf
 		PH_VADDR_V=$(cat /proc/sys/vm/mmap_min_addr)
 	fi;
 	if [ "$PH_VADDR_V" == "" ]; then
-		PH_VADDR_V=$(( 1 << 16 ));
+		PH_VADDR_V=$(( 1 << 16 )); # 64KiB
 	fi;
 	local SH_COUNT=$(get_section_headers_count "");
 	local INPUT_SOURCE_CODE="$(cat)";
@@ -2248,17 +2269,26 @@ write_elf()
 	parseRound 2 "${snippets_file}"; # Detect internal dependencies size; upate instructions, static and dynamic data size;
 	parseRound 3 "${snippets_file}"; # final parse with correct addresses displacements;
 
-	local ELF_BODY="$(
-		print_elf_body \
-			"${PH_VADDR_V}" \
-			"${SH_COUNT}" \
-			"$snippets_file";
-	)";
-	local ELF_FILE_HEADER="$(
-		print_elf_file_header \
-			"${PH_VADDR_V}" \
-			"${SH_COUNT}";
-	)";
-	echo -ne "${ELF_FILE_HEADER}${ELF_BODY}" |
-		base64 -d > $ELF_FILE_OUTPUT;
+	local elf_size=0;
+	for ((i=0; i<2; i++));
+	do {
+		# need to do twice because we don't have the final file size on first time;
+		# could be better just to replace the filesz on program segment header (LOAD type);
+		local ELF_BODY="$(
+			print_elf_body \
+				"${PH_VADDR_V}" \
+				"${SH_COUNT}" \
+				"$snippets_file" \
+				"$elf_size";
+		)";
+		local ELF_FILE_HEADER="$(
+			print_elf_file_header \
+				"${PH_VADDR_V}" \
+				"${SH_COUNT}" | xd2b64;
+		)";
+		echo -ne "${ELF_FILE_HEADER}${ELF_BODY}" |
+			base64 -d > $ELF_FILE_OUTPUT;
+		elf_size=$(wc -c<$ELF_FILE_OUTPUT)
+	};
+	done;
 }
