@@ -2,10 +2,15 @@
 #
 # Here should be all x86_64 specific code.
 #
-
 . arch/system_call_linux_x86.sh
-
-# nasm:
+#
+# The x86 instructions have this design in 64bit mode:
+# +------------+--------+--------+------------+--------------+-------------+
+# |  Prefixes  | OpCode | ModR/M |    SIB     | displacement |  Immediate  |
+# | (optional) |        |        | (optional) | (optional)   |  (optional) |
+# |            | 1-3 b  | 1 byte |  0-1 byte  |   0-4 bytes  |  0-8 bytes  |
+# +------------+--------+--------+------------+--------------+-------------+
+#
 # https://ulukai.org/ecm/doc/insref.htm#iref-ea
 #
 # System Interrupt call table for 64bit linux:
@@ -22,21 +27,22 @@
 # See Table A-2. One-byte Opcode Map on Intel i64 documentation (page 2626)
 # See Table B-13.  General Purpose Instruction Formats and Encodings for Non-64-Bit Modes (Contd.) (page 2658)
 # x64:
-# The x86-64 architecture has a total of 16 general-purpose registers, 
-# which are named from R0 to r15. The first 8 registers, 
-# R0 to R7, can be accessed using their traditional names (AX, BX, CX, DX, BP, SI, DI, and SP), 
-# which have been used since the early days of x86 processors. 
-# However, the additional registers introduced in the x86-64 architecture 
-# (r8 to r15) have new names that reflect their expanded capabilities 
-# and wider use in modern software development. 
-# These new names are intended to make it easier for programmers 
+# The x86-64 architecture has a total of 16 general-purpose registers,
+# which are named from R0 to r15. The first 8 registers,
+# R0 to R7, can be accessed using their traditional names (AX, BX, CX, DX, BP, SI, DI, and SP),
+# which have been used since the early days of x86 processors.
+# However, the additional registers introduced in the x86-64 architecture
+# (r8 to r15) have new names that reflect their expanded capabilities
+# and wider use in modern software development.
+# These new names are intended to make it easier for programmers
 # to distinguish between the older and newer registers and to avoid naming conflicts.
 #
 # 16 general purpose registers
 #  The prefix E stands for 32bit and R for 64bit
+# Conventions:
 #  rax: Accumulator: Used In Arithmetic operations
 #  rcx: Counter: Used in loops and shift/rotate instructions
-#  rdx: Data: Used in arithmetic operations and I/O operations
+#  rdx: Data: Used in arithmetic operations and I/O operations; target address
 #  rbx: Base: Used as a pointer to data
 #  rsp: Stack Pointer: Points to top of stack
 #  rbp: Stack Base Pointer: Points to base of stack
@@ -47,6 +53,42 @@
 # 1 flag register: used to support arithmetic functions and debugging.
 #  EFLAG(32)
 #  RFLAG(64)
+#
+#Processor Flags
+flags=( ID VIP VIF AC VM RF NT IOPL OF DF IF TF SF ZF AF PF CF );
+#The x86 processors have a large set of flags that represent the state of the processor, and the conditional jump instructions can key off of them in combination.
+#
+#ZF - zero flags
+#    Set if result is zero; cleared otherwise
+#SF - sign flag
+#    Set equal to high-order bit of result (0 if positive 1 if negative)
+#OF - overflow flag
+#    Set if result is too large a positive number or too small a negative number (excluding sign bit) to fit in destination operand; cleared otherwise
+#    The Overflow Flag (OF) has only a meaning for signed numbers. It will be set:
+# 		if the result of 2 positive numbers results in a negative number
+# 		or if the sum of 2 negative numbers result in a positive number.
+# 		Below is an example of the sum of 2 positive numbers (bit sign is 0). It results in a negative number (bit sign is 1). In this case, the overflow flag will be set.
+#               ┌─────────────┬─────────────┬─────────────┬─────────────┬─────────────┬─────────────┬─────────────┬─────────────┐
+#               │ 31 30 29 28 │ 27 26 25 24 │ 23 22 21 20 │ 19 18 17 16 │ 15 14 13 12 │ 11 10 09 08 │ 07 06 05 04 │ 03 02 01 00 │
+#┌──────────────┼─────────────┼─────────────┼─────────────┼─────────────┼─────────────┼─────────────┼─────────────┼─────────────┤
+#│ carry        │  1  1  1  0 │  0  0  0  0 │  0  0  0  0 │  0  0  0  0 │  0  0  0  0 │  0  0  0  0 │  0  0  0  0 │  0  0  0    │
+#├──────────────┼─────────────┼─────────────┼─────────────┼─────────────┼─────────────┼─────────────┼─────────────┼─────────────┤
+#│   0x7020470F │  0  1  1  1 │  0  0  0  0 │  0  0  1  0 │  0  0  0  0 │  0  1  0  0 │  0  1  1  1 │  0  0  0  0 │  1  1  1  1 │
+#│ + 0x10000000 │  0  0  0  1 │  0  0  0  0 │  0  0  0  0 │  0  0  0  0 │  0  0  0  0 │  0  0  0  0 │  0  0  0  0 │  0  0  0  0 │
+#├──────────────┼─────────────┼─────────────┼─────────────┼─────────────┼─────────────┼─────────────┼─────────────┼─────────────┤
+#│ = 0x8020470f │  1  0  0  0 │  0  0  0  0 │  0  0  1  0 │  0  0  0  0 │  0  1  0  0 │  0  1  1  1 │  0  0  0  0 │  1  1  1  1 │
+#└──────────────┼─────────────┼─────────────┼─────────────┼─────────────┼─────────────┼─────────────┼─────────────┼─────────────┤
+#               │       8     │      0      │       2     │      0      │      4      │       7     │      0      │       F     │
+#               └─────────────┴─────────────┴─────────────┴─────────────┴─────────────┴─────────────┴─────────────┴─────────────┘
+#TF - Trap Flag
+#DF - Direction Flag
+#IF - Interrupt Flag
+#AF - Adjust Flag
+#PF - Parity Flag
+#    Set if low-order eight bits of result contain an even number of "1" bits; cleared otherwise
+#CF - Carry Flag
+#    Set on high-order bit carry or borrow; cleared otherwise
+
 #
 #Here is a table of all the registers in x86_64 with their sizes:
 # 8bit(hi,low)	16bits	32bits	64bits	bitval
@@ -67,7 +109,7 @@ bh=7;	bl=3;	bx=3;	ebx=3;	rbx=3;	# 011
 	r14b=6;	r14w=6;	r14d=6;	r14=6;	# 110
 	r15b=7;	r15w=7;	r15d=7;	r15=7;	# 111
 #		eip	rip		instruction pointer: address of the next instruction to execute.
-declare -a r_8bl=( al cl dl bl ah ch dh bh )
+declare -a r_8bl=( al cl dl bl ah ch dh bh );
 #
 # Note that the smallers registers uses the same space as the bigger ones. changing the small will affect the bigger
 # These sub-registers are commonly used in instruction encoding and can be useful for optimizing code size.
@@ -79,8 +121,8 @@ declare -a r_8bl=( al cl dl bl ah ch dh bh )
 #  zmm0 - zmm31	512	Extended Multimedia Register (AVX-512 Advanced Vector Extensions 2)
 #
 # Note that YMM0-YMM15 are essentially the same as XMM0-XMM15,
-# but with support for AVX (Advanced Vector Extensions) 
-# instructions which operate on 256-bit operands. 
+# but with support for AVX (Advanced Vector Extensions)
+# instructions which operate on 256-bit operands.
 # zmm0-zmm31 are registers introduced in AVX-512 which support 512-bit operands.
 #
 
@@ -128,15 +170,15 @@ is_8bit_extended_register(){
 	return 1;
 }
 is_64bit_register(){
-	local v="$1";
-	if [[ "${v,,}" =~ ^(rax|rcx|rdx|rbx|rsp|rsi|rdi|r8|r9|r10|r11|r12|r13|r14|r15)$ ]]; then
+	local v="${1,,}";
+	if [[ "$v" =~ ^(rax|rcx|rdx|rbx|rsp|rsi|rdi|r8|r9|r10|r11|r12|r13|r14|r15)$ ]]; then
 		return 0
 	fi;
 	return 1;
 }
 is_128bit_register(){
-	local v="$1";
-	if [[ "${v,,}" =~ ^(xmm([0-9]|1[0-5]))$ ]]; then
+	local v="${1,,}";
+	if [[ "$v" =~ ^(xmm([0-9]|1[0-5]))$ ]]; then
 		return 0
 	fi;
 	return 1;
@@ -161,23 +203,50 @@ is_register(){
 		is_256bit_register "$v" ||
 		is_128bit_register "$v" ||
 		is_64bit_register "$v" ||
-		is_32bit_register "$v" || 
-		is_16bit_register "$v" || 
+		is_32bit_register "$v" ||
+		is_16bit_register "$v" ||
 		is_8bit_register "$v"; then
 		return 0;
 	fi;
 	return 1;
 }
 
+is_addr(){
+	is_32bit_uint $1;
+}
+
+# SEGMENTS
+# When the processor starts it is in 16bit real mode, it means it has access to real physical memory address;
+# Then BIOS deliver the control to the OS, and the OS sets the memory to virtual mode;
+# When a process is started by the OS, it selects some physical memory space according with the "Program Hearders"(that should be called segment headers); And when the process runs it is in a user mode that only see the virtual memory; So each process has his own 0x010078;
+#
+# In program segments we can set if a virtual memory block is Read, Writable, Executable and the memory block size;
+segments=( es cs ss ds fs gs segr6 segr7 )
+#The 16-Bit Segment Registers are:
+#CS	Code Segment
+#DS	Data Segment
+#SS	Stack Segment
+#ES	Data Segment
+#FS	Data Segment
+#GS	Data Segment
+
+# We can use mov instruction to mov segment values to registers:
+# for ((i=0;i<256;i++));do { xdr | ndisasm -b64 - | head -1; } <<<"488C$(px $i 1)34010203040506070809"; done | less
+# and from register to segments:
+# for ((i=0;i<256;i++));do { xdr | ndisasm -b64 - | head -1; } <<<"488E$(px $i 1)34010203040506070809"; done | less
+#
+# Memory is
+#
 # THE CS (Code Segment)
 # CS is the memory segment address(in address space) set for the code.
 # Code and stack are in separated segments;
 # the DS register is a special register for defining memory segments?
 
+
 # THE REX PREFFIX:
-#  x86 specifies register sizes using prefix bytes.
+#  in 64bit mode the x86 arch specifies register sizes using prefix bytes.
 #  For example, the same "0xb8" instruction that loads a 32-bit constant into eax can be used with a "0x66" prefix to load a 16-bit constant, or a "0x48" REX prefix to load a 64-bit constant.
-#  REX prefix is optional, without it the code will be 32bit.
+#  REX prefix is optional, without it the code will use 32bit registers.
 #  REX prefix determines the addressing size and extensions.
 #
 #  REX Bits:
@@ -259,17 +328,11 @@ prefix(){
 	fi
 }
 
-	#    $(( (2#0100 << 4) + (1 << 3) +  ( target_is_64bit_extended_register << 2 ) + ( 0 << 1) + ( source_is_64bit_extended_register ) ))
 # SIB byte
 #  SIB stands for: Scale Index Base
 #  The x64 the ModR/M can not handle all register/memory combinations
 #  for example when you try to move the rsp to an memory address,
 #  the rsp(100) is set to require an additional field the SIB is this additional field
-#
-# +------------+--------+--------+------------+
-# |   Prefix  | OpCode | ModR/M |    SIB    |
-# | (optional) | 	|	 | (optional) |
-# +------------+--------+--------+------------+
 #
 # In the opcode "48 89 C6", the byte C6 is actually the ModR/M byte, which is divided into three fields:
 #
@@ -316,6 +379,7 @@ function pop(){
 # Base — The value in a general-purpose register.
 # Index — The value in a general-purpose register.
 # Scale factor — A value of 2, 4, or 8 that is multiplied by the index value.
+#
 # The offset which results from adding these components is called an effective address. Each of these components can have either a positive or negative (2s complement) value, with the exception of the scaling factor.
 #
 # EffectiveAddress calculates an effective address using:
@@ -323,17 +387,19 @@ function pop(){
 # Base + (Index*Scale) + Displacement
 #
 # +------------------------+----------------------------+-----------------------------+
-# | Mode                  | Intel                     | AT&T                       |
+# | Mode                   | Intel                      | AT&T                        |
 # +------------------------+----------------------------+-----------------------------+
-# | Absolute              | MOV EAX, [0100]           | movl           0x0100, %eax |
-# | Register              | MOV EAX, [ESI]            | movl           (%esi), %eax |
-# | Reg + Off             | MOV EAX, [EBP-8]          | movl         -8(%ebp), %eax |
-# | Reg*Scale + Off       | MOV EAX, [EBX*4 + 0100]   | movl   0x100(,%ebx,4), %eax |
+# | Absolute               | MOV EAX, [0100]            | movl           0x0100, %eax |
+# | Register               | MOV EAX, [ESI]             | movl           (%esi), %eax |
+# | Reg + Off              | MOV EAX, [EBP-8]           | movl         -8(%ebp), %eax |
+# | Reg*Scale + Off        | MOV EAX, [EBX*4 + 0100]    | movl   0x100(,%ebx,4), %eax |
 # | Base + Reg*Scale + Off | MOV EAX, [EDX + EBX*4 + 8] | movl 0x8(%edx,%ebx,4), %eax |
 # +------------------------+----------------------------+-----------------------------+
 #
 # https://stackoverflow.com/questions/34058101/referencing-the-contents-of-a-memory-location-x86-addressing-modes/34058400#34058400
 #
+# Intel manual ref for modr/m:
+# Table 2-2. 32-Bit Addressing Forms with the ModR/M Byte
 MODRM_MOD_DISPLACEMENT_REG_POINTER=$(( 0 << 6 ));	# If mod is 00, no displacement follows the ModR/M byte, and the operand is IN a register (like a pointer). The operation will use the address in a register. This is used with SIB for 64bit displacements
 MODRM_MOD_DISPLACEMENT_8=$((   1 << 6 ));	# If mod is 01, pointer of [reg+displacement of 8 bits] follows the ModR/M byte.
 MODRM_MOD_DISPLACEMENT_32=$((  2 << 6 ));	# If mod is 10, pointer of [reg+displacement of 32 bits] follows the ModR/M byte.
@@ -469,7 +535,8 @@ mov(){
 	local v1="$1";
 	local v2="$2";
 	local code="";
-	code="${code}$(prefix "$v1" "$v2")";
+	local prefix=$(prefix "$v1" "$v2");
+	code="${code}${prefix}";
 	local modrm="";
 	if [[ "$v1" =~ ^\(.*\)$ ]]; then	# resolve pointer address value
 	{
@@ -481,32 +548,68 @@ mov(){
 			if is_register "$v2"; then
 				modrm="$(px "$(( MODRM_MOD_DISPLACEMENT_REG_POINTER + mod_reg + v1_r ))" $SIZE_8BITS_1BYTE)";
 			fi;
+			printf "${code}${modrm}";
+			debug "asm: mov $@; # $code";
+			return;
 		fi;
-		if is_valid_number "$v1_r"; then
-			if is_register "$v2"; then
-				local use_sib=4;
-				# sib is a byte:
-				#    11    111      111
-				# scale^2  4=IMM32
-				modrm="$( px $(( MODRM_MOD_DISPLACEMENT_REG_POINTER + (v2 << 3) + use_sib)) $SIZE_8BITS_1BYTE)25$(px $v1_r $SIZE_32BITS_4BYTES)";
-			fi;
-		fi
+		if is_32bit_uint "$v1_r" && is_64bit_register "$v2"; then
+		{
+			local opcode="${mov_resolve_address}";
+			local use_sib=$(( 1 << 2 ));
+			local mod=$((MODRM_MOD_DISPLACEMENT_REG_POINTER << 6));
+			local r=$((v2 << 3));
+			local m=$(( use_sib ));
+			local modrm_v=$(( mod | r | m ));
+			local modrm="$(px $modrm_v $SIZE_8BITS_1BYTE)";
+			local scale="0";
+			local index="$((2#011 << 3))";
+			local base="$(( 2#001 ))";
+			local sib="$(( scale | index | base ))";
+			local displacement=$(px $v1_r $SIZE_32BITS_4BYTES);
+			local instr="${prefix}${opcode}${modrm}${sib}${displacement}";
+			printf "${instr}";
+			debug "asm: mov $@; # $code";
+			return;
+		}
+		fi;
 		code="${code}${modrm}";
 	}
 	fi;
-	if is_valid_number "$v1"; then
+	if ! is_register $v1 && is_valid_number "$v1"; then
 	{
-		if is_8bit_uint "$v1" && is_8bit_register "$v2"; then
+		if is_8bit_uint "$v1" && ! is_register "$v2" && is_8bit_register "$v2"; then
 			code="${code}$(px $(( 16#B0 + v2 )) $SIZE_8BITS_1BYTE)"
 			code="${code}$(px "$v1" $SIZE_8BITS_1BYTE)";
 			printf "${code}";
 			debug "asm: mov $@; # $code"
 			return;
 		fi;
+		if ! is_register "$v2" && is_32bit_uint "$v1" && is_32bit_uint "$v2"; then
+		{
+			# move immediate value to displacement;
+			local opcode="c7";
+			local modrm="04";
+			local scale=0;
+			local index=$((4<<3));
+			local base=5;
+			local sib_v="$(( scale | index | base ))";
+			debug "sib_v=$sib_v";
+			local sib="$(px $sib_v $SIZE_8BITS_1BYTE)"; # 25
+			local displacement="$(px "$v2" $SIZE_32BITS_4BYTES)";
+			local immediate="$(px "$v1" $SIZE_32BITS_4BYTES)";
+			local code="${opcode}${modrm}${sib}${displacement}${immediate}";
+			printf $code
+			debug "asm: mov $@; # [$code]";
+			return;
+		}
+		fi;
 		local mov_v4_reg="c7";
 		local mod_reg=0;
 		modrm="$(px "$(( MODRM_MOD_NO_EFFECTIVE_ADDRESS + mod_reg + v2 ))" $SIZE_8BITS_1BYTE)";
 		code="${code}${mov_v4_reg}${modrm}$(px "$v1" $SIZE_32BITS_4BYTES)";
+		printf $code
+		debug "asm: mov $@; # $code"
+		return
 	}
 	fi;
 	if is_64bit_register "$v1"; then
@@ -523,7 +626,7 @@ mov(){
 				fi;
 				if [ "$v2_r" == "rsp" ]; then # rsp is a special case where the next byte is sib;
 					sib=$(px $(( MODRM_MOD_DISPLACEMENT_REG_POINTER + ( v2_r << 3 ) )) $SIZE_8BITS_1BYTE);
-					modrm="$modrm$sib"; 
+					modrm="$modrm$sib";
 				fi;
 			fi;
 			code="${code}${modrm}";
@@ -700,7 +803,7 @@ cmp(){
 		fi;
 		if is_64bit_register "$v2"; then
 			local b1="39";
-			local b2="$(px $(( MODRM_MOD_NO_EFFECTIVE_ADDRESS + (v1 << 3) + v2 )) $SIZE_8BITS_1BYTE)";
+			local b2="$(px $((MODRM_MOD_NO_EFFECTIVE_ADDRESS + (v1 << 3) + v2 )) $SIZE_8BITS_1BYTE)";
 			local rv="${code}${b1}${b2}";
 			debug "asm: cmp $@; # $rv";
 			echo -n "$rv";
@@ -716,18 +819,16 @@ test(){
 	local v2="$2";
 	v2="${v2:=$v1}";
 	local prefix="$(prefix "$v1" "$v2")";
-	local opcode="";
-	debug "test [$v1] [$v2]";
+	local opcode="85";
 	if is_8bit_legacy_register "$v1" && is_8bit_legacy_register "$v2"; then
 		opcode=84;
-	else
-		opcode=85;
 	fi;
-	local modrm="$(px $(( 16#c0 + (v1 << 3) + v2 )) $SIZE_8BITS_1BYTE)";
+	local modrm="$(modrm "$v1" "$v2")";
 	local sib="";
 	local displacement="";
 	local immediate="";
 	local instr="${prefix}${opcode}${modrm}${sib}${displacement}${immediate}";
+	debug "asm: test $v1, $v2; $instr";
 	printf $instr;
 }
 CMP_rax_ADDR4_rdx_8="483904D5";
@@ -797,7 +898,7 @@ JNE="0f85"; # The second byte "85" is the opcode for the JNE(Jump if Not Equal) 
 JZ="\x0f\x84";
 JNC_BYTE="\x73"; # jae, jnb and jnc are all the same condition code CF = 0.
 JZ_BYTE="74"; # follow by a signed byte from FF (-126) to 7f (127)
-JNZ_BYTE="\x75";
+JNZ_BYTE="75";
 JNA_BYTE="\x76";
 JA_BYTE="\x77"; # CF = 0, ZF = 0
 JS_BYTE="\x77";
@@ -815,10 +916,10 @@ JG="0F8F"; # Jump if Greater than zero; flags: SF = OF, ZF = 0
 
 #js	SF = 1
 #jns	SF = 0
-#	
+#
 #jo	OF = 1
 #jno	OF = 0
-#	
+#
 #jp, jpe (e = even)	PF = 1
 #jnp, jpo (o = odd)	PF = 0
 
@@ -864,10 +965,13 @@ JG="0F8F"; # Jump if Greater than zero; flags: SF = OF, ZF = 0
 #JECXZ		Jump if %ECX register is 0 	  		%CX = 0 %ECX = 0 	E3
 jz(){
 	local v="$1";
-	local code=""
-	code="${code}${JZ_BYTE}";
-	code="${code}$(px "$v" $SIZE_8BITS_1BYTE)";
-	echo -e "${code}";
+	printf ${JZ_BYTE};
+	printf $(px "$v" $SIZE_8BITS_1BYTE);
+}
+jnz(){
+	local v="$1";
+	printf ${JNZ_BYTE};
+	printf $(px $v $SIZE_8BITS_1BYTE);
 }
 jg(){
 	local v="$1";
@@ -931,7 +1035,6 @@ REP="\xf3"; # repeat until rcx
 #MOVSBL_V4rsi_ECX="\x0F\xBE\x4E$(printEndianValue 63 $SIZE_8BITS_1BYTE)";
 #MOVZX_DL_rdx="\x48\x0F\xB6\xD2";
 #LEA_rdx_rdx="\x48\x8B\x12";
-#MOV_rsi_rsi="\x48\x8B\x36";
 #MOVZX_SIL_rsi="\x48\x0F\xB6\xF6";
 #MOVZX_SIL_rdi="\x48\x0F\xB6\xFE";
 MOVZX_DL_rdi="480fb6fa";
@@ -1049,13 +1152,24 @@ sub(){
 	local v1="$1";
 	local v2="$2";
 	local p="$(prefix "$v1" "$v2")";
-	if is_8bit_register "$v1" && is_8bit_register "$v2"; then
-		opcode1="28";
-		opcode2="$(px $((MODRM_MOD_NO_EFFECTIVE_ADDRESS + (v1 << 3) + v2 )) $SIZE_8BITS_1BYTE)";
-		c="${p}${opcode1}${opcode2}";
-		debug "asm: sub $@; # $c";
-		echo -n "$c";
-		return;
+	if is_8bit_register "$v1"; then
+    	local opcode1="28";
+	    if is_8bit_register "$v2"; then
+    		opcode2="$(px $((MODRM_MOD_NO_EFFECTIVE_ADDRESS + (v1 << 3) + v2 )) $SIZE_8BITS_1BYTE)";
+    		c="${p}${opcode1}${opcode2}";
+    		debug "asm: sub $@; # $c";
+    		echo -n "$c";
+            return;
+        fi;
+        if is_valid_number "$v2"; then
+            local opcode2="34"
+            local sib="25"
+            local v4=$(px $v2 $SIZE_32BITS_1BYTE)
+       		c="${p}${opcode1}${opcode2}${sib}${v4}";
+       		debug "asm: sub $@; # $c";
+       		echo -n "$c";
+            return;
+        fi;
 	fi;
 	if is_valid_number "$v1" && is_8bit_sint "$v1"; then
 	{
@@ -1087,24 +1201,9 @@ sub(){
 	fi;
 	error not implemented sub $@
 }
-is_8bit_uint(){
-	local v="$1";
-	[ "$(( (v >= 0 && (v < (1 << 8)) ) ))" -eq 1 ];
-}
-is_8bit_sint(){
-	local v="$1";
-	[ "$(( (v > - ( 1 << 7 )) && (v < ( 1 << 7 ) -1) ))" -eq 1 ];
-}
-is_32bit_uint(){
-	local v="$1";
-	[ "$(( (v >= 0 && (v < (1 << 32)) ) ))" -eq 1 ];
-}
-is_32bit_sint(){
-	local v="$1";
-	[ "$(( (v > - ( 1 << 31 )) && (v < ( 1 << 31 ) -1) ))" -eq 1 ];
-}
 # signed integer multiply
 imul(){
+	# IMUL_rdx_rax="$(prefix rdx rax | xd2esc)\x0f\xaf\xc2";
 	local v1="$1";
 	local v2="$2";
 	local p="$(prefix "$1" "$2")";
@@ -1132,6 +1231,7 @@ imul(){
 	fi;
 	error not implemented: imul $@
 }
+
 dec(){
 	local r=$1;
 	local p=$(prefix $r);
@@ -1139,6 +1239,7 @@ dec(){
 	local reg=$(px $((MODRM_MOD_NO_EFFECTIVE_ADDRESS + ${r,,} + 8)) $SIZE_8BITS_1BYTE);
 	echo -n "${p}${inc_op}${reg}";
 }
+
 inc(){
 	local r=$1;
 	local p=$(prefix $r);
@@ -1147,50 +1248,6 @@ inc(){
 	echo -n "${p}${inc_op}${reg}";
 }
 
-# MOV_RESOLVE_ADDRESS needs the ModR/M mod (first 2 bits) to be 00.
-MOV_rcx_rcx="$(prefix "(rcx)" rcx | xd2esc)\x8b\x09";
-MODRM="$(printEndianValue "$(( MODRM_MOD_DISPLACEMENT_REG_POINTER + MODRM_REG_rsi + rsi))" $SIZE_8BITS_1BYTE)";
-MOV_rsi_rsi="$(mov "(rsi)" rsi | xd2esc)"; # mov (%rsi), %rsi
-MODRM="$(printEndianValue "$(( MODRM_MOD_DISPLACEMENT_REG_POINTER + MODRM_REG_rdx + rdx))" $SIZE_8BITS_1BYTE)";
-MOV_rdx_rdx="$(prefix "(rdx)" rdx | xd2esc)${MOV_RESOLVE_ADDRESS}${MODRM}";
-MODRM="$(printEndianValue "$(( MODRM_MOD_DISPLACEMENT_REG_POINTER + MODRM_REG_rdi + rdi))" $SIZE_8BITS_1BYTE)";
-MOV_rdi_rdi="$(prefix "(rdi)" rdi | xd2esc)${MOV_RESOLVE_ADDRESS}${MODRM}";
-MOV_rdi_ADDR4="$(prefix rdi addr4 | xd2esc)\x89\x3C\x25";
-
-# show_bytecode "movq (%rsp), %rsi"
-# 488b3424
-# MOV_VALUE_rsi_rsp="$(rex | b64_2esc)\x8b\x34\x24"; # Copy the rsp(pointer value, not address) to the rsi(as a integer value).
-
-# while $(rex) is used for first 8 register, the last 8 register use \x49
-MOV_rax_r8="$(prefix rax r8 | xd2esc)${MOV_R}$(printEndianValue $(( MOVR + MODRM_REG_rax + r8 )) ${SIZE_8BITS_1BYTE})";
-MOV_rax_r9="$(prefix rax r9 | xd2esc)\x89\xc1"; # move the size read to r9
-MOV_r8_rdi="$(prefix r8 rdi | xd2esc)\x89\xc7";
-MOV_r8_rdx="$(prefix r8 rdx | xd2esc)\x89$(printEndianValue $(( MOVR + MODRM_REG_r8 + rdx )) ${SIZE_8BITS_1BYTE})";
-MOV_r9_rdi="$(prefix r9 rdi | xd2esc)\x89$(printEndianValue $(( MOVR + MODRM_REG_r9 + rdi )) ${SIZE_8BITS_1BYTE})";
-MOV_r9_rdx="$(prefix r9 rdx | xd2esc)\x89$(printEndianValue $(( MOVR + MODRM_REG_r9 + rdx )) ${SIZE_8BITS_1BYTE})";
-MOV_V8_r8="$(prefix v8 r8 | xd2esc)\xB8";
-MOV_V8_r9="$(prefix v8 r9 | xd2esc)\xB9";
-MOV_V8_r10="$(prefix v8 r10 | xd2esc)\xBA";
-
-# XOR is useful to set zero at registers using less bytes in the instruction
-# Here's an table with the bytecodes for XORing each 64-bit register with zero:
-# Register	Assembly	Bytecode
-# rax	xor rax, rax	48 31 C0
-# rbx	xor rbx, rbx	48 31 DB
-# rcx	xor rcx, rcx	48 31 C9
-# rdx	xor rdx, rdx	48 31 D2
-# rsi	xor rsi, rsi	48 31 F6
-# rdi	xor rdi, rdi	48 31 FF
-# rbp	xor rbp, rbp	48 31 E5
-# rsp	xor rsp, rsp	48 31 EC
-# r8	xor r8, r8	4D 31 C0
-# r9	xor r9, r9	4D 31 C9
-# r10	xor r10, r10	4D 31 D2
-# r11	xor r11, r11	4D 31 DB
-# r12	xor r12, r12	4D 31 E4
-# r13	xor r13, r13	4D 31 ED
-# r14	xor r14, r14	4D 31 F6
-# r15	xor r15, r15	4D 31 FF
 xor(){
 	local v1="$1";
 	local v2="$2";
@@ -1208,24 +1265,7 @@ xor(){
 }
 
 #MOV_DATA_rax="$(prefix v4 rax | xd2esc)\x0f\xb6\x06"; # movzbq (%rsi), %rax
-TEST_rax_rax="$(prefix rax rax | xd2esc)\x85\xc0";
-IMUL_rdx_rax="$(prefix rdx rax | xd2esc)\x0f\xaf\xc2";
 SHR_V1_rax="$(prefix v1 rax | xd2esc)\xc1\xe8";
-
-#Processor Flags
-#
-#The x86 processors have a large set of flags that represent the state of the processor, and the conditional jump instructions can key off of them in combination.
-#
-#CF - carry flag
-#    Set on high-order bit carry or borrow; cleared otherwise
-#PF - parity flag
-#    Set if low-order eight bits of result contain an even number of "1" bits; cleared otherwise
-#ZF - zero flags
-#    Set if result is zero; cleared otherwise
-#SF - sign flag
-#    Set equal to high-order bit of result (0 if positive 1 if negative)
-#OF - overflow flag
-#    Set if result is too large a positive number or too small a negative number (excluding sign bit) to fit in destination operand; cleared otherwise 
 
 SYSCALL="$( printEndianValue $(( 16#050f )) $SIZE_16BITS_2BYTES)"
 function syscall(){
@@ -1294,7 +1334,7 @@ sys_close()
 # 20         unsigned int    __unused4;
 # 21         unsigned int    __unused5;
 # 22 };
-# 
+#
 sys_fstat()
 {
 	local stat_addr="$1";
@@ -1305,7 +1345,7 @@ sys_fstat()
 	else
 		# if no fd providen use rax by default
 		mov rax rdi;
-		# TODO not sure this is a good idea but we will lost rax so for 
+		# TODO not sure this is a good idea but we will lost rax so for
 		# now we will save it at r8 too
 		mov rax r8;
 	fi;
@@ -1344,7 +1384,7 @@ function get_read_size()
 
 function getpagesize()
 {
-	
+
 	mov $((16#3f)) rax;	# sys_uname syscall
 	# mov rax, 0x3f        ; sysconf syscall number
 	mov $((16#18)) rdi;	# _SC_PAGESIZE parameter
@@ -1353,8 +1393,8 @@ function getpagesize()
 	#
 	# ; Store the result in the pagesizebuf buffer
 	# mov qword [pagesizebuf], rax
-	
-	CODE="${CODE}${MOV_rdi_ADDR4}$(printEndianValue $((16#18)) $SIZE_32BITS_4BYTES)"; # _SC_PAGESIZE
+
+	mov $((16#18)) rdi; # _SC_PAGESIZE
 	syscall;
 }
 
@@ -1372,27 +1412,26 @@ function sys_mmap()
 	local fd="$2";
 	local CODE="";
 	# ; Map the memory region
-	# mov rdi, 0     ; addr (let kernel choose)
-	CODE="${CODE}$(xor rdi rdi)";
+	CODE="${CODE}$(xor rdi rdi)"; # let kernel choose
 	# TODO use fstat to detect the size and implement a logic to align it to page memory
-	# When using mmap, the size parameter specified in rsi should be aligned to the page size. 
-	# This is because the kernel allocates memory in units of pages, 
-	# and trying to mmap a region that is not page-aligned could result in undefined behavior. 
+	# When using mmap, the size parameter specified in rsi should be aligned to the page size.
+	# This is because the kernel allocates memory in units of pages,
+	# and trying to mmap a region that is not page-aligned could result in undefined behavior.
 	# To ensure that the size is aligned(I don't know a system call that returns the system page size
-	# but the default linux uses 4K. libc provides a function getpagesize() to determine 
-	# the page size at runtime) and then round up the size parameter 
+	# but the default linux uses 4K. libc provides a function getpagesize() to determine
+	# the page size at runtime) and then round up the size parameter
 	# to the nearest multiple of the page size.
 	#    mov rsi, size  ; length
 	#
 	# recover size
 	local mmap_size_code="$size";
-	# CODE="${CODE}${MOV_rsi}$(printEndianValue ${mmap_size} ${SIZE_64BITS_8BYTES})";
+	# mov ${mmap_size} rsi;
 	#if pagesize > size {
 	#	pagesize
 	#} else {
 	#	(1+(requested size / pagesize)) * pagesize
 	#}
-	#CODE="${CODE}${MOV_rsi}$(printEndianValue ${PAGESIZE} ${SIZE_64BITS_8BYTES})";
+	# mov ${PAGESIZE} rsi;
 	CODE="${CODE}${mmap_size_code}";
 
 	# Protection flag
@@ -1417,7 +1456,7 @@ function sys_mmap()
 		mov $MAP_PRIVATE r10;
 		# The file descriptor is expected to be at r8,
 		# but for virtual files it will fail with a -19 at rax.
-		# 
+		#
 		if [ "$fd" == "rax" ]; then
 			mov rax r8;
 		elif [ "$fd" != "" ]; then
@@ -1448,8 +1487,14 @@ function sys_mmap()
 	})";
 	local BYTES_TO_JUMP="$(px $(echo -en "${ANON_MMAP_CODE}" | xcnt) $SIZE_32BITS_4BYTES)";
 	CODE="${CODE}${JG}${BYTES_TO_JUMP}"; # The second byte "85" is the opcode for the JNE instruction. The following four bytes "06 00 00 00" represent the signed 32-bit offset from the current instruction to the target label.
-	CODE="${CODE}${ANON_MMAP_CODE}";
-	echo -en "${CODE}";
+	printf "${CODE}${ANON_MMAP_CODE}";
+}
+
+sys_mprotect(){
+	mov 10 rax;
+	mov $1 rdi; # start address
+	mov $2 rsi; # length size
+	mov $3 rdx; # protection flags
 }
 
 # Jump short is the fastest and cheaper way to run some code,
@@ -1461,7 +1506,7 @@ function sys_mmap()
 #  the exit code can be:
 #    -1 error: the target address is outside the range scope ( 1 << 8  == -128 to 127 )
 #    0 nothing to do (the current address is the same as the target address)
-#    2 the jump short instruction byte count 
+#    2 the jump short instruction byte count
 function bytecode_jump_short()
 {
 	local relative=$1;
@@ -1558,9 +1603,9 @@ function call_procedure()
 		local BYTES="${OPCODE_CALL_NEAR}${NEAR_ADDR_V}";
 		code="${code}${BYTES}";
 		if [ "$retval_addr" != "" ]; then
-			code="${code}$({ 
+			code="${code}$({
 				#mov "(rdi)" rdi;
-				mov rdi $retval_addr; 
+				mov rdi $retval_addr;
 			} | xd2esc)";
 		fi;
 		echo -en "$code" | base64 -w0;
@@ -1582,17 +1627,32 @@ function call_procedure()
 	debug "call_procedure $@:: $code"
 }
 
-function push_v_stack()
+function push_imm()
 {
 	local value="$1";
-	mov "${value}" rax;
-	push rax;
+	if is_8bit_uint "$value"; then
+		printf "6a";
+		px "$value" $SIZE_8BITS_1BYTE;
+		return;
+	fi;
+	# 16bit only valid for 16 bit mode
+	#if is_16bit_uint "$value"; then
+	#	printf "68";
+	#	px "$value" $SIZE_16BITS_2BYTE;
+	#	return;
+	#fi;
+	if is_32bit_uint "$value"; then
+		printf "68";
+		px "$value" $SIZE_32BITS_4BYTES;
+		return;
+	fi;
+	error "invalid value to push [${value}]"
 }
 
 function push_stack()
 {
 	# PUSHA/PUSHAD – Push All General Registers 0110 0000
-	
+
 	local PUSH="\x68";
 	local ADDR_V="$(printEndianValue )";
 	echo -n "${PUSH}${ADDR_V}";
@@ -1612,7 +1672,7 @@ function ret()
 	# Inter-privilege-level far return
 
 	# currently just need the near return
-	# 
+	#
 
 	#local LEAVE="\xc9"; #seems leave breaks in a segfault
 	if [ "$symbol_value" != "" ]; then
@@ -1673,7 +1733,7 @@ function read_file()
 	# DATA_LEN should be the size(in bytes) we want to write out.
 	# We need to stat the file to get the real value
 	# Memory address of the stat structure
-	# debug read_file 
+	# debug read_file
 	if [ "${TYPE}" == "${SYMBOL_TYPE_STATIC}" -o "${TYPE}" == "${SYMBOL_TYPE_HARD_CODED}" ]; then
 	{
 		# do we have a buffer to read into? should we use it in a mmap?
@@ -1761,29 +1821,39 @@ function system_call_write_addr()
 function detect_argsize()
 {
 	r_in=rsi;
-	r_out=rdx;
+	r_out=rcx;
 	# figure out the data size dynamically.
 	# To do it we can get the next address - the current address
 	# the arg2 - arg1 address - 1(NULL) should be the data size
 	# The last argument need to check the size by using 16 bytes, not 8.
 	#   because 8 bytes lead to the NULL, 16 leads to the first env var.
 	#
-	# to find the arg size, use rdx as rsi
+	# to find the arg size, use rcx as rsi
 	mov $r_in $r_out;
-	# increment rdx by 8
+	# increment rcx by 8
 	ARGUMENT_DISPLACEMENT=8
 	add $ARGUMENT_DISPLACEMENT $r_out;
 	# mov to the real address (not pointer to address)
 	mov "($r_out)" $r_out; # resolve pointer to address
-	cmp $r_out 0;
-	# if rdx is zero, then we the input is the last argument and we are unable to detect size using method;
-	# so fallback to string size detection
-	push $r_in
-	detect_string_length $r_in $r_out
-	pop $r_in
-	mov "($r_in)" $r_in; # resolve pointer to address
-	# and subtract rdx - rsi (resulting in the result(str len) at rdx)
-	sub $r_out $r_in;
+	# and subtract rcx - rsi (resulting in the result(str len) at rcx)
+	str_null_size_detection=$({
+		# if rcx is zero, then we the input is the last argument and we are unable to detect size using method;
+		# so fallback to string size detection
+		mov "($r_in)" $r_in; # resolve pointer to address
+		detect_string_length $r_in $r_out
+	});
+	fast_str_size_detection=$({
+		mov "($r_in)" $r_in; # resolve pointer to address
+		sub $r_in $r_out;
+		dec $r_out; # because it counts the null byte
+		jump $(xcnt<<<$str_null_size_detection);
+	});
+	fast_str_size_detection_size=$(xcnt<<<$fast_str_size_detection);
+	cmp $r_out 0; # no argument; ptr == NULL
+	jz $fast_str_size_detection_size; #
+	debug jz=[$(jz $fast_str_size_detection_size)]
+	printf $fast_str_size_detection; # this only works when we have a next value; that is why we jump over if zero.
+	printf "$str_null_size_detection";
 }
 
 get_8bit_reg(){
@@ -1799,32 +1869,31 @@ function detect_string_length()
 	local r_in="$1";
 	r_in=${r_in:=rsi};
 	local r_out="$2";
-	r_out=${r_out:=rdx};
+	r_out=${r_out:=rcx};
 	local r_tmp_64="$3";
 	r_tmp_64=${r_tmp_64:=rax};
 	r_tmp=$(get_8bit_reg $r_tmp_64);
-	# xor rdx rdx; # ensure rdx = 0
+	# xor rcx rcx; # ensure rcx = 0
 	#mov "(rsi)" rsi;
 	# we expect the rsi having the address of the string
-	mov "${r_in}" "${r_out}"; # let's use rdx as rsi incrementing it each loop interaction
-	# save rip
-	# leaq (%rip), %rbx # 
-	# LEAQ_RIP_rbx;
-	# get the data byte at addr+rdx into rax
-	# todo ? USE MOVSB ?
-	mov "(${r_out})" $r_tmp_64; # resolve current rdx pointer to rax (al)
-	#code="${code}${MOV_DATA_rax}";
-	# inc rdx
-	inc ${r_out};
-	# test data byte
-	test ${r_tmp}
-	# loop back if not null
-	# jnz
-	# "ebfe" # jump back 0 bytes
-	JUMP_BACK_BYTES="7ff5"; # jg .-7; Jump back 9 bytes (to mov (rdx) rax) only if AL > 0 (f5 == -11, includes the 2 bytes jmp instr)
-	printf "${JUMP_BACK_BYTES}";
+	mov "${r_in}" "${r_out}"; # let's use rcx as rsi incrementing it each loop interaction
+	local loop_code=$({
+		# save rip
+		# leaq (%rip), %rbx #
+		# LEAQ_RIP_rbx;
+		# get the data byte at addr+rcx into rax
+		# todo ? USE MOVSB ?
+		mov "(${r_out})" $r_tmp_64; # resolve current rcx pointer to rax (al)
+		inc ${r_out};
+		# test data byte
+		test ${r_tmp}; # test for null byte;
+	})
+	printf $loop_code;
+	local loop_size=$(xcnt<<<$loop_code);
+	jnz_size=$(xcnt< <(jnz $(( -loop_size + 2 )) ));
+	jnz $(( -loop_size - jnz_size )); # loop until find a null byte.
 	dec "${r_out}";
-	# sub %rsi, %rdx
+	# sub %rsi, %rcx
 	sub ${r_in} ${r_out};
 	#JMP_rbx="ff23";
 }
@@ -1860,12 +1929,12 @@ function system_call_write()
 	local DATA_LEN="$4";
 	local CURRENT_RIP="$5";
 
-	debug "system_call_write: type is $1; out is $OUT"
+	debug "system_call_write: type is $1; out is $OUT; DATA_ADDR_V is [$DATA_ADDR_V]"
 	if [ "${type}" == "${SYMBOL_TYPE_STATIC}" ]; then
 		system_call_write_addr "${OUT}" "${DATA_ADDR_V}" "${DATA_LEN}";
 	elif [ "${type}" == "${SYMBOL_TYPE_HARD_CODED}" ]; then
 	{
-		push_v_stack "${DATA_ADDR_V}";
+		push_imm "${DATA_ADDR_V}";
 		mov $SYS_WRITE rax;
 		mov $OUT rdi;
 		mov rsp rsi;
@@ -1874,6 +1943,10 @@ function system_call_write()
 		pop rax;
 	}
 	elif [ "${type}" == "${SYMBOL_TYPE_DYNAMIC}" ]; then
+	{
+		system_call_write_dyn_addr "${OUT}" "${DATA_ADDR_V}" "${DATA_LEN}";
+	}
+	elif [ "${type}" == "${SYMBOL_TYPE_DYNAMIC_INDIRECT}" ]; then
 	{
 		system_call_write_dyn_addr "${OUT}" "${DATA_ADDR_V}" "${DATA_LEN}";
 	}
@@ -2024,12 +2097,12 @@ function system_call_exec()
 
 # The base pointer integer value is by convention the argc(argument count)
 # In x86_64 is the rsp with integer size.
-# It can be recovered in gdb by using 
+# It can be recovered in gdb by using
 # (gdb) print *((int*)($rsp))
-# 
-# But given it is a runtime only value, we don't have that value at build time, 
+#
+# But given it is a runtime only value, we don't have that value at build time,
 # so we need to create a dynamic ref that can be evaluatet at runtime.
-# 
+#
 # My strategy is to set the constant _ARG_CNT_ then I can figure out latter that is means "rsp Integer"
 # Probably should prefix it with the jump sort instruction to make sure those bytes will not affect
 # the program execution. But not a issue now.
@@ -2041,7 +2114,7 @@ function get_arg_count()
 	# because in inner functions I will be able to recover it using a variable
 	#
 	# # TODO HOW TO ALLOCATE A DYNAMIC VARIABLE IN MEMORY?
-	# 	This function should receive the variable position (hex) to set 
+	# 	This function should receive the variable position (hex) to set
 	# 	This function should copy the pointer value currently set at rsp and copy it to the address
 	local addr="$1"; # memory where to put the argc count
 	local code="";
@@ -2052,24 +2125,40 @@ function get_arg_count()
 	echo -en "${code}";
 }
 
+movs(){
+	local r_in="$1";
+	r_in="${rsi:=rsi}";
+	local prefix="$(prefix "$_in" "$r_out")";
+	prefix="f3"; # REP
+	local opcode="a4";
+	local modrm="";
+	local sib="";
+	local displacement="";
+	local immediate="";
+
+	if is_addr $2; then
+		mov $2 rdi;
+	fi;
+	printf "${prefix}${opcode}${modrm}${sib}${displacement}${immediate}";
+}
+
 function get_arg()
 {
-	local addr="$1";
-	local argn="$2";
+	local argn="$1";
+	local addr_ptr="$2";
+	local dyn_addr="$3";
 	# MOV %rsp %rsi
 	mov rsp rsi;
 	add $(( 8 * (1 + argn) )) rsi; # "1 +" the first 8 bytes are the argc
 	add r15 rsi;
 	# RESOLVE rsi (Copy pointer address content to rsi)
 	# TODO: detect string size:
-	push rsi
-	push rdx
-	#detect_argsize
-	pop rdx
-	pop rsi
-	mov "(rsi)" rsi;
+	detect_argsize # this change rsi
+	# now rdx has the string size
+	mov $dyn_addr $addr_ptr;
+	movs rsi $dyn_addr rcx
 	#detect_string_length rsi rdx; # rdx has the string size
-	# if multiple of 8; set it to addr and we are done;
+	# if multiple of 8; set it to addr_ptr and we are done;
 	# modulus8(int, int):
 	#        mov    edx, edi
 	#        sar     edx, 31
@@ -2083,8 +2172,7 @@ function get_arg()
 	# TODO: move string to memory:
 	# 	because we need to zero higher bits in byte, avoiding further issues with bsr
 	# TODO: set me address to the target address
-	# MOV rsi addr
-	mov rsi "$addr";
+	# MOV rsi addr_ptr
 }
 
 ARCH_CONST_ARGUMENT_ADDRESS="_ARG_ADDR_ARG_ADDR_";
@@ -2112,7 +2200,7 @@ concat_symbol_instr(){
 	fi;
 	if [ "$size" -eq -1 ]; then
 		code="${code}$({
-			mov "(${addr})" rsi; # source addr
+			mov "(${addr})" rsi; # source is addr
 			detect_string_length rsi rdx rax; # the return is set at rdx
 			mov rdx rcx;
 		} | xd2esc)"; # but we need it on rcx because REP decrements it
@@ -2164,13 +2252,18 @@ compare()
 	if [ "${type_b}" == "$SYMBOL_TYPE_STATIC" ]; then
 		code="${code}${MOV_V4_rcx}$(printEndianValue "$b" "${SIZE_32BITS_4BYTES}")";
 	fi;
+	if [ "${type_a}" == "$SYMBOL_TYPE_DYNAMIC_INDIRECT" ]; then
+		code="${code}${LEA_V4_rax}$(printEndianValue "$a" "${SIZE_32BITS_4BYTES}")";
+		code="${code}$(mov "(rax)" rax | xd2esc)";
+		code="${code}$(mov "(rax)" rax | xd2esc)";
+	fi;
 	if [ "${type_a}" == "$SYMBOL_TYPE_DYNAMIC" ]; then
 		code="${code}${LEA_V4_rax}$(printEndianValue "$a" "${SIZE_32BITS_4BYTES}")";
 		code="${code}$(mov "(rax)" rax | xd2esc)";
 	fi;
 	if [ "${type_b}" == "$SYMBOL_TYPE_DYNAMIC" ]; then
 		code="${code}${LEA_V4_rcx}$(printEndianValue "$b" "${SIZE_32BITS_4BYTES}")";
-		code="${code}${MOV_rcx_rcx}";
+		code="${code}$(mov "(rcx)" rcx | xd2esc)";
 	fi;
 	code="${code}$(cmp rax rcx | xd2esc)";
 	echo -en "${code}" | base64 -w0;
@@ -2183,7 +2276,7 @@ set_increment()
 	local value_type=$3;
 	local code="";
 	code="${code}${MOV_V4_rdx}$(printEndianValue "${addr}" "${SIZE_32BITS_4BYTES}")";
-	code="${code}${MOV_rdx_rdx}";
+	code="${code}$(mov "(rdx)" rdx | xd2esc)";
 	if [ "$value" == 1 ]; then
 		code="${code}$(inc rdx | xd2esc)";
 	elif [ "$value" -gt -128 -a "$value" -lt 128 ]; then
@@ -2193,7 +2286,7 @@ set_increment()
 	else
 		code="${code}$(xor rsi rsi | xd2esc)";
 		code="${code}${MOV_V4_rsi}$(printEndianValue "${value}" "${SIZE_32BITS_4BYTES}")";
-		code="${code}${MOV_rsi_rsi}";
+		code="${code}$(mov "(rsi)" rsi | xd2esc)";
 		code="${code}${ADD_rsi_rdx}";
 	fi;
 	code="${code}$(mov rdx "$addr" | xd2esc)";
@@ -2262,10 +2355,9 @@ array_add(){
 	local item_value="$5";
 	local code="";
 	if [ "$item_addr" == "" ]; then
-		push_v_stack $item_value;
+		push_imm "$item_value";
 	else
-		mov "$item_addr" rax;
-		push rax;
+		push_imm "$item_addr";
 	fi;
 }
 array_end(){
@@ -2276,7 +2368,7 @@ array_end(){
 	add $(( array_size * 8 -8)) rax;
 	mov rax "$array_addr";
 	# put the array size in the stack
-	push_v_stack $array_size;
+	push_imm $array_size;
 }
 
 sys_geteuid(){
@@ -2311,7 +2403,7 @@ mod10(){
 }
 
 # log do a log operation over a base on rax and put the result in the register passed as arg $2
-# the result is float 
+# the result is float
 log(){
 	# CVTSI2SD Convert Signed Integer to Scalar Double Precision Floating-Point
 	#F20F2AC6 	cvtsi2sd %esi,%xmm0
@@ -2376,7 +2468,7 @@ ilog10(){
 		code="${code}$(mov "(rax)" rax)";
 		#code="${code}$(movsb "(rax)" rax)"
 		# should be the same as: movsbl 0x18(%rsp), %eax
-		# BUT it is not, because mobsb copy string.
+		# BUT it is not, because movsb copy string.
 		#code="${code}${MOVSBL_V4rsp_EAX}$(printEndianValue 24 $SIZE_8BITS_1BYTE)";
 		retcode="$(ret)";
 	fi;
@@ -2396,7 +2488,7 @@ ilog10(){
 	code="${code}${CMP_V4_rdx_8_rax}$(px $power_map_addr $SIZE_32BITS_4BYTES)";
 	code="${code}${SBB_0_EDX}";
 	if [ "$ret_addr" != "" ]; then
-		#code="${code}${MOV_rsi_rsi}";
+		# mov "(rsi)" rsi;
 		#1 0000 480FB6FA 	movzx %dl,%rdi
 		code="${code}${MOVZX_DL_rdi}";
 		#code="${code}$(mov rsi $ret_addr | xd2esc)";
@@ -2415,86 +2507,43 @@ s2i(){
 	local reg_tmp_i="rcx";
 	local reg_tmp_i8="cl";
 	local c="";
-	local init=""
-	# tmp code start
-	#
-	init="${init}$(mov rsp $reg_str_addr)";
-	init="${init}$(add 24 $reg_str_addr)";
-	init="${init}$(mov "(${reg_str_addr})" $reg_str_addr)";	# load the first 8 bytes at the tmp register
-	init="${init}$(mov "(${reg_str_addr})" $reg_str_addr)";	# load the first 8 bytes at the tmp register
-	init="${init}$(mov "(${reg_str_addr})" $reg_str_addr)";	# load the first 8 bytes at the tmp register
-	#
-	# tmp code end
-	init="${init}$(xor $reg_tmp_i $reg_tmp_i)";	# clean up target int reg
-	init="${init}$(xor $reg_tmp_s $reg_tmp_s)";	# clean up target int reg
-	local loop="";
-	loop="${loop}$(mov ${reg_str_8} $reg_tmp_s8)";	# load the first 8 bytes at the tmp register
-	loop="${loop}$(cmp $reg_str_8 0)";
-	local r="";
-	r="${r}$(sub 48 $reg_tmp_s8)";		# convert to int
-	r="${r}$(imul 10 $reg_tmp_i)";		# multiply target by 10;
-	r="${r}$(add $reg_tmp_s $reg_tmp_i)";	# add to target int
-	r="${r}$(shrq 8 $reg_str_addr)";		# get next byte
-	local ss=$(( $(echo $loop$r | xcnt) +4 )); # TODO: why +4 ?
-	r="${r}$(jmp $(( - ss)))";	# jump back to loop start
+	local init="$({
+		# tmp code start
+		#
+		mov rsp $reg_str_addr;
+		add 24 $reg_str_addr;
+		mov "(${reg_str_addr})" $reg_str_addr;	# load the first 8 bytes at the tmp register
+		mov "(${reg_str_addr})" $reg_str_addr;	# load the first 8 bytes at the tmp register
+		mov "(${reg_str_addr})" $reg_str_addr;	# load the first 8 bytes at the tmp register
+		#
+		# tmp code end
+		xor $reg_tmp_i $reg_tmp_i;	# clean up target int reg
+		xor $reg_tmp_s $reg_tmp_s;	# clean up target int reg
+	})";
+	printf "${init}";
+	local loop="$({
+		mov ${reg_str_8} $reg_tmp_s8;	# load the first 8 bytes at the tmp register
+		cmp $reg_str_8 0;
+	})";
+	local r="$({
+		sub 48 $reg_tmp_s8;		# convert to int (- x30)
+		imul 10 $reg_tmp_i;		# multiply target by 10;
+		add $reg_tmp_s $reg_tmp_i;	# add to target int
+		shrq 8 $reg_str_addr;		# get next byte
+	})";
+	r="$r$({
+		local ss=$(( $(xcnt<<<$loop$r) +4 )); # TODO: why +4 ?
+		jmp $(( - ss));	# jump back to loop start
+	})";
 	local rs=$(echo -n "$r"| xcnt);
 	loop="${loop}$(jz $rs)"; 		# if found null the string is over;
 	loop="${loop}${r}";
-	local done="";
-	done="${done}$(mov $reg_tmp_i rdi)";	# record the value at target address
 	#
 	# this should work only for 8 bytes string, more than 8 needs another logic;
 	#
-	code="${code}${init}";
-	code="${code}${loop}";
-	code="${code}${done}";
-	code="${code}$(ret)";
-	echo -n ${code};
-
-	return;
-
-	# if the string is not aligned with 8 bytes,
-	# 	then we need to ensure it is zero on higher bits in last string byte;
-	#
-	# 	how to know if the string is less than 8 bytes?
-	# 		check for byte "00"; we can:
-	c="${c}$(mov rax rdi)";	# mov %rax, %rdi;	# backup the value in another register;
-	local c1="";
-	c1="${c1}$(cmp dil 0)";		# cmp %dil, 0;		# check low 8 bits for 0x00;
-	local c2="";
-	c2="${c2}$(shrq 8 rdi)"; # - shift right 8 bits
-	c2="${c2}$(cmp rcx 7)"; # loop test
-	c2="${c2}$(inc rcx)";
-	local c2s="$(echo -en "$c2" | xcnt)";
-	local jmp_size=2;
-	c1="${c1}$(jz $(( c2s + jmp_size )))"; # if true rcx is the strlen
-	c1="${c1}${c2}"
-	local c1s="$(echo -en "$c1" | xcnt)";
-	c="${c}${c1}";
-	# rcx should be < 8 if small string;
-	c="${c}$(jmp $(( - c1s - jmp_size )))";
-	c="${c}$(mov "(rax)" rax)";
-	c="${c}$(shlq 3 cl)"; # mov 3 bits left == multiply per 8;
-	c="${c}$(mov 64 dl)";
-	c="${c}$(sub cl dl)";
-	c="${c}$(mov dl cl)";
-	c="${c}$(shlq cl rax)";
-	c="${c}$(shrq cl rax)";
-	# 				- shl 64 - %rcx * 8, %rax; # shift left rcx bits on rax;
-	# 				- shr 64 - %rcx * 8, %rax; # shift right
-	# 			or we can:
-	# 				- check the next pointer (rsp+8);
-	# 				- subtract it to the current;
-	# 				- if < 8:
-	# 				- 	use it to shift left
-	# 				- 	use it to sift right to zero bits;
-	# 				BUT IDK if it is portable or useful for other than start call
-	# 	because bsr will fail to detect the correct bit size
-	# 	- we can use the next rsp value (+32) to subtract the current (+24) and find it out
-	# 	- then we can test and 
-	# 	- if less than 8bytes, 
-	# 		- clean up (not rsp) with the exceeding bits
-	echo -en "$c";
+	printf "${loop}";
+	mov $reg_tmp_i rdi;	# record the value at target address
+	ret;
 }
 
 # i2s integer to string
@@ -2553,7 +2602,7 @@ i2s(){
 	#for_cond_code=$({ asc_digit_count < ilog10_v });
 	#for_code="$for_init_code; $for_cond_code; $for_impl_code; $for_step_code";
 
-	# The loop repeats while rax > 0 
+	# The loop repeats while rax > 0
 	# the loop substract from rax the value of the power10 ** rdx
 	local codepart2="$({
 		xor rcx rcx; # clean up digit asc value each interaction

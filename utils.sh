@@ -27,7 +27,7 @@ decode_b64_csv_to_array() {
 	do
 		a[$i]=$(echo -n "$item" | base64 -d);
 		#debug "$i=[${a[$i]}]"
-		let i++; 
+		let i++;
 	done;
 	echo -n "${a[@]}";
 }
@@ -41,3 +41,38 @@ xd2esc(){ sed "s/\(..\)/\\\\x\1/g"; }
 xd2b64(){ xdr | base64 -w0; }
 b64_2esc(){ base64 -d | xxd --ps | xd2esc | tr -d '\n'; }
 b64cnt(){ base64 -d | wc -c; }
+
+is_nbit_uint(){
+	local bits="$1";
+	local v="$2";
+	[ "$(( (v >= 0 && (v < (1 << bits)) ) ))" -eq 1 ];
+}
+is_nbit_sint(){
+	local bits="$1";
+	local v="$2";
+	[ "$(( (v >= - ( 1 << (bits -1) )) && (v < ( 1 << (bits -1) ) ) ))" -eq 1 ];
+}
+is_8bit_uint(){
+	is_nbit_uint 8 "$1";
+}
+is_8bit_sint(){
+	is_nbit_sint 8 "$1";
+}
+is_16bit_uint(){
+	is_nbit_uint 16 "$1";
+}
+is_16bit_sint(){
+	is_nbit_sint 16 "$1";
+}
+is_32bit_uint(){
+	is_nbit_uint 32 "$1";
+}
+is_32bit_sint(){
+	is_nbit_sint 32 "$1";
+}
+is_64bit_uint(){
+	is_nbit_uint 64 "$1";
+}
+is_64bit_sint(){
+	is_nbit_sint 64 "$1";
+}
