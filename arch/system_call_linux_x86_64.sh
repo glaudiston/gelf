@@ -2264,6 +2264,7 @@ compare()
 	if [ "${type_b}" == "$SYMBOL_TYPE_DYNAMIC" ]; then
 		code="${code}${LEA_V4_rcx}$(printEndianValue "$b" "${SIZE_32BITS_4BYTES}")";
 		code="${code}$(mov "(rcx)" rcx | xd2esc)";
+		code="${code}$(mov "(rcx)" rcx | xd2esc)";
 	fi;
 	code="${code}$(cmp rax rcx | xd2esc)";
 	echo -en "${code}" | base64 -w0;
