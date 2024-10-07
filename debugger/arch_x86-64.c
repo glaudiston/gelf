@@ -31,9 +31,9 @@ void sprintx(unsigned char *buff, long unsigned v){
 }
 void sprintx4(unsigned char *buff, unsigned v){
 	sprintf(buff, "%02x%02x%02x%02x",
-		(unsigned char)(v << 24 >> 24), 
-		(unsigned char)(v << 16 >> 24), 
-		(unsigned char)(v << 8 >> 24), 
+		(unsigned char)(v << 24 >> 24),
+		(unsigned char)(v << 16 >> 24),
+		(unsigned char)(v << 8 >> 24),
 		(unsigned char)(v << 0 >> 24));
 }
 void sprintx_le(unsigned char *buff, long unsigned v){
@@ -51,7 +51,7 @@ void sprintx_le(unsigned char *buff, long unsigned v){
 
 void get_instruction_bytes(
 		pid_t pid,
-		unsigned long addr, 
+		unsigned long addr,
 		unsigned char * target){
 	long int src;
 	int i=0;
@@ -128,9 +128,9 @@ const char **flags = (const char *[]){
 };
 
 const char **eflags = (const char*[]){
-	"rf", "vm", "ac", "vif", "vip", "id", 
+	"rf", "vm", "ac", "vif", "vip", "id",
 	"reserved", "reserved", "reserved", "reserved",
-	"reserved", "reserved", "reserved", "reserved", "reserved", 
+	"reserved", "reserved", "reserved", "reserved", "reserved",
 	"ai"
 };
 const char **rflags = (const char*[]){
@@ -215,7 +215,7 @@ enum e_ia_mode{
 				// * Only allows access to 1 megabyte of RAM, with some of it being reserved for the BIOS and the frame buffer.
 				// * UEFI already setup protected or long mode depending on whether it's a 32 or 64 bit system.
 	MODE_UNREAL,	// "Unreal mode"
-					// consists of breaking the 64KiB limit of real mode segments (while retaining 16-bit instructions and the segment * 16 + offset addressing mode) by tweaking the descriptor caches. 
+					// consists of breaking the 64KiB limit of real mode segments (while retaining 16-bit instructions and the segment * 16 + offset addressing mode) by tweaking the descriptor caches.
 	MODE_PROTECTED,	// Aka "IA-32 Mode"
 					// Normal mode for userland(allows virtual memory and multitask)
 					//		* Programs are "protected" from overwriting one another in memory
@@ -226,7 +226,7 @@ enum e_ia_mode{
 					// * Support for either 4GB or 64GB of physical addresses depending on whether the Physical Address Extension (PAE) is enabled, and page-specific memory protections.
 	MODE_VIRTUAL_8086,	// aka "virtual real mode"
 						// is a protected mode that allow access BIOS functions
-						// Real mode applications could run in protected mode thanks to virtual mode which emulated real mode in 32 bit operating systems, but this mode is not available in long mode so you can no longer run any real mode code inside a 64 bit operating system. 
+						// Real mode applications could run in protected mode thanks to virtual mode which emulated real mode in 32 bit operating systems, but this mode is not available in long mode so you can no longer run any real mode code inside a 64 bit operating system.
 						// Was created to allow legacy programs(like MS-DOS target) to run in protected mode.
 						// Funny fact: That "Turbo" buttom on old PC's was set to activate this mode(Turbo 8088); which means the processor has the advantage of speed in running any 16-bit programs; So "turbo" make the systems restricted to 1MB.
 						// Windows 3.x was the last 16-bit OS
@@ -334,7 +334,9 @@ void get_modrm_regopcode(void * instr_ptr, char *s_operand){
 	struct instruction *instr = instr_ptr;
 	struct prefix *prefix = get_rex_prefix(*instr);
 	unsigned char W = (prefix && prefix->rex.W) << 4;
-	sprintf(s_operand, r64[ W | instr->modrm.reg_opcode]);
+	unsigned char R = (prefix && prefix->rex.R) << 3;
+	sprintf(s_operand, r64[ W | R | instr->modrm.reg_opcode]);
+	// printf("reg operand: %s\n", s_operand);
 	return;
 }
 void get_modrm_r8(struct instruction instr, char *r, unsigned char *bytes){
@@ -356,8 +358,8 @@ void get_modrm_rm(void * instr_ptr, char *s_operand){
 	struct instruction *instr = instr_ptr;
 	struct prefix *prefix = get_rex_prefix(*instr);
 	unsigned char W = (prefix && prefix->rex.W) << 4;
-	unsigned char R = (prefix && prefix->rex.R) << 3;
-	sprintf( s_operand, instr->modrm.mod == 3 ?"%s" : "[%s]",r64[W|R|instr->modrm.rm]);
+	unsigned char B = (prefix && prefix->rex.B) << 3;
+	sprintf( s_operand, instr->modrm.mod == 3 ?"%s" : "[%s]",r64[W|B|instr->modrm.rm]);
 	char base[100];
 	if (instr->modrm.mod == 0){
 		switch (instr->modrm.rm & 7){
@@ -395,6 +397,7 @@ void get_modrm_rm(void * instr_ptr, char *s_operand){
 			}
 		}
 	}
+	//printf("modrm rm operand: %s\n", s_operand);
 }
 
 long long unsigned int get_reg_val(char *r)
@@ -404,7 +407,7 @@ long long unsigned int get_reg_val(char *r)
 	}
 }
 
-/* multiple one byte operations: 
+/* multiple one byte operations:
 // 	00-3f(dword [32b reg]);
 // 		add(00-07);
 // 		or(08-0F);
@@ -461,7 +464,7 @@ int multiple_one_byte_operation(instruction_info *instr_info, int instr_size, st
 			sprintf(instr_info->asm_code, "%s%s %s%s%s, %s", get_color(op_s), op_s, get_color("int"), s_operand_1, get_color(""), s_operand_2);
 			break;
 	}
-	sprintf(instr_info->comment, "before: 0x%x", get_reg_value(s_operand_2));
+	sprintf(instr_info->comment, "before: 0x%x", get_reg_value(s_operand_1));
 	return instr_size;
 }
 
@@ -479,7 +482,7 @@ const char **detect_operand_a()
 	return rt;
 }
 
-const char *operation_byte[]={ 
+const char *operation_byte[]={
 	"add to 8bit register",
 	"add",
 	"unknown",
@@ -790,11 +793,11 @@ struct instruction_spec *get_instr_spec_n(unsigned char *bytes, enum e_opcode_si
 {
 	unsigned char search_key[2];
 	search_key[0] = bytes[0] & (
-			opcode_size == opcode_size_5_bits ? 0xf8 : 
+			opcode_size == opcode_size_5_bits ? 0xf8 :
 			0xff);
 	search_key[1] = bytes[1] & (
-			opcode_size == opcode_size_13_bits ? 0xf8 : 
-			opcode_size == opcode_size_12_bits ? 0xf0 : 
+			opcode_size == opcode_size_13_bits ? 0xf8 :
+			opcode_size == opcode_size_12_bits ? 0xf0 :
 			0xff);
 	int key_size = get_opcode_bytesize(opcode_size);
 	return map_get(&map_opcode, search_key, key_size);
@@ -870,7 +873,7 @@ struct sib parse_sib(struct instruction instr, unsigned char * bytes){
 	if (!instr.opcode.has_modrm){ // if no modrm no sib
 		return (struct sib){};
 	}
-	struct sib sib = 
+	struct sib sib =
 	{
 		.type = SIB_TYPE_NONE,
 		.byte = 0,
@@ -911,7 +914,7 @@ struct sib parse_sib(struct instruction instr, unsigned char * bytes){
 	}
 
 	//TODO set index and base fields
-	
+
 	if(instr.modrm.rm == 4){
 		sib.scale = pow(2, ((sib.byte >> 6) & 3));
 		sib.index = W | X | ((sib.byte & 0x38) >> 3 );
@@ -938,7 +941,7 @@ struct sib parse_sib(struct instruction instr, unsigned char * bytes){
 }
 
 struct displacement parse_displacement(struct instruction_spec *instr_spec, struct instruction instr, int instr_offset){
-	struct displacement d = 
+	struct displacement d =
 	{
 		.type = DISPLACEMENT_TYPE_NONE
 	};
@@ -950,7 +953,7 @@ struct displacement parse_displacement(struct instruction_spec *instr_spec, stru
 	if (is_16bit_addr_mode(instr)){
 		// In 16-bit addressing mode (either BITS 16 with no 67 prefix, or BITS 32 with a 67 prefix), the SIB byte is never used. The general rules for mod and r/m (there is an exception, given below) are:
 	}
-	// 
+	//
 	// The mod field gives the length of the displacement field: 0 means no displacement, 1 means one byte, and 2 means two bytes.
 	// The r/m field encodes the combination of registers to be added to the displacement to give the accessed address: 0 means BX+SI, 1 means BX+DI, 2 means BP+SI, 3 means BP+DI, 4 means SI only, 5 means DI only, 6 means BP only, and 7 means BX only.
 	switch (instr.modrm.mod){
@@ -1021,6 +1024,7 @@ struct immediate parse_immediate(struct instruction_spec *instr_spec, struct ins
 
 void default_opcode_fn(struct opcode_fn_args *args)
 {
+	//printf("ds=%08x\n",regs.ds);
 	unsigned char s_operands[2][50];
 	instruction_info *rv = args->rv;
 	unsigned char *s_asm_instruction = args->instr_spec->s_asm_instruction;
@@ -1148,14 +1152,14 @@ void multiple_operations(char * colored_hexdump, char * asm_code, unsigned char 
 	struct prefix *prefix = get_rex_prefix(instr);
 	if (prefix){
 		rta = prefix->rex.byte & REX_B ? r64b : r64a;
-		rtb = prefix->rex.byte & REX_X ? r64b : r64a; 
+		rtb = prefix->rex.byte & REX_X ? r64b : r64a;
 		rt = rta;
 	}
 	instr.sib=parse_sib(instr, &bytes[instr_pos]);
 	if (instr.modrm.mod == 0){
 		if (instr.sib.type == SIB_TYPE_NONE){
 			instr.immediate.value.imm8=bytes[++instr_pos];
-			sprintf(asm_code,"%s %s%i%s, [%s]", operations[instr.modrm.reg_opcode], get_color("int"), 
+			sprintf(asm_code,"%s %s%i%s, [%s]", operations[instr.modrm.reg_opcode], get_color("int"),
 					instr.immediate.value.imm8, get_color(""),
 					rt[instr.modrm.rm]);
 			return;
@@ -1172,7 +1176,7 @@ void multiple_operations(char * colored_hexdump, char * asm_code, unsigned char 
 			}
 			if (instr.modrm.rm == 5){
 				instr.immediate.value.imm32=*(unsigned int*)&bytes[++instr_pos];
-				sprintf(asm_code,"%s %s%i%s, [rel %s]", operations[instr.modrm.reg_opcode], 
+				sprintf(asm_code,"%s %s%i%s, [rel %s]", operations[instr.modrm.reg_opcode],
 						get_color("int"),instr.immediate.value.imm32, get_color(""),
 						rta[instr.sib.index]);
 				return;
@@ -1182,7 +1186,7 @@ void multiple_operations(char * colored_hexdump, char * asm_code, unsigned char 
 	if (instr.modrm.mod == 2){
 		if (instr.modrm.rm == 5){
 			instr.immediate.value.imm32=*(unsigned int*)&bytes[++instr_pos];
-			sprintf(asm_code,"%s %s%i%s, [rel %s]", operations[instr.modrm.reg_opcode], 
+			sprintf(asm_code,"%s %s%i%s, [rel %s]", operations[instr.modrm.reg_opcode],
 					get_color("int"),instr.immediate.value.imm32, get_color(""),
 					rta[instr.sib.index]);
 			return;
@@ -1192,7 +1196,7 @@ void multiple_operations(char * colored_hexdump, char * asm_code, unsigned char 
 		rt=get_reg_map_WR(instr);
 		struct asm_operation *op=&operations[instr.modrm.reg_opcode];
 
-		sprintf(asm_code, "%s%s%s",  
+		sprintf(asm_code, "%s%s%s",
 				get_color(op->asm_code), op->asm_code, get_color(""));
 
 		if (op->argc > 0) {
@@ -1208,27 +1212,7 @@ void multiple_operations(char * colored_hexdump, char * asm_code, unsigned char 
 		}
 	}
 }
-void x01(struct opcode_fn_args *args){
-	instruction_info *rv = args->rv;
-	unsigned char *s_asm_instruction = args->instr_spec->s_asm_instruction;
-	unsigned char s_operand_1[50];
-	unsigned char s_operand_2[50];
-	get_modrm_rm(&instr, (char*)&s_operand_1);
-	get_modrm_regopcode(&instr, (char*)&s_operand_2);
-	sprintf(rv->asm_code, "%s%s%s %s%s, %s", get_color(s_asm_instruction), s_asm_instruction, get_color(""), s_operand_1, get_color(""), s_operand_2);
-}
 
-void xe8(struct opcode_fn_args *args)
-{
-	// case 0xe8:	// call
-	sprintf(args->rv->asm_code, "%s .%s%i%s", 
-			args->instr_spec->s_asm_instruction,
-			get_color("int"), 
-			(signed int)instr.immediate.value.imm32,
-			get_color(""));
-	sprintf(args->rv->comment,"0x%x", 
-			regs.rip + args->rv->instr_size + instr.displacement.value.s4B);
-}
 void xeb(struct opcode_fn_args *args)
 {
 	instruction_info *rv = args->rv;
@@ -1578,13 +1562,13 @@ void x0f(struct opcode_fn_args *args)
 00000000  0F8401020304      jz near 0x4030207
 */
 	if ( instr.modrm.byte == 0x84 ){
-		sprintf(rv->asm_code,"%s %s%i%s", "jz near", 
+		sprintf(rv->asm_code,"%s %s%i%s", "jz near",
 			get_color("int"),instr.immediate.value.imm32, get_color(""));
 		char buf[30];
 		unsigned char *b4 = (char*)&instr.immediate.value.imm32;
 		sprintf(rv->colored_hexdump, "%s%s%02x%02x%02x%02x%s", rv->colored_hexdump, get_color("int")
 			, b4[0]
-			, b4[1] 
+			, b4[1]
 			, b4[2]
 			, b4[3]
 			, get_color(""));
@@ -1783,8 +1767,8 @@ instruction_info parse_next_instruction(pid_t pid, struct user_regs_struct regs)
 			append_hexdump(rv.hexdump, instr.opcode.bytes,1);
 			sprintf(rv.colored_hexdump,
 					"%s%s%02x%s",
-					rv.colored_hexdump, 
-					get_color("opcode"), 
+					rv.colored_hexdump,
+					get_color("opcode"),
 					instr.opcode.bytes[0],
 					get_color(""));
 			break;
@@ -1794,8 +1778,8 @@ instruction_info parse_next_instruction(pid_t pid, struct user_regs_struct regs)
 			//append_hexdump(rv.colored_hexdump, instr.opcode.bytes, 2);
 			sprintf(rv.colored_hexdump,
 					"%s%s%02x%02x%s",
-					rv.colored_hexdump, 
-					get_color("opcode"), 
+					rv.colored_hexdump,
+					get_color("opcode"),
 					instr.opcode.bytes[0],
 					instr.opcode.bytes[1],
 					get_color(""));
@@ -1811,15 +1795,15 @@ instruction_info parse_next_instruction(pid_t pid, struct user_regs_struct regs)
 	instr.sib=parse_sib(instr, &bytes[rv.instr_size]);
 	unsigned char c[9];
 	if (instr.sib.byte != 0){
-		/*printf("sib is: s=[%02x] i[%s] b[%s], displ=[%lx]\n", 
+		/*printf("sib is: s=[%02x] i[%s] b[%s], displ=[%lx]\n",
 			instr.sib.scale,
 			r64[instr.sib.index],
 			r64[instr.sib.base],
 			instr.sib.displacement);
 		*/
 		append_hexdump(rv.hexdump, &instr.sib.byte, 1);
-		sprintf(rv.colored_hexdump, "%s%s%02x%s", 
-				rv.colored_hexdump, 
+		sprintf(rv.colored_hexdump, "%s%s%02x%s",
+				rv.colored_hexdump,
 				get_color("sib"),
 				instr.sib.byte,
 				get_color(""));
@@ -1836,9 +1820,9 @@ instruction_info parse_next_instruction(pid_t pid, struct user_regs_struct regs)
 		case DISPLACEMENT_TYPE_IMM32:
 			sprintx4(c, instr.displacement.value.s4B);
 			append_hexdump(rv.hexdump, (unsigned char *)&instr.displacement.value.s4B, 4);
-			sprintf(rv.colored_hexdump, "%s%s%s%s", 
-					rv.colored_hexdump, 
-					get_color("displacement"), 
+			sprintf(rv.colored_hexdump, "%s%s%s%s",
+					rv.colored_hexdump,
+					get_color("displacement"),
 					c,
 					get_color(""));
 			rv.instr_size += 4;
@@ -1858,8 +1842,8 @@ instruction_info parse_next_instruction(pid_t pid, struct user_regs_struct regs)
 			instr.immediate.value.imm32 = ptrace(PTRACE_PEEKTEXT, pid, regs.rip+rv.instr_size, 0);
 			sprintx4(c, instr.immediate.value.imm32);
 			append_hexdump(rv.hexdump, (unsigned char*)&instr.immediate.value.imm32, 4);
-			sprintf(rv.colored_hexdump, "%s%s%s%s", 
-					rv.colored_hexdump, get_color("imm32"), 
+			sprintf(rv.colored_hexdump, "%s%s%s%s",
+					rv.colored_hexdump, get_color("imm32"),
 					c,
 					get_color(""));
 			rv.instr_size += 4;
@@ -1934,7 +1918,7 @@ instruction_info parse_next_instruction(pid_t pid, struct user_regs_struct regs)
 		{
 			signed char v = bytes[rv.instr_size++];
 			sprintf(rv.asm_code, "jg .%s%i%s", get_color("int"), v, get_color(""));
-			sprintf(rv.comment, "0x%x:%s", regs.rip + rv.instr_size + v, 
+			sprintf(rv.comment, "0x%x:%s", regs.rip + rv.instr_size + v,
 					sign_flag == overflow_flag && zero_flag == 0 ? "true" : "false");
 			break;
 		}
@@ -1955,7 +1939,7 @@ instruction_info parse_next_instruction(pid_t pid, struct user_regs_struct regs)
 		}
 		case 0xc0:
 		{
-			// multiple operation byte -> byte 
+			// multiple operation byte -> byte
 		}
 		case 0xc1:
 		{
@@ -2003,21 +1987,6 @@ instruction_info parse_next_instruction(pid_t pid, struct user_regs_struct regs)
 				}
 			};
 			multiple_operations(rv.colored_hexdump, rv.asm_code, &bytes[rv.instr_size-1], asm_ops);
-			break;
-		}
-		case 0xe9:	// jmp
-		{
-			sprintf(rv.colored_hexdump, "%s%s%02x%s", rv.colored_hexdump, get_color("jmp"), bytes[rv.instr_size-1], get_color(""));
-			memcpy(&instr.immediate.value.imm32, &bytes[rv.instr_size], 4);
-			sprintf(rv.colored_hexdump, "%s%s%02x%02x%02x%02x%s", rv.colored_hexdump, get_color("int")
-					, bytes[rv.instr_size+0]
-					, bytes[rv.instr_size+1]
-					, bytes[rv.instr_size+2]
-					, bytes[rv.instr_size+3]
-					, get_color(""));
-			rv.instr_size += 4;
-			sprintf(rv.asm_code, "%sjmp%s .%s%i%s", get_color("jmp"), get_color(""), get_color("int"), (signed char)instr.immediate.value.imm8, get_color(""));
-			sprintf(rv.comment, "0x%x", regs.rip + rv.instr_size + instr.immediate.value.imm8);
 			break;
 		}
 	}
@@ -2154,16 +2123,16 @@ void explain_instr(struct instruction instr)
 	char w[50], r[50], x[50], b[50];
 	struct prefix *rex_prefix=get_rex_prefix(instr);
 	if (rex_prefix){
-		sprintf(w, "%sW%s%s", 
+		sprintf(w, "%sW%s%s",
 			rex_prefix->rex.W ? get_color("REX.W") : get_color("gray"),
 			rex_prefix->rex.W ? "¹" : "°", get_color(""));
-		sprintf(r, "%sR%s%s", 
+		sprintf(r, "%sR%s%s",
 			rex_prefix->rex.R ? get_color("REX.R") : get_color("gray"),
 			rex_prefix->rex.R ? "¹" : "°", get_color(""));
-		sprintf(x, "%sX%s%s", 
+		sprintf(x, "%sX%s%s",
 			rex_prefix->rex.X ? get_color("REX.X") : get_color("gray"),
 			rex_prefix->rex.X ? "¹" : "°", get_color(""));
-		sprintf(b, "%sB%s%s", 
+		sprintf(b, "%sB%s%s",
 			rex_prefix->rex.B ? get_color("REX.B") : get_color("gray"),
 		rex_prefix->rex.B ? "¹" : "°", get_color(""));
 		printf("REX: %02x: %s%s%s%s\n", rex_prefix->rex.byte,w,r,x,b);
@@ -2174,15 +2143,15 @@ void explain_instr(struct instruction instr)
 	//printf("opcode:\t%02x: %s\n", instr.opcode, (char*)operation_byte[instr.opcode]);
 	printf("ModR/M: %02x\n", instr.modrm.byte);
 	printf("\tmod=%i;\n", instr.modrm.mod);
-	printf("\treg_opcode=%i: %s%i(%s)\n", 
-			instr.modrm.reg_opcode, 
-			R ? "REX.R + ": "", 
-			R ? (instr.modrm.reg_opcode & 7) : 0, 
+	printf("\treg_opcode=%i: %s%i(%s)\n",
+			instr.modrm.reg_opcode,
+			R ? "REX.R + ": "",
+			R ? (instr.modrm.reg_opcode & 7) : 0,
 			r64[W | instr.modrm.reg_opcode]);
-	printf("\trm=%i: %s%i(%s)\n", 
-			instr.modrm.rm, 
-			B ? "REX.B + ": "", 
-			B ? (instr.modrm.rm & 7) : 0, 
+	printf("\trm=%i: %s%i(%s)\n",
+			instr.modrm.rm,
+			B ? "REX.B + ": "",
+			B ? (instr.modrm.rm & 7) : 0,
 			r64[W | instr.modrm.rm]);
 	if (instr.sib.type != SIB_TYPE_NONE){
 		printf("sib: %02x\n", instr.sib.byte);
@@ -2192,12 +2161,12 @@ void explain_instr(struct instruction instr)
 		printf("\tindex: %s\n", r64[instr.sib.index]);
 	}
 	if (instr.displacement.type != DISPLACEMENT_TYPE_NONE){
-		printf("displacement: 0x%lx\n", 
+		printf("displacement: 0x%lx\n",
 			instr.displacement.value
 		);
 	}
 	if (instr.immediate.type != IMM_NONE){
-		printf("immediate: 0x%lx\n", 
+		printf("immediate: 0x%lx\n",
 			instr.immediate.value.imm32
 		);
 	}
@@ -2278,7 +2247,7 @@ void get_current_address(char *s_curr_addr, struct user_regs_struct *regs){
 	sprintf(s_curr_addr, "%llx", regs->rip);
 }
 
-#define instr_spec_list_count 25
+#define instr_spec_list_count 28
 struct instruction_spec instr_spec_list[instr_spec_list_count] = {
 	{
 		.s_asm_instruction = "add",
@@ -2290,7 +2259,7 @@ struct instruction_spec instr_spec_list[instr_spec_list_count] = {
 			.has_modrm = MANDATORY,
 		},
 		.has_sib = OPTIONAL,
-		.fn_ptr = x01,
+		.fn_ptr = NULL,
 		.operands = {
 			{
 			.mode = RW,
@@ -2415,12 +2384,12 @@ struct instruction_spec instr_spec_list[instr_spec_list_count] = {
 		.s_asm_instruction = "CMP",
 		.opcode = {
 			.size = opcode_size_8_bits,
-			.bytes = { 0x3b },
+			.bytes = { 0x39 },
 			.has_modrm = MANDATORY,
 		},
 		.operands = {
-			{.type = operand_modrm_reg, .mode = R},
 			{.type = operand_modrm_rm, .mode = R},
+			{.type = operand_modrm_reg, .mode = R},
 			{.type = operand_none},
 		},
 	},
@@ -2435,6 +2404,16 @@ struct instruction_spec instr_spec_list[instr_spec_list_count] = {
 		.has_sib = NO,
 		.immediate = IMM_NONE,
 		.fn_ptr = x50,
+	},
+	{
+		.s_asm_instruction = "push",
+		.opcode = {
+			.bytes = { 0x6a },
+			.size = opcode_size_8_bits,
+			.has_modrm = NO,
+		},
+		.operands = {{.type = operand_imm8}},
+		.immediate = IMM8,
 	},
 	{
 		.s_asm_opcode = "pop",
@@ -2555,6 +2534,20 @@ struct instruction_spec instr_spec_list[instr_spec_list_count] = {
 		},
 	},
 	{
+		.s_asm_instruction = "lea",
+		.opcode = {
+			.bytes = { 0x8d },
+			.size = opcode_size_8_bits,
+			.has_modrm = MANDATORY,
+		},
+		.has_sib = OPTIONAL,
+		.operands = {
+			{.type = operand_modrm_reg, .mode = W},
+			{.type = operand_modrm_rm, .mode = R},
+			{.type = operand_none}
+		},
+	},
+	{
 		.s_asm_instruction = "movsb",
 		.opcode = {
 			.bytes = { 0xa4 },
@@ -2604,19 +2597,32 @@ struct instruction_spec instr_spec_list[instr_spec_list_count] = {
 		.s_asm_instruction="call",
 		.s_asm_fmt = "call .%i",
 		.opcode = {
-			.bytes = 0xe8,
+			.bytes = {0xe8},
 			.size = opcode_size_8_bits,
 			.has_modrm = NO,
 		},
+		.operands = { {.type = operand_imm8, .mode = R} },
 		.has_sib = NO,
 		.immediate = IMM32,
-		.fn_ptr = xe8,
+		.fn_ptr = NULL,
+	},
+	{
+		.s_asm_instruction="jmp",
+		.opcode = {
+			.bytes = {0xe9},
+			.size = opcode_size_8_bits,
+			.has_modrm = NO,
+		},
+		.operands = { {.type = operand_imm_8_16_32_64, .mode = R} },
+		.has_sib = NO,
+		.immediate = IMM32,
+		.fn_ptr = NULL,
 	},
 	{
 		.s_asm_opcode="jmp",
 		.s_asm_fmt = "jmp .%i",
 		.opcode = {
-			.bytes = 0xeb,
+			.bytes = {0xeb},
 			.size = opcode_size_8_bits,
 			.has_modrm = NO,
 		},
