@@ -1245,7 +1245,7 @@ void x74(struct opcode_fn_args *args)
 	signed char v = instr.immediate.value.imm8;
 	int zero_flag = (regs.eflags & (1 << ZF));
 	sprintf(rv->asm_code, "jz .%s%i%s", get_color("int"), v, get_color(""));
-	sprintf(rv->comment, "0x%x:%s", regs.rip + rv->instr_size + v, zero_flag ? "true" : "false");
+	sprintf(rv->comment, "0x%x:%s", regs.rip + rv->instr_size + v, zero_flag ? "zf(true)" : "zf(false)");
 }
 
 void x50(struct opcode_fn_args *args)
@@ -1380,7 +1380,7 @@ void x0f80(struct opcode_fn_args *args)
 		instr.immediate.value.imm32);
 	sprintf(args->rv->comment, "0x%x: %s",
 			regs.rip + args->rv->instr_size + instr.immediate.value.imm32,
-			zero_flag ? "false": "true"
+			zero_flag ? "zf(true)": "zf(false)"
 	);
 }
 void x31(struct opcode_fn_args *args)
