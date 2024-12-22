@@ -124,7 +124,7 @@ test_exec_capture_stdout(){
 	compile_test <<EOF
 :	cmd	/usr/bin/whoami
 :	v	!	cmd
-:	s	command output: 
+:	s	command output:
 :	t	s	v
 :	stdout	1
 !	sys_write	stdout	t
@@ -207,10 +207,12 @@ test_concat_stat_dyn_symbols(){
 :	d	0
 !	sys_exit	d
 EOF
-	o=$(run_test "abc" "def")
-	expect $? 0 "xptoabcdef" "$o"
-	o=$(run_test "abc" "def" "ghi")
-	expect $? 0 "xptoabcdef" "$o"
+    {
+    	o=$(run_test "abc" "def")
+    	expect $? 0 "xptoabcdef" "$o"
+    	o=$(run_test "abc" "def" "ghi")
+    	expect $? 0 "xptoabcdef" "$o"
+	} | tr '\n' '; '
 }
 
 test_concat_dyn_stat_symbols(){
@@ -297,7 +299,7 @@ test_check_var_is_empty(){
 	!	sys_exit	suc
 :	}
 :	value	@1
-:	empty	
+:	empty
 :	test	?	value	empty
 !	test	?=	ok
 :	err	2
@@ -387,10 +389,10 @@ test_fibonacci_generate(){
 	compile_test <<EOF
 :	stdout	1
 :	fib	{
-	#	TODO: this is wrong because 
+	#	TODO: this is wrong because
 	#	i using direct memory addr in a recursive function
 	#	it should trust only on stack memory
-	# 
+	#
 	#	prev => (rsp+16) => 0x103c3
 	:	prev	@1
 	#	last => (rsp+24) => 0x103cb
@@ -434,7 +436,7 @@ test_s2i(){
 :	n	!	na
 !	sys_exit	n
 EOF
-	n=$(( RANDOM % 126 ));
+	n=$(( RANDOM % 128 ));
 	{
 		o=$(run_test 0);
 		expect $? 0;

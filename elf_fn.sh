@@ -19,7 +19,7 @@ ARCH=${ARCH:=x86_64}
 . utils.sh
 . logger.sh
 . endianness.sh
-. ./arch/system_call_linux_${ARCH}.sh
+. ./arch/${ARCH}/bytecode.sh
 . snippet_parser.sh
 
 get_program_headers_count()
@@ -1002,7 +1002,7 @@ define_array_variable(){
 	do
 		local symbol_name=$(echo -n "${code_line_elements[$i]}");
 		local symbol_data=$(get_b64_symbol_value "${symbol_name}" "${SNIPPETS}" )
-		local symbol_addr="$(echo "${symbol_data}" | cut -d, -f${B64_SYMBOL_VALUE_RETURN_ADDR})";
+		local symbol_addr=$(echo "${symbol_data}" | cut -d, -f${B64_SYMBOL_VALUE_RETURN_ADDR});
 		local symbol_type=$(echo "${symbol_data}" | cut -d, -f${B64_SYMBOL_VALUE_RETURN_TYPE});
 		local symbol_value=$(echo "$symbol_data" | cut -d, -f${B64_SYMBOL_VALUE_RETURN_OUT} |base64 -d);
 		if [ "${symbol_type}" == $SYMBOL_TYPE_PROCEDURE ]; then
@@ -1010,7 +1010,7 @@ define_array_variable(){
 			local jump_size=2; # instruction length of the jump over before the code
 			symbol_addr=$(( symbol_addr + jump_size ));
 		fi;
-		instr_bytes="${instr_bytes}$(array_add "${dyn_data_offset}" "$((i-deep-1))" "${symbol_addr}" "$symbol_type" "$symbol_value"|xd2b64)";
+		instr_bytes="${instr_bytes}$(array_add "${dyn_data_offset}" "$((i-deep-1))" "${symbol_addr}" "${symbol_type}" "${symbol_value}" | xd2b64)";
 	done;
 	local array_size=$(( ${#code_line_elements[@]} - (deep + 1) -1));
 	instr_bytes="${instr_bytes}$(array_end "${dyn_data_offset}" "$array_size" | xd2b64)";

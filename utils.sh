@@ -1,11 +1,5 @@
 #!/bin/bash
 
-is_valid_number()
-{
-	[ "$1" -eq "$1" ] 2>/dev/null;
-	return $?
-}
-
 encode_array_to_b64_csv() {
 	local IFS=$'\t'
 	local array=($@)
@@ -42,15 +36,19 @@ xd2b64(){ xdr | base64 -w0; }
 b64_2esc(){ base64 -d | xxd --ps | xd2esc | tr -d '\n'; }
 b64cnt(){ base64 -d | wc -c; }
 
+is_valid_number()
+{
+	[ "$1" -eq "$1" ] 2>/dev/null;
+}
 is_nbit_uint(){
 	local bits="$1";
 	local v="$2";
-	[ "$(( (v >= 0 && (v < (1 << bits)) ) ))" -eq 1 ];
+	is_valid_number "$v" && [ $(( (v >= 0 && (v < (1 << bits)) ) )) -eq 1 ];
 }
 is_nbit_sint(){
 	local bits="$1";
 	local v="$2";
-	[ "$(( (v >= - ( 1 << (bits -1) )) && (v < ( 1 << (bits -1) ) ) ))" -eq 1 ];
+	is_valid_number "$v" && [ $(( (v >= - ( 1 << (bits -1) )) && (v < ( 1 << (bits -1) ) ) )) -eq 1 ];
 }
 is_8bit_uint(){
 	is_nbit_uint 8 "$1";
@@ -75,4 +73,7 @@ is_64bit_uint(){
 }
 is_64bit_sint(){
 	is_nbit_sint 64 "$1";
+}
+is_addr_ptr(){
+    [[ "$1" =~ ^\(.*\)$ ]];
 }

@@ -4,6 +4,9 @@ This started as a playground for elf related stuff. I created a bash script to g
 
 In early tests it did work on native linux `x86_64` and in a `aarch64`(osx, using ubuntu within docker container). Currently it is only working on `x86_64`. I pretend to update the `aarch64` latter. But first I want to bootstrap it in `x86_64` without using bash anymore.
 
+If you want to play with it clone the repo and try the `make check`. it will run the tests defined in `tests.sh` and output the binary and temp build files on the `test` directory.
+
+
 ELF
 ===
 Executable and Linkable Format(ELF) are the format used in all linux executables and libraries.
@@ -70,7 +73,7 @@ ASM
 ===
 To discover bytecode one good way is create an asm file with the instruction, compile it and use ld with the --oformat binary:
 ```
-echo "mov %r8, %r10" | as -al -o /dev/null - 
+echo "mov %r8, %r10" | as -al -o /dev/null -
 GAS LISTING  			page 1
 
 
