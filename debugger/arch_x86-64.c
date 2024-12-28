@@ -152,6 +152,9 @@ const char **all_registers_print_format = (const char*[]){ "%lu", "%lu", "%u", "
 #define BITS_64 unsigned long long
 unsigned long get_reg_value(const char * r)
 {
+	if (strcmp(r, "rip") == 0) {
+		return regs.rip;
+	}
 	int i,j;
 	for (i=0;i<9;i++){
 		const char **rt=*all_registers[i];
@@ -482,265 +485,6 @@ const char **detect_operand_a()
 	return rt;
 }
 
-const char *operation_byte[]={
-	"add to 8bit register",
-	"add",
-	"unknown",
-	"unknown",
-	"unknown",
-	"unknown",
-	"unknown",
-	"unknown",
-	"unknown",
-	"unknown",
-	"unknown",
-	"unknown",
-	"unknown",
-	"unknown",
-	"unknown",
-	"multiple operations",
-	"unknown",
-	"unknown",
-	"unknown",
-	"unknown",
-	"unknown",
-	"unknown",
-	"unknown",
-	"unknown",
-	"unknown",
-	"unknown",
-	"unknown",
-	"unknown",
-	"unknown",
-	"unknown",
-	"unknown",
-	"unknown",
-	"unknown",
-	"unknown",
-	"unknown",
-	"unknown",
-	"unknown",
-	"unknown",
-	"unknown",
-	"unknown",
-	"unknown",
-	"unknown",
-	"unknown",
-	"unknown",
-	"unknown",
-	"unknown",
-	"unknown",
-	"unknown",
-	"unknown",
-	"xor",
-	"unknown",
-	"unknown",
-	"unknown",
-	"unknown",
-	"unknown",
-	"unknown",
-	"unknown",
-	"unknown",
-	"unknown",
-	"unknown",
-	"cmp",
-	"unknown",
-	"unknown",
-	"unknown",
-	"unknown",
-	"unknown",
-	"unknown",
-	"unknown",
-	"unknown",
-	"unknown",
-	"unknown",
-	"unknown",
-	"unknown",
-	"unknown",
-	"unknown",
-	"unknown",
-	"unknown",
-	"unknown",
-	"unknown",
-	"unknown",
-	"push rax/r8",
-	"push rcx/r9",
-	"push rdx/r10",
-	"push rsp/r12",
-	"unknown",
-	"unknown",
-	"unknown",
-	"unknown",
-	"unknown",
-	"unknown",
-	"unknown",
-	"unknown",
-	"unknown",
-	"unknown",
-	"unknown",
-	"unknown",
-	"unknown",
-	"unknown",
-	"unknown",
-	"unknown",
-	"unknown",
-	"unknown",
-	"unknown",
-	"unknown",
-	"unknown",
-	"unknown",
-	"unknown",
-	"unknown",
-	"unknown",
-	"unknown",
-	"unknown",
-	"unknown",
-	"unknown",
-	"unknown",
-	"unknown",
-	"unknown",
-	"unknown",
-	"unknown",
-	"unknown",
-	"unknown",
-	"unknown",
-	"unknown",
-	"unknown",
-	"unknown",
-	"unknown",
-	"unknown",
-	"unknown",
-	"unknown",
-	"unknown",
-	"unknown",
-	"unknown",
-	"unknown",
-	"test r8, r/m8",
-	"unknown",
-	"unknown",
-	"unknown",
-	"unknown",
-	"mov from reg",
-	"unknown",
-	"mov to reg",
-	"unknown",
-	"unknown",
-	"unknown",
-	"unknown",
-	"unknown",
-	"unknown",
-	"unknown",
-	"unknown",
-	"unknown",
-	"unknown",
-	"unknown",
-	"unknown",
-	"unknown",
-	"unknown",
-	"unknown",
-	"unknown",
-	"unknown",
-	"unknown",
-	"unknown",
-	"unknown",
-	"unknown",
-	"unknown",
-	"unknown",
-	"unknown",
-	"unknown",
-	"unknown",
-	"unknown",
-	"unknown",
-	"unknown",
-	"unknown",
-	"unknown",
-	"unknown",
-	"unknown",
-	"unknown",
-	"unknown",
-	"unknown",
-	"unknown",
-	"unknown",
-	"unknown",
-	"unknown",
-	"unknown",
-	"unknown",
-	"unknown",
-	"unknown",
-	"unknown",
-	"unknown",
-	"unknown",
-	"unknown",
-	"unknown",
-	"unknown",
-	"unknown",
-	"unknown",
-	"unknown",
-	"unknown",
-	"unknown",
-	"unknown",
-	"unknown",
-	"unknown",
-	"unknown",
-	"mov",
-	"unknown",
-	"unknown",
-	"unknown",
-	"unknown",
-	"unknown",
-	"unknown",
-	"unknown",
-	"unknown",
-	"unknown",
-	"unknown",
-	"unknown",
-	"unknown",
-	"unknown",
-	"unknown",
-	"unknown",
-	"unknown",
-	"unknown",
-	"unknown",
-	"unknown",
-	"unknown",
-	"unknown",
-	"unknown",
-	"unknown",
-	"unknown",
-	"unknown",
-	"unknown",
-	"unknown",
-	"unknown",
-	"unknown",
-	"unknown",
-	"unknown",
-	"unknown",
-	"unknown",
-	"unknown",
-	"unknown",
-	"unknown",
-	"unknown",
-	"unknown",
-	"unknown",
-	"unknown",
-	"unknown",
-	"unknown",
-	"unknown",
-	"unknown",
-	"unknown",
-	"unknown",
-	"unknown",
-	"unknown",
-	"unknown",
-	"unknown",
-	"unknown",
-	"unknown",
-	"unknown",
-	"unknown",
-	"unknown",
-	"unknown",
-};
-
 struct parsed_info{
 	int parsed_bytes;
 	char colored_hexdump[256];
@@ -1045,7 +789,9 @@ void default_opcode_fn(struct opcode_fn_args *args)
 				sprintf(s_operands[n_operands], "%i", instr.immediate.value.imm8);
 			if(operand->type == operand_imm_8_16_32_64){
 				int pagesize = 1 << 12; // 4K
-				if (instr.immediate.value.imm32 > pagesize){
+				if (instr.immediate.value.b_imm32[3] == 0xff){ // negative number, convert to two complement
+					sprintf(s_operands[n_operands], "%i", (signed int)instr.immediate.value.imm32);
+				} else if (instr.immediate.value.imm32 > pagesize){
 					sprintf(s_operands[n_operands], "0x%x", instr.immediate.value.imm32);
 				} else {
 					sprintf(s_operands[n_operands], "%i", instr.immediate.value.imm32);
@@ -1238,15 +984,6 @@ void x89(struct opcode_fn_args *args)
 	get_modrm_regopcode(&instr, (char*)&s_operand_2);
 	sprintf(rv->asm_code, "%s%s%s %s, %s", get_color(s_asm_instruction), s_asm_instruction, get_color(""), s_operand_1, s_operand_2);
 }
-void x74(struct opcode_fn_args *args)
-{
-	instruction_info *rv = args->rv;
-	//case 0x74:	// jz short
-	signed char v = instr.immediate.value.imm8;
-	int zero_flag = (regs.eflags & (1 << ZF));
-	sprintf(rv->asm_code, "jz .%s%i%s", get_color("int"), v, get_color(""));
-	sprintf(rv->comment, "0x%x:%s", regs.rip + rv->instr_size + v, zero_flag ? "zf(true)" : "zf(false)");
-}
 
 void x50(struct opcode_fn_args *args)
 {
@@ -1335,6 +1072,15 @@ void xff(struct opcode_fn_args *args)
 	multiple_operations(rv->colored_hexdump, rv->asm_code, &instr.bytes[rv->instr_size-1], op_t);
 }
 
+void x74(struct opcode_fn_args *args)
+{
+	instruction_info *rv = args->rv;
+	//case 0x74:	// jz short
+	signed char v = instr.immediate.value.imm8;
+	int zero_flag = (regs.eflags & (1 << ZF));
+	sprintf(rv->asm_code, "jz .%s%i%s", get_color("int"), v, get_color(""));
+	sprintf(rv->comment, "0x%x:%s", regs.rip + rv->instr_size + v, zero_flag ? "zf(true)" : "zf(false)");
+}
 void x75(struct opcode_fn_args *args)
 {
 	//	case 0x75:	// jnz short
@@ -1343,6 +1089,16 @@ void x75(struct opcode_fn_args *args)
 	instruction_info *rv = args->rv;
 	sprintf(rv->asm_code, "jnz .%s%i%s", get_color("int"), v, get_color(""));
 	sprintf(rv->comment, "0x%x:%s", regs.rip + rv->instr_size + v, zero_flag ? "false" : "true");
+}
+void x7c(struct opcode_fn_args *args)
+{
+	//	case 0x75:	// jnz short
+	signed char v = instr.immediate.value.imm8;
+	int zero_flag = (regs.eflags & (1 << ZF));
+	int sign_flag = (regs.eflags & (1 << SF));
+	instruction_info *rv = args->rv;
+	sprintf(rv->asm_code, "jl .%s%i%s", get_color("int"), v, get_color(""));
+	sprintf(rv->comment, "0x%x:%s", regs.rip + rv->instr_size + v, zero_flag != sign_flag ? "true": "false" );
 }
 
 void x80(struct opcode_fn_args *args)
@@ -2140,7 +1896,6 @@ void explain_instr(struct instruction instr)
 	unsigned char W = (rex_prefix && rex_prefix->rex.W) << 4;
 	unsigned char R = (rex_prefix && rex_prefix->rex.R);
 	unsigned char B = (rex_prefix && rex_prefix->rex.B);
-	//printf("opcode:\t%02x: %s\n", instr.opcode, (char*)operation_byte[instr.opcode]);
 	printf("ModR/M: %02x\n", instr.modrm.byte);
 	printf("\tmod=%i;\n", instr.modrm.mod);
 	printf("\treg_opcode=%i: %s%i(%s)\n",
@@ -2247,7 +2002,7 @@ void get_current_address(char *s_curr_addr, struct user_regs_struct *regs){
 	sprintf(s_curr_addr, "%llx", regs->rip);
 }
 
-#define instr_spec_list_count 28
+#define instr_spec_list_count 30
 struct instruction_spec instr_spec_list[instr_spec_list_count] = {
 	{
 		.s_asm_instruction = "add",
@@ -2381,7 +2136,7 @@ struct instruction_spec instr_spec_list[instr_spec_list_count] = {
 		},
 	},
 	{
-		.s_asm_instruction = "CMP",
+		.s_asm_instruction = "cmp",
 		.opcode = {
 			.size = opcode_size_8_bits,
 			.bytes = { 0x39 },
@@ -2406,6 +2161,30 @@ struct instruction_spec instr_spec_list[instr_spec_list_count] = {
 		.fn_ptr = x50,
 	},
 	{
+		.s_asm_opcode = "pop",
+		.s_asm_fmt = "pop %s",
+		.opcode = {
+			.bytes = { 11 << 3 }, // 0x58-0x5f; 01011000-01011111
+			.size = opcode_size_5_bits,
+			.has_modrm = NO,
+		},
+		.has_sib = NO,
+		.immediate = IMM_NONE,
+		.fn_ptr = x58,
+	},
+	{
+		.s_asm_instruction = "push",
+		.opcode = {
+			.bytes = { 0x68 },
+			.size = opcode_size_8_bits,
+			.has_modrm = NO,
+		},
+		.operands = {{.type = operand_imm_8_16_32_64}},
+		.has_sib = NO,
+		.immediate = IMM32,
+		.fn_ptr = NULL,
+	},
+	{
 		.s_asm_instruction = "push",
 		.opcode = {
 			.bytes = { 0x6a },
@@ -2414,18 +2193,7 @@ struct instruction_spec instr_spec_list[instr_spec_list_count] = {
 		},
 		.operands = {{.type = operand_imm8}},
 		.immediate = IMM8,
-	},
-	{
-		.s_asm_opcode = "pop",
-		.s_asm_fmt = "pop %s",
-		.opcode = {
-			.bytes = { 11 << 3 }, // 0x58-0x5f
-			.size = opcode_size_5_bits,
-			.has_modrm = NO,
-		},
-		.has_sib = NO,
-		.immediate = IMM_NONE,
-		.fn_ptr = x58,
+		.fn_ptr = NULL,
 	},
 	{
 		.s_asm_opcode = "jz",
@@ -2450,6 +2218,18 @@ struct instruction_spec instr_spec_list[instr_spec_list_count] = {
 		.has_sib = NO,
 		.immediate = IMM8,
 		.fn_ptr = x75,
+	},
+	{
+		.s_asm_opcode = "jl",
+		.s_asm_fmt = "jl .%i",
+		.opcode = {
+			.bytes = {0x7c},
+			.size = opcode_size_8_bits,
+			.has_modrm = NO,
+		},
+		.has_sib = NO,
+		.immediate = IMM8,
+		.fn_ptr = x7c,
 	},
 	{
 		.s_asm_opcode = "", // multiple operations
@@ -2601,7 +2381,7 @@ struct instruction_spec instr_spec_list[instr_spec_list_count] = {
 			.size = opcode_size_8_bits,
 			.has_modrm = NO,
 		},
-		.operands = { {.type = operand_imm8, .mode = R} },
+		.operands = { {.type = operand_imm_8_16_32_64, .mode = R} },
 		.has_sib = NO,
 		.immediate = IMM32,
 		.fn_ptr = NULL,
