@@ -13,10 +13,9 @@ s2i(){
 		# tmp code start
 		#
 		mov rsp $reg_str_addr;
-		add 24 $reg_str_addr;
-		mov "(${reg_str_addr})" $reg_str_addr;	# load the first 8 bytes at the tmp register
-		mov "(${reg_str_addr})" $reg_str_addr;	# load the first 8 bytes at the tmp register
-		mov "(${reg_str_addr})" $reg_str_addr;	# load the first 8 bytes at the tmp register
+		add 40 $reg_str_addr; # 40 == (retval+argc+s2i_ptr_type+s2i_ptr+arg_ptr_type) * 8 bytes
+		mov "(${reg_str_addr})" $reg_str_addr;	# resolve the stack mem ptr to the heap mem ptr
+		mov "(${reg_str_addr})" $reg_str_addr;	# resolve the heap mem ptr to load the first 8 bytes at the tmp register
 		#
 		# tmp code end
 		xor $reg_tmp_i $reg_tmp_i;	# clean up target int reg

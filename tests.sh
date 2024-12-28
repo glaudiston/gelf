@@ -70,7 +70,7 @@ test_sys_write_out_arg(){
 :	with no error	0
 !	sys_exit	with no error
 EOF
-	o=$(run_test abc def);
+	o=$(run_test abc defgh);
 	expect $? 0 abc "$o";
 }
 
@@ -131,7 +131,7 @@ test_exec_capture_stdout(){
 :	success	0
 !	sys_exit	success
 EOF
-	eo=$(echo -n "command output: "; /usr/bin/whoami)
+	eo=$(echo -n "command output:"; /usr/bin/whoami)
 	o=$(run_test)
 	expect $? 0 "$eo" "$o"
 }

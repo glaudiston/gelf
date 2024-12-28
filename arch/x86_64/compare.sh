@@ -4,6 +4,7 @@ compare()
 	local b="$2";
 	local type_a="$3";
 	local type_b="$4";
+	debug "compare [$a](type $type_a) and [$b](type $type_b)";
 	# types can be hardcoded, static or dynamic
 	local code="";
 	if [ "${type_a}" == "$SYMBOL_TYPE_HARD_CODED" ]; then
@@ -18,9 +19,8 @@ compare()
 	if [ "${type_b}" == "$SYMBOL_TYPE_STATIC" ]; then
 		code="${code}${MOV_V4_rcx}$(printEndianValue "$b" "${SIZE_32BITS_4BYTES}")";
 	fi;
-	if [ "${type_a}" == "$SYMBOL_TYPE_DYNAMIC_INDIRECT" ]; then
+	if [ "${type_a}" == "$SYMBOL_TYPE_DYNAMIC_ARGUMENT" ]; then
 		code="${code}${LEA_V4_rax}$(printEndianValue "$a" "${SIZE_32BITS_4BYTES}")";
-		code="${code}$(mov "(rax)" rax | xd2esc)";
 		code="${code}$(mov "(rax)" rax | xd2esc)";
 	fi;
 	if [ "${type_a}" == "$SYMBOL_TYPE_DYNAMIC" ]; then

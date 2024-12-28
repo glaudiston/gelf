@@ -81,6 +81,6 @@ GAS LISTING  			page 1
 ```
 to disasm a bytecode to the asm instruction:
 ```
-echo -ne "\x48\x89\xc2" | ndisasm -b 64 -
+echo -ne "4889c2" | xxd --ps -r | ndisasm -b 64 -
 00000000  4889C2            mov rdx,rax
 ```

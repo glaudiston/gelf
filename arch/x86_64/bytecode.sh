@@ -781,9 +781,15 @@ cmp(){
 		{
 			if [ "$v2" -gt -128 -a "$v2" -lt 128 ]; then
 			{
+				# | REX.W + 83 /7 ib | CMP r/m64, imm8 | MI | Valid | N.E. | Compare imm8 with r/m64. |
+				# /7 means modrm.reg = 7; this is why we use MODRM_OPCODE_CMP
 				local cmp=83; # only if most significant bit(bit 7) of the next byte is 1 and depending on opcode(bits 6-3) And ModR/M opcode
+				# v1 here is the 64bit base register and should go in the modrm.rm part.(last 3 bits)
+				local opcode=$cmp; # hex cmp opcode=83
+				# code="$(printf "%02x" $(( (2#0100 << 4) + (W<<3) + (R<<2) + (X<<1) + B )))";
 				local cmp_v1="${cmp}$(px $(( MODRM_MOD_NO_EFFECTIVE_ADDRESS + MODRM_OPCODE_CMP + v1 )) $SIZE_8BITS_1BYTE)";
-				code="${code}${cmp_v1}$(px $v2 $SIZE_8BITS_1BYTE)";
+				# we need to call rex again because here we are using intel syntax (imm8 later)
+				code="$(rex "$v2" "$v1")${cmp_v1}$(px $v2 $SIZE_8BITS_1BYTE)";
 				local rv=$(echo -en "${code}");
 				debug "asm: cmp $@; # $rv"
 				echo -n "$rv";
@@ -899,10 +905,10 @@ JNZ_BYTE="75";
 JNA_BYTE="\x76";
 JA_BYTE="\x77"; # CF = 0, ZF = 0
 JS_BYTE="\x77";
-JL_V1="\x7c";
+JL_V1="7c";
+JNL_V1="7d";JGE_V1="$JNL_V1";
+JNG_V1="7E";JLE_V1="$JNG_V1";
 JG_V1="7F";
-JGE_V1="7D";
-JNG_V1="7E";
 JL_V4="\x0f\x8c";
 JGE_V4="\x0f\x8d"; # Jump if greater than or igual to zero flags: SF = OF
 JG="0F8F"; # Jump if Greater than zero; flags: SF = OF, ZF = 0
@@ -965,10 +971,20 @@ jz(){
 	printf ${JZ_BYTE};
 	printf $(px "$v" $SIZE_8BITS_1BYTE);
 }
+je(){
+	jz $@
+}
 jnz(){
 	local v="$1";
 	printf ${JNZ_BYTE};
 	printf $(px $v $SIZE_8BITS_1BYTE);
+}
+jl(){
+	local v="$1";
+	local code=""
+	code="${code}${JL_V1}";
+	code="${code}$(px "$v" 1)";
+	echo -n "${code}";
 }
 jg(){
 	local v="$1";
@@ -1069,9 +1085,7 @@ ADD_V4_rdi="$(prefix v4 rdi | xd2esc)\x81\xC7";
 ADD_r15_r14="$(prefix r15 r14 | xd2esc)\x01\xfe";
 ADD_r15_rax="$(prefix r15 rax | xd2esc)\x01\xF8";
 ADD_r15_rsi="$(prefix r15 rsi | xd2esc)\x01\xFE";
-ADD_rcx_r8="$(prefix rcx r8 | xd2esc)\x01\xc8";
 ADD_rdx_r8="$(prefix rdx r8 | xd2esc)\x01\xd0";
-ADD_r8_rdi="$(prefix r8 rdi | xd2esc)\x01\xc7";
 add(){
 	local ADD_SHORT="83"; # ADD 8 or 16 bit operand (depend on ModR/M opcode first bit(most significant (bit 7)) been zero) and the ModR/M opcode
 	local r1="$1";
@@ -1579,8 +1593,7 @@ function call_procedure()
 	local retval_addr="$4";
 	local code="";
 	if [ "$ARGS_TYPE" == $SYMBOL_TYPE_ARRAY ]; then
-		local array_code="$(xor r15 r15 | xd2esc)";
-		array_code="${array_code}$(add 8 r15 | xd2esc)";
+		local array_code="$(mov 8 r15 | xd2esc)"; # r15+rsp to ignore the return addr when parsing args
 		code="${code}${array_code}";
 		array_code_size="$(echo -en "$array_code" | wc -c)";
 		CURRENT=$((CURRENT + array_code_size)); # append current bytecode size
@@ -1742,84 +1755,9 @@ function system_call_write_addr()
 	syscall;
 }
 
-function detect_argsize()
-{
-	r_in=rsi;
-	r_out=rcx;
-	# figure out the data size dynamically.
-	# To do it we can get the next address - the current address
-	# the arg2 - arg1 address - 1(NULL) should be the data size
-	# The last argument need to check the size by using 16 bytes, not 8.
-	#   because 8 bytes lead to the NULL, 16 leads to the first env var.
-	#
-	# to find the arg size, use rcx as rsi
-	mov $r_in $r_out;
-	# increment rcx by 8
-	ARGUMENT_DISPLACEMENT=8
-	add $ARGUMENT_DISPLACEMENT $r_out;
-	# mov to the real address (not pointer to address)
-	mov "($r_out)" $r_out; # resolve pointer to address
-	# and subtract rcx - rsi (resulting in the result(str len) at rcx)
-	str_null_size_detection=$({
-		# if rcx is zero, then we the input is the last argument and we are unable to detect size using method;
-		# so fallback to string size detection
-		mov "($r_in)" $r_in; # resolve pointer to address
-		detect_string_length $r_in $r_out
-	});
-	fast_str_size_detection=$({
-		mov "($r_in)" $r_in; # resolve pointer to address
-		sub $r_in $r_out;
-	#	dec $r_out; # because it counts the null byte
-		jump $(xcnt<<<$str_null_size_detection);
-	});
-	fast_str_size_detection_size=$(xcnt<<<$fast_str_size_detection);
-	cmp $r_out 0; # no argument; ptr == NULL
-	jz $fast_str_size_detection_size; #
-	debug jz=[$(jz $fast_str_size_detection_size)]
-	printf $fast_str_size_detection; # this only works when we have a next value; that is why we jump over if zero.
-	printf "$str_null_size_detection";
-}
-
 get_8bit_reg(){
 	local r="$1";
 	printf ${r_8bl[$((r))]};
-}
-
-# how dinamically discover the size?
-# one way is to increment the pointer, then subtract the previous pointer, this is fast but this is only garanteed to work in arrays of data, where the address are in same memory block. see detect_argsize
-# another way is to count the bytes until find \x00. but this will block the possibility of write out the \x00 byte. this is what code does. despite slower and the side effect of not allowing \x00, it is safer.
-function detect_string_length()
-{
-	local r_in="$1";
-	r_in=${r_in:=rsi};
-	local r_out="$2";
-	r_out=${r_out:=rcx};
-	local r_tmp_64="$3";
-	r_tmp_64=${r_tmp_64:=rax};
-	r_tmp=$(get_8bit_reg $r_tmp_64);
-	# xor rcx rcx; # ensure rcx = 0
-	#mov "(rsi)" rsi;
-	# we expect the rsi having the address of the string
-	mov "${r_in}" "${r_out}"; # let's use rcx as rsi incrementing it each loop interaction
-	local loop_code=$({
-		# save rip
-		# leaq (%rip), %rbx #
-		# LEAQ_RIP_rbx;
-		# get the data byte at addr+rcx into rax
-		# todo ? USE MOVSB ?
-		mov "(${r_out})" $r_tmp_64; # resolve current rcx pointer to rax (al)
-		inc ${r_out};
-		# test data byte
-		test ${r_tmp}; # test for null byte;
-	})
-	printf $loop_code;
-	local loop_size=$(xcnt<<<$loop_code);
-	jnz_size=$(xcnt< <(jnz $(( -loop_size + 2 )) ));
-	jnz $(( -loop_size - jnz_size )); # loop until find a null byte.
-	dec "${r_out}";
-	# sub %rsi, %rcx
-	sub ${r_in} ${r_out};
-	#JMP_rbx="ff23";
 }
 
 # given a dynamic address, write it to OUT;
@@ -1833,7 +1771,11 @@ function system_call_write_dyn_addr()
 	if [ "$data_addr_v" == "rax" ]; then
 		mov rax rsi;
 	else
-		mov "($data_addr_v)" rsi;
+		if [ "${type}" != "${SYMBOL_TYPE_DYNAMIC_ARGUMENT}" ]; then
+			mov "($data_addr_v)" rsi;
+		else
+			mov $data_addr_v rsi;
+		fi
 	fi
 	if [ "${data_len}" == "0" ]; then
 		detect_string_length rsi rdx rax;
@@ -1870,9 +1812,9 @@ function system_call_write()
 	{
 		system_call_write_dyn_addr "${OUT}" "${DATA_ADDR_V}" "${DATA_LEN}";
 	}
-	elif [ "${type}" == "${SYMBOL_TYPE_DYNAMIC_INDIRECT}" ]; then
+	elif [ "${type}" == "${SYMBOL_TYPE_DYNAMIC_ARGUMENT}" ]; then
 	{
-		system_call_write_dyn_addr "${OUT}" "${DATA_ADDR_V}" "${DATA_LEN}";
+		system_call_write_dyn_addr "${OUT}" "${DATA_ADDR_V}" "${DATA_LEN}" "${type}";
 	}
 	elif [ "$type" == "${SYMBOL_TYPE_PROCEDURE}" ]; then
 	{
@@ -1993,61 +1935,6 @@ movs(){
 
 ARCH_CONST_ARGUMENT_ADDRESS="_ARG_ADDR_ARG_ADDR_";
 
-# concat_symbol_instr set addr to dyn_addr or static
-# in the first item(idx=1) r8 will be cleared and the appended size will be add in r8 for each call
-concat_symbol_instr(){
-	#TODO can be improved to use MOVSQ
-	local addr="$1";
-	local dyn_addr="$2";
-	local size="$3";
-	local idx="$4";
-	local code="";
-	local mmap_size_code="$(mov $(( 4 * 1024 )) rsi)";
-	local mmap_code="$(sys_mmap "${mmap_size_code}" | xd2esc)"
-	# unable to move addr to addr;
-	# so let's mov addr to a reg,
-	# then reg to addr;
-	if [ "$idx" == 1 ]; then # on first item zero r8 to accum the size
-		code="${code}$({
-			xor r8 r8;
-			push r8;	# create zeroed target space at stack;
-			mov rsp $dyn_addr;
-		} | xd2esc)";
-	fi;
-	if [ "$size" -eq -1 ]; then
-		code="${code}$({
-			mov "(${addr})" rsi; # source is addr
-			detect_string_length rsi rdx rax; # the return is set at rdx
-			mov rdx rcx;
-		} | xd2esc)"; # but we need it on rcx because REP decrements it
-	elif [ "$size" -eq -2 ]; then # procedure pointer
-		code="${code}$({
-			mov "($addr)" rsi; # source addr
-			# TODO: how to manage to con
-			# the return is set at rdx
-			mov rdx rcx;
-		} | xd2esc)"; # but we need it on rcx because REP decrements it
-		echo -en "${code}" | base64 -w0;
-		return;
-	else
-		code="${code}$({
-			mov "$addr" rsi; # source addr
-			mov $size rcx;
-		} | xd2esc)";
-	fi;
-	code="${code}$(mov rsp rdi | xd2esc)"; # target addr
-	#code="${code}${MOV_rax_rdi}";
-	code="${code}${ADD_r8_rdi}";
-	code="${code}${ADD_rcx_r8}";
-
-	# if addr is 0 allocate some address to it.
-	# cmp rdi
-	# jg .(alloc mem instr len)
-	# alloc mem
-	code="${code}${REP}${MOVSB}";
-	echo -en "${code}" | base64 -w0;
-}
-
 
 set_increment()
 {
@@ -2109,3 +1996,6 @@ end_bloc(){
 . arch/x86_64/s2i.sh
 . arch/x86_64/sys_geteuid.sh
 . arch/x86_64/system_call_exec.sh
+. arch/x86_64/detect_string_length.sh
+. arch/x86_64/concat_symbols.sh
+

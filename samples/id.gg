@@ -1,0 +1,5 @@
+:	stdout	1
+:	uid	!	sys_geteuid
+!	sys_write	stdout	uid
+:	ok	0
+!	sys_exit	ok

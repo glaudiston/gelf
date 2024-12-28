@@ -24,9 +24,9 @@ i2s(){
 			# expect to have the value on rax already;
 		fi;
 		mov rsp rax;
-		add 24 rax;
-		mov "(rax)" rax;
-		mov "(rax)" rax;
+		add 40 rax; # retvaladdr+argc+i2s_ptr_type+i2s_ptr+arg_type (8 bytes each);
+		mov "(rax)" rax; # resolve stack addr in reg to mem where the int value is
+		mov "(rax)" rax; # resolve the mem, resulting in the int value be in stack
 		cmp rax 0;
 		local return_if_zero="$({
 			add 48 rax; # 0x30

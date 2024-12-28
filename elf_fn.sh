@@ -339,6 +339,7 @@ get_b64_symbol_value()
 	# empty value
 	if [ "$symbol_name" == "" ]; then
 		echo -n ",0,${SYMBOL_TYPE_HARD_CODED},0";
+		return;
 	fi;
 	# hard coded number
 	if is_valid_number "$symbol_name"; then {
@@ -408,15 +409,16 @@ get_b64_symbol_value()
 		fi
 		outsize=8; # memory_addr_size; TODO: this is platform specific, in x64 is 8 bytes
 		data_flags="$(echo "${symbol_data}" | cut -d, -f${SNIPPET_COLUMN_DATA_FLAGS})"
-		if [ "${data_flags}" == "INDIRECT" ]; then
-			echo -n ${out},${outsize},${SYMBOL_TYPE_DYNAMIC_INDIRECT},${symbol_addr}
+		if [ "${data_flags}" == "ARGUMENT" ]; then
+			echo -n ${out},${outsize},${SYMBOL_TYPE_DYNAMIC_ARGUMENT},${symbol_addr}
 		else
 			echo -n ${out},${outsize},${SYMBOL_TYPE_DYNAMIC},${symbol_addr}
 		fi;
 		return;
 	};
 	fi
-	if is_valid_number "$(echo "${symbol_value}" | base64 -d)"; then {
+	if is_valid_number "$(echo "${symbol_value}" | base64 -d)"; then
+	{
 		out="$symbol_value";
 		outsize=$(echo -n "${out}" | b64cnt)
 		echo -n ${out},${outsize},${SYMBOL_TYPE_HARD_CODED}
@@ -739,19 +741,27 @@ define_variable_increment()
 	return;
 }
 
+# get_args_ptr recover the allocated address where the arguments should be stored
+get_args_ptr()
+{
+	local SNIPPETS="$1";
+	local symbol_name=_INTERNAL_ARGS_MMAP;
+	local symbol_data="$(echo "$SNIPPETS" | grep "SYMBOL_TABLE,[^,]*,${symbol_name}," | tail -1)";
+	local symbol_value=$(echo "$symbol_data" | cut -d, -f${B64_SYMBOL_VALUE_RETURN_OUT});
+	echo -n "$symbol_value";
+}
+
 define_variable_arg()
 {
 	local arg_number="${sec_arg/@/}";
 	# create a new dynamic symbol called ${symbol_name}
-	local mmap_addr=$(( (1<<16) + ((1<<12) * arg_number) ));
-	#mmap_arg="$dyn_data_offset";
-	local instr_bytes="$(get_arg $arg_number $dyn_data_offset $mmap_addr | xd2b64)";
+	local instr_bytes="$(get_arg $arg_number $dyn_data_offset | xd2b64)";
 	local instr_len=$(echo -n "${instr_bytes}" | b64cnt );
 	# this address will receive the point to the arg variable set in rsp currently;
 	# a better solution would be not have this space in binary but in memory.
 	# but it is good enough for now. because we don't really have a dynamic memory now
 	local data_bytes="";
-	data_len="8"; # pointer size
+	data_len="8"; # pointer size (to the reserved mmap space for this arg)
 	struct_parsed_snippet \
 		"SYMBOL_TABLE" \
 		"${SYMBOL_TYPE_PROCEDURE}" \
@@ -767,7 +777,7 @@ define_variable_arg()
 		"" \
 		"" \
 		"" \
-		"INDIRECT";
+		"ARGUMENT";
 	return;
 }
 
@@ -905,11 +915,10 @@ define_concat_variable(){
 		local sym_dyn_data_size=$(get_sym_dyn_data_size "${symbol_name}" "${SNIPPETS}")
 		if [ "${symbol_type}" == "${SYMBOL_TYPE_STATIC}" ]; then
 			static_value="$( echo "${static_value}${symbol_value}" | base64 -d | base64 -w0 )";
-			instr_bytes="${instr_bytes}$(concat_symbol_instr "${symbol_addr}" "${dyn_data_offset}" "${symbol_len}" "$i")";
+			instr_bytes="${instr_bytes}$(concat_symbol_instr "${symbol_addr}" "${dyn_data_offset}" "${symbol_len}" "$i" | xd2b64)";
 		else
 			dyn_args="$(( dyn_args + 1 ))";
-			sym_dyn_data_size=$(get_sym_dyn_data_size "${symbol_name}" "${SNIPPETS}")
-			instr_bytes="${instr_bytes}$(concat_symbol_instr "$(( symbol_addr ))" "${dyn_data_offset}" "-1" "$i")";
+			instr_bytes="${instr_bytes}$(concat_symbol_instr "$(( symbol_addr ))" "${dyn_data_offset}" "-1" "$i" | xd2b64)";
 		fi;
 	done;
 	# if all arguments are static, we can merge them at build time
@@ -1006,8 +1015,12 @@ define_array_variable(){
 		local symbol_type=$(echo "${symbol_data}" | cut -d, -f${B64_SYMBOL_VALUE_RETURN_TYPE});
 		local symbol_value=$(echo "$symbol_data" | cut -d, -f${B64_SYMBOL_VALUE_RETURN_OUT} |base64 -d);
 		if [ "${symbol_type}" == $SYMBOL_TYPE_PROCEDURE ]; then
-			# TODO detect the jump size
+			local proc_instr_len="$( echo "$SNIPPETS" | grep "PROCEDURE_TABLE,[^,]*,${symbol_name}," | tail -1 |
+				cut -d, -f${SNIPPET_COLUMN_INSTR_LEN} )";
 			local jump_size=2; # instruction length of the jump over before the code
+			if [ "$proc_instr_len" -gt 127 ]; then
+				jump_size=5;
+			fi;
 			symbol_addr=$(( symbol_addr + jump_size ));
 		fi;
 		instr_bytes="${instr_bytes}$(array_add "${dyn_data_offset}" "$((i-deep-1))" "${symbol_addr}" "${symbol_type}" "${symbol_value}" | xd2b64)";
@@ -1223,8 +1236,11 @@ define_variable(){
 	fi;
 	if [[ "$sec_arg" =~ ^@[0-9]*$ ]]; then # capture the argument into variable
 	{
-		define_variable_arg
-		return
+		dynamic_data_offset=$(get_current_dynamic_data_offset "${SNIPPETS}" "${CODE_LINE_B64}");
+		static_data_offset=$current_static_data_address;
+		dyn_data_offset="$(( zero_data_offset + static_data_size + dynamic_data_offset))";
+		define_variable_arg;
+		return;
 	}
 	fi
 	if [[ "$sec_arg" =~ ^@[$]$ ]]; then # capture the argument count into variable
@@ -1853,9 +1869,9 @@ parse_snippet()
 	local previous_snippet=$( echo "${SNIPPETS}" | tail -1 );
 	local instr_offset=$(get_instr_offset "${previous_snippet}");
 	local zero_data_offset=$( get_zero_data_offset "$PH_VADDR_V" "$INSTR_TOTAL_SIZE" );
-	local dynamic_data_offset=$(get_current_dynamic_data_offset "${SNIPPETS}" "${CODE_LINE_B64}");
 	local static_data_displacement=$(get_current_static_data_displacement "${SNIPPETS}" "${CODE_LINE_B64}");
 	local current_static_data_address=$((zero_data_offset + static_data_displacement));
+	local dynamic_data_offset=$(get_current_dynamic_data_offset "${SNIPPETS}" "${CODE_LINE_B64}");
 	local static_data_offset=$current_static_data_address;
 	local dyn_data_offset="$(( zero_data_offset + static_data_size + dynamic_data_offset))";
 
