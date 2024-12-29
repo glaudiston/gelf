@@ -21,14 +21,13 @@ concat_symbol_instr(){
 	fi;
 	if [ "$size" -eq -1 ]; then
 		code="${code}$({
-			mov "(${addr})" rsi; # source is addr
+			mov "${addr}" rsi; # source is addr
 			detect_string_length rsi rdx rax; # the return is set at rdx
 			mov rdx rcx;
 		})"; # but we need it on rcx because REP decrements it
 	elif [ "$size" -eq -2 ]; then # procedure pointer
 		code="${code}$({
 			mov "($addr)" rsi; # source addr
-			# TODO: how to manage to con
 			# the return is set at rdx
 			mov rdx rcx;
 		})"; # but we need it on rcx because REP decrements it
