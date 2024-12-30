@@ -516,7 +516,7 @@ is_hard_coded_value()
 	# TODO: implement a better way this one just work for numbers
 	# binary null values will report somethink like:
 	# elf_fn.sh: line 502: warning: command substitution: ignored null byte in input
-	local v="$(echo "$1" | base64 -d)";
+	local v="$(echo "$1" | base64 -d | tr -d '\0')"; # tr just to avoid the annoying bash warning message
 	local symbol_name="$2";
 	if [ "$v" == "" ];then
 		return $NO_ERR;
@@ -744,18 +744,69 @@ define_variable_increment()
 # get_args_ptr recover the allocated address where the arguments should be stored
 get_args_ptr()
 {
-	local SNIPPETS="$1";
-	local symbol_name=_INTERNAL_ARGS_MMAP;
-	local symbol_data="$(echo "$SNIPPETS" | grep "SYMBOL_TABLE,[^,]*,${symbol_name}," | tail -1)";
-	local symbol_value=$(echo "$symbol_data" | cut -d, -f${B64_SYMBOL_VALUE_RETURN_OUT});
-	echo -n "$symbol_value";
+	local snippets="$1";
+	echo "$snippets" |
+	grep "SYMBOL_TABLE,2,_INTERNAL_ARGS_MMAP," |
+	tail -1 |
+	cut -d, -f${SNIPPET_COLUMN_DATA_OFFSET};
+}
+
+# ensure_args_ptr is called when we do use arguments;
+# first use it calls mmap to allocate memory and creates
+# snippet to store the memory address dinamically set by sys_mmap
+ensure_args_ptr()
+{
+	local snippets="$1";
+	local args_ptr=$(get_args_ptr "$snippets")
+	if [ "$args_ptr" != "" ]; then
+		return
+	fi;
+	local snippet_type="${SYMBOL_TYPE_DYNAMIC}";
+	local snippet_name="_INTERNAL_ARGS_MMAP";
+	local data_offset="${dyn_data_offset}";
+	local instr_bytes="$(sys_mmap $PAGESIZE "" "$data_offset"|xd2b64)";
+	local instr_size="$(echo $instr_bytes | b64cnt)"
+	local data_bytes="";
+	local data_bytes_len="8";
+	local bloc_outer_code_b64="$(echo -n "builtin..args_mmap" | base64 -w0)";
+	local bloc_source_lines_count="0";
+	local bloc_usage_count="0";
+	local bloc_return="";
+	local bloc_dependencies="";
+	struct_parsed_snippet \
+		"SYMBOL_TABLE" \
+		"${snippet_type}" \
+		"${snippet_name}" \
+		"${instr_offset}" \
+		"${instr_bytes}" \
+		"${instr_size}" \
+		"${data_offset}" \
+		"${data_bytes}" \
+		"${data_bytes_len}" \
+		"${bloc_outer_code_b64}" \
+		"${bloc_source_lines_count}" \
+		"${bloc_usage_count}" \
+		"${bloc_return}" \
+		"${bloc_dependencies}";
 }
 
 define_variable_arg()
 {
+	local snippets="$1";
+	local a=$(ensure_args_ptr $snippets);
+	echo $a;
+	snippets=$({
+		echo -e "$snippets\n$a";
+	});
+	local args_ptr=$(get_args_ptr "$snippets");
+	if [ "$a" != "" ]; then
+		instr_len=$(echo -n $a | cut -d, -f$SNIPPET_COLUMN_INSTR_LEN);
+		instr_offset=$(( instr_offset + instr_len ));
+		dyn_data_offset="$(( dyn_data_offset + 8 ))";
+	fi;
 	local arg_number="${sec_arg/@/}";
 	# create a new dynamic symbol called ${symbol_name}
-	local instr_bytes="$(get_arg $arg_number $dyn_data_offset | xd2b64)";
+	local instr_bytes="$(get_arg $args_ptr $arg_number $dyn_data_offset| xd2b64)";
 	local instr_len=$(echo -n "${instr_bytes}" | b64cnt );
 	# this address will receive the point to the arg variable set in rsp currently;
 	# a better solution would be not have this space in binary but in memory.
@@ -1239,7 +1290,7 @@ define_variable(){
 		dynamic_data_offset=$(get_current_dynamic_data_offset "${SNIPPETS}" "${CODE_LINE_B64}");
 		static_data_offset=$current_static_data_address;
 		dyn_data_offset="$(( zero_data_offset + static_data_size + dynamic_data_offset))";
-		define_variable_arg;
+		define_variable_arg "$SNIPPETS";
 		return;
 	}
 	fi
@@ -2068,7 +2119,6 @@ create_internal_s2i_snippet()
 	local instr_offset="$(get_instr_offset "$( echo "$SNIPPETS" | tail -1)")";
 	local zero_data_pos=$(get_zero_data_offset "$PH_VADDR_V" "$INSTR_TOTAL_SIZE");
 	local dyn_data_size=$(get_dynamic_data_size "${SNIPPETS}")
-	debug "zero_data_pos=$zero_data_pos; dyn_data_size=$dyn_data_size;\n$SNIPPETS"
 	local dynamic_data_offset="$(( zero_data_pos + dyn_data_size ))"
 	local instr_bytes="$(s2i | xdr | base64 -w0)";
 	local instr_size="$(echo "$instr_bytes" | b64cnt)";
@@ -2110,7 +2160,6 @@ create_internal_i2s_snippet()
 	local instr_offset="$(get_instr_offset "$( echo "$SNIPPETS" | tail -1)")";
 	local zero_data_pos=$(get_zero_data_offset "$PH_VADDR_V" "$INSTR_TOTAL_SIZE");
 	local dyn_data_size=$(get_dynamic_data_size "${SNIPPETS}")
-	debug "zero_data_pos=$zero_data_pos; dyn_data_size=$dyn_data_size;\n$SNIPPETS"
 	local dynamic_data_offset="$(( zero_data_pos + dyn_data_size ))"
 	local ilog10_addr=$(get_internal_addr .ilog10 "${SNIPPETS}");
 	local power10_addr=$(get_power10_addr "${SNIPPETS}");
@@ -2216,9 +2265,7 @@ parseRound(){
 	);
 	local INSTR_TOTAL_SIZE=$(detect_instruction_size_from_code "${snippets_file}");
 	local static_data_size=$(detect_static_data_size_from_code "${snippets_file}");
-	debug static_data_size=$static_data_size INSTR_TOTAL_SIZE=$INSTR_TOTAL_SIZE
 	local internal_dependencies=$(detect_internal_dependencies "${snippets}" "${internal_snippet_filename}");
-	debug "internal dependencies: [$internal_dependencies]";
 	echo -n "" > "${internal_snippet_filename}";
 	echo "$internal_dependencies" |
 		while read dep;

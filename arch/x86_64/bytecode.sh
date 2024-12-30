@@ -1,5 +1,23 @@
 #!/bin/bash
 . arch/system_call_linux_x86.sh
+. arch/x86_64/array.sh
+. arch/x86_64/bind.sh
+. arch/x86_64/bsr.sh
+. arch/x86_64/compare.sh
+. arch/x86_64/div10.sh
+. arch/x86_64/get_arg.sh
+. arch/x86_64/i2s.sh
+. arch/x86_64/ilog10.sh
+. arch/x86_64/log.sh
+. arch/x86_64/mod10.sh
+. arch/x86_64/read_file.sh
+. arch/x86_64/s2i.sh
+. arch/x86_64/sys_geteuid.sh
+. arch/x86_64/system_call_exec.sh
+. arch/x86_64/detect_string_length.sh
+. arch/x86_64/concat_symbols.sh
+. arch/x86_64/memory.sh
+. arch/x86_64/mov.sh
 #
 # The x86 instructions have this design in 64bit mode:
 # +------------+--------+--------+------------+--------------+-------------+
@@ -528,180 +546,6 @@ IMM="$(( 2#00111000 ))";
 MOV_8BIT="\x88";
 #MOV="\x89";
 MOV_RESOLVE_ADDRESS="\x8b"; # Replace the address pointer with the value pointed from that address
-mov(){
-	local v1="$1";
-	local v2="$2";
-	local code="";
-	local prefix=$(prefix "$v1" "$v2");
-	code="${code}${prefix}";
-	local modrm="";
-	if [[ "$v1" =~ ^\(.*\)$ ]]; then	# resolve pointer address value
-	{
-		local v1_r=$( echo $v1 | tr -d '()' );
-		local mov_resolve_address="8b";
-		code="${code}${mov_resolve_address}";
-		if is_register "$v1_r"; then
-			local mod_reg=$(( v2 << 3 )); # 000 0
-			if is_register "$v2"; then
-				modrm="$(px "$(( MODRM_MOD_DISPLACEMENT_REG_POINTER + mod_reg + v1_r ))" $SIZE_8BITS_1BYTE)";
-			fi;
-			printf "${code}${modrm}";
-			debug "asm: mov $@; # $code";
-			return;
-		fi;
-		if is_32bit_uint "$v1_r" && is_64bit_register "$v2"; then
-		{
-			local opcode="${mov_resolve_address}";
-			local use_sib=$(( 1 << 2 ));
-			local mod=$((MODRM_MOD_DISPLACEMENT_REG_POINTER << 6));
-			local r=$((v2 << 3));
-			local m=$(( use_sib ));
-			local modrm_v=$(( mod | r | m ));
-			local modrm="$(px $modrm_v $SIZE_8BITS_1BYTE)";
-			local scale="0";
-			local index="$((2#011 << 3))";
-			local base="$(( 2#001 ))";
-			local sib="$(( scale | index | base ))";
-			local displacement=$(px $v1_r $SIZE_32BITS_4BYTES);
-			local instr="${prefix}${opcode}${modrm}${sib}${displacement}";
-			printf "${instr}";
-			debug "asm: mov $@; # $code";
-			return;
-		}
-		fi;
-		code="${code}${modrm}";
-	}
-	fi;
-	if ! is_register $v1 && is_valid_number "$v1"; then
-	{
-		if is_8bit_uint "$v1" && ! is_register "$v2" && is_8bit_register "$v2"; then
-			code="${code}$(px $(( 16#B0 + v2 )) $SIZE_8BITS_1BYTE)"
-			code="${code}$(px "$v1" $SIZE_8BITS_1BYTE)";
-			printf "${code}";
-			debug "asm: mov $@; # $code"
-			return;
-		fi;
-		if ! is_register "$v2" && is_32bit_uint "$v1" && is_32bit_uint "$v2"; then
-		{
-			# move immediate value to displacement;
-			local opcode="c7";
-			local modrm="04";
-			local scale=0;
-			local index=$((4<<3));
-			local base=5;
-			local sib_v="$(( scale | index | base ))";
-			debug "sib_v=$sib_v";
-			local sib="$(px $sib_v $SIZE_8BITS_1BYTE)"; # 25
-			local displacement="$(px "$v2" $SIZE_32BITS_4BYTES)";
-			local immediate="$(px "$v1" $SIZE_32BITS_4BYTES)";
-			local code="${opcode}${modrm}${sib}${displacement}${immediate}";
-			printf $code
-			debug "asm: mov $@; # [$code]";
-			return;
-		}
-		fi;
-		local mov_v4_reg="c7";
-		local mod_reg=0;
-		modrm="$(px "$(( MODRM_MOD_NO_EFFECTIVE_ADDRESS + mod_reg + v2 ))" $SIZE_8BITS_1BYTE)";
-		code="${code}${mov_v4_reg}${modrm}$(px "$v1" $SIZE_32BITS_4BYTES)";
-		printf $code
-		debug "asm: mov $@; # $code"
-		return
-	}
-	fi;
-	if is_64bit_register "$v1"; then
-	{
-		code="${code}89";
-		local mod_reg=$(( v1 << 3 ));
-		if is_addr_ptr "$v2"; then	# resolve pointer address value
-		{
-			local v2_r=$( echo $v2 | tr -d '()' );
-			if is_register "$v2_r"; then
-				local mod_reg=$(( v1 << 3 )); # 000 0
-				if is_register "$v1"; then
-					modrm="$(px "$(( MODRM_MOD_DISPLACEMENT_REG_POINTER + mod_reg + v2_r ))" $SIZE_8BITS_1BYTE)";
-				fi;
-				if [ "$v2_r" == "rsp" ]; then # rsp is a special case where the next byte is sib;
-					sib=$(px $(( MODRM_MOD_DISPLACEMENT_REG_POINTER + ( v2_r << 3 ) )) $SIZE_8BITS_1BYTE);
-					modrm="$modrm$sib";
-				fi;
-			fi;
-			code="${code}${modrm}";
-			debug "asm: mov $@; # $code";
-			echo -n "$code";
-			return;
-		}
-		fi;
-		if is_register "$v2"; then
-			modrm="$(px "$(( MODRM_MOD_NO_EFFECTIVE_ADDRESS + mod_reg + v2 ))" $SIZE_8BITS_1BYTE)";
-			code="${code}${modrm}";
-			local rv="$(echo -en "${code}")";
-			echo -n $rv;
-			debug "mov $@; # $rv";
-			return;
-		elif is_valid_number "$v2"; then
-			# if 32 bits addr
-			# MOV %rsp ADDR: 48892425 78100000 ? not tested
-			# 48: rex_64bit
-			# 89: MOV instruction
-			# 24: 00100100 MOD/R
-			# 25: 00100101 SIB
-			# 78100000: little endian 32bit addr
-			# the rsp(100) is set to require an additional field the SIB is this additional field
-			local sib=$rsp;
-			MOD_RM="$( px $(( MODRM_MOD_DISPLACEMENT_REG_POINTER + mod_reg + sib )) ${SIZE_8BITS_1BYTE} )";
-			SIB=$(px $(( 2#00100101 )) ${SIZE_8BITS_1BYTE});
-			local v="$(px "$v2" $SIZE_32BITS_4BYTES)";
-			code="${code}${INSTR_MOV}${MOD_RM}${SIB}${v}";
-		else
-			error not implemented
-		fi;
-		code="${code}${modrm}";
-	}
-	fi;
-	if is_8bit_register "$v1"; then
-	{
-		if is_8bit_register "$v2"; then
-			mov_8bit="88";
-			rex="40";
-			code="${rex}${mov_8bit}";
-			code="${code}$(px $(( MODRM_MOD_NO_EFFECTIVE_ADDRESS + $(( v1 << 3 )) + v2 )) $SIZE_8BITS_1BYTE)";
-			echo -n "${code}";
-			debug "asm: mov $@; # $code"
-			return;
-		fi;
-		if is_valid_number "$v2"; then
-		{
-			local mov_8bit="88";
-			# See Intel Instruction Format manual
-			# Table 2-3. 32-Bit Addressing Forms with the SIB Byte (intel ref)
-			# https://www.intel.com/content/dam/www/public/us/en/documents/manuals/64-ia-32-architectures-software-developer-instruction-set-reference-manual-325383.pdf
-			local sib_index_none=4;	# 4 == none (no register because ebp is not allowed)
-			local sib_base_none=5;	# 5 == means a disp32 with no base if the MOD is 00B. Otherwise, [*] means disp8 or disp32 + [EBP]. This provides the following address modes
-						# MOD bits Effective Address
-						# 00 [scaled index] + disp32
-						# 01 [scaled index] + disp8 + [EBP]
-						# 10 [scaled index] + disp32 + [EBP]
-			local scale=$(( 0 << 6 ));
-			local index=$(( sib_index_none << 3 ));
-			local base=$(( sib_base_none << 0 ));
-			local sib=$(px $(( scale | index | base )) $SIZE_8BITS_1BYTE);
-			local prefix="";
-			local opcode="${mov_8bit}";
-			local use_sib=4;
-			local modrm=$(px $(( MODRM_MOD_DISPLACEMENT_REG_POINTER + $(( v1 << 3 )) + use_sib )) $SIZE_8BITS_1BYTE);
-			local displ32="$(px $v2 $SIZE_32BITS_4BYTES)";
-			local instr="${prefix}${opcode}${modrm}${sib}${displ32}";
-			echo -n "${instr}";
-			debug "asm: mov $@; # $code"
-			return;
-		}
-		fi;
-	}
-	fi;
-	debug mov $@: out [$code];
-	echo -n $code;
-}
 # CMP
 cmp(){
 	local v1="$1";
@@ -1409,98 +1253,6 @@ function getpagesize()
 	syscall;
 }
 
-PAGESIZE=$(( 4 * 1024 )); # 4KiB
-# map a memory region
-#|rax|syscall___________________|rdi______________|rsi________________|rdx________________|r10________________|r8_______________|r9________|
-#| 9 |sys_mmap                 |unsigned long   |unsigned long len |int prot          |int flags         |int fd          |long off |
-# Returns:
-#  rax Memory Address
-#  r8 FD
-#  r9 Size
-function sys_mmap()
-{
-	local size="$1"; # this is the bytecode to detect and update rsi with the size
-	local fd="$2";
-	local CODE="";
-	# ; Map the memory region
-	CODE="${CODE}$(xor rdi rdi)"; # let kernel choose
-	# TODO use fstat to detect the size and implement a logic to align it to page memory
-	# When using mmap, the size parameter specified in rsi should be aligned to the page size.
-	# This is because the kernel allocates memory in units of pages,
-	# and trying to mmap a region that is not page-aligned could result in undefined behavior.
-	# To ensure that the size is aligned(I don't know a system call that returns the system page size
-	# but the default linux uses 4K. libc provides a function getpagesize() to determine
-	# the page size at runtime) and then round up the size parameter
-	# to the nearest multiple of the page size.
-	#    mov rsi, size  ; length
-	#
-	# recover size
-	local mmap_size_code="$size";
-	# mov ${mmap_size} rsi;
-	#if pagesize > size {
-	#	pagesize
-	#} else {
-	#	(1+(requested size / pagesize)) * pagesize
-	#}
-	# mov ${PAGESIZE} rsi;
-	CODE="${CODE}${mmap_size_code}";
-
-	# Protection flag
-	# Value	Constant	Description
-	# 0	PROT_NONE	No access
-	# 1	PROT_READ	Read access
-	# 2	PROT_WRITE	Write access
-	# 4	PROT_EXEC	Execute access
-	#    mov rdx, 3     ; prot (PROT_READ(1) | PROT_WRITE(2) | PROT_EXEC(4))
-	PROT_NONE=0;
-	PROT_READ=1;
-	PROT_WRITE=2;
-	PROT_EXEC=4;
-	CODE="${CODE}$(mov $(( PROT_READ + PROT_WRITE )) rdx)";
-	# man mmap for valid flags
-	#    mov r10, 2    ; flags
-	MAP_SHARED=1;
-	MAP_PRIVATE=2;
-	MAP_SHARED_VALIDATE=3;
-	MAP_ANONYMOUS=$((2#00100000));
-	CODE="${CODE}$({
-		mov $MAP_PRIVATE r10;
-		# The file descriptor is expected to be at r8,
-		# but for virtual files it will fail with a -19 at rax.
-		#
-		if [ "$fd" == "rax" ]; then
-			mov rax r8;
-		elif [ "$fd" != "" ]; then
-			mov $fd r8;
-		fi;
-		#xor r8 r8;
-		#    mov r9, 0     ; offset
-		mov 0 r9
-		#    mov rax, 9    ; mmap system call number
-		mov $SYS_MMAP rax;
-		syscall;
-		# test rax to detect failure
-		cmp rax 0; # 64bit cmp rax, 00
-	})";
-	# if it fails do mmap with  MAP_ANONYMOUS
-	local ANON_MMAP_CODE="$({
-		mov $(( MAP_PRIVATE + MAP_ANONYMOUS )) r10;
-		mov $SYS_MMAP rax;
-		syscall;
-		# then we need to read the data to that location
-		mov r8 rdi;
-		system_call_read "" "rsi"; # TODO not sure the best choice here. We should do it better
-		# if rax > 0 jump over this code block
-		# rax will be less than zero on failure
-		mov rax r9;
-		# By default the sys_read will move the memory address from rax to rsi.
-		mov rsi rax; # restore rax to return the memory address
-	})";
-	local BYTES_TO_JUMP="$(px $(echo -en "${ANON_MMAP_CODE}" | xcnt) $SIZE_32BITS_4BYTES)";
-	CODE="${CODE}${JG}${BYTES_TO_JUMP}"; # The second byte "85" is the opcode for the JNE instruction. The following four bytes "06 00 00 00" represent the signed 32-bit offset from the current instruction to the target label.
-	printf "${CODE}${ANON_MMAP_CODE}";
-}
-
 sys_mprotect(){
 	mov 10 rax;
 	mov $1 rdi; # start address
@@ -1884,55 +1636,6 @@ function system_call_dup2()
 }
 
 
-# The base pointer integer value is by convention the argc(argument count)
-# In x86_64 is the rsp with integer size.
-# It can be recovered in gdb by using
-# (gdb) print *((int*)($rsp))
-#
-# But given it is a runtime only value, we don't have that value at build time,
-# so we need to create a dynamic ref that can be evaluatet at runtime.
-#
-# My strategy is to set the constant _ARG_CNT_ then I can figure out latter that is means "rsp Integer"
-# Probably should prefix it with the jump sort instruction to make sure those bytes will not affect
-# the program execution. But not a issue now.
-
-function get_arg_count()
-{
-	# I don't need the bytecode at this point
-	# I do need to store the value result form the bytecode to a memory address and set it to a var
-	# because in inner functions I will be able to recover it using a variable
-	#
-	# # TODO HOW TO ALLOCATE A DYNAMIC VARIABLE IN MEMORY?
-	# 	This function should receive the variable position (hex) to set
-	# 	This function should copy the pointer value currently set at rsp and copy it to the address
-	local addr="$1"; # memory where to put the argc count
-	local code="";
-	code="${code}$(mov rsp r14)";
-	code="${code}$(add r15 r14)"; # this allows set r15 as displacement and use this code in function get args
-	code="${code}$(mov "(r14)" r14)";
-	code="${code}$(mov "r14" $addr)";
-	echo -en "${code}";
-}
-
-movs(){
-	local r_in="$1";
-	r_in="${rsi:=rsi}";
-	local r_out="${2}"
-	local prefix="$(prefix "$r_in" "$r_out")";
-	prefix="f3"; # REP
-	local opcode="a4";
-	local modrm="";
-	local sib="";
-	local displacement="";
-	local immediate="";
-
-	if is_addr $2; then
-		mov $2 rdi;
-	fi;
-	printf "${prefix}${opcode}${modrm}${sib}${displacement}${immediate}";
-}
-
-
 ARCH_CONST_ARGUMENT_ADDRESS="_ARG_ADDR_ARG_ADDR_";
 
 
@@ -1982,20 +1685,3 @@ init_prog(){
 end_bloc(){
 	pop EBP;
 }
-. arch/x86_64/array.sh
-. arch/x86_64/bind.sh
-. arch/x86_64/bsr.sh
-. arch/x86_64/compare.sh
-. arch/x86_64/div10.sh
-. arch/x86_64/get_arg.sh
-. arch/x86_64/i2s.sh
-. arch/x86_64/ilog10.sh
-. arch/x86_64/log.sh
-. arch/x86_64/mod10.sh
-. arch/x86_64/read_file.sh
-. arch/x86_64/s2i.sh
-. arch/x86_64/sys_geteuid.sh
-. arch/x86_64/system_call_exec.sh
-. arch/x86_64/detect_string_length.sh
-. arch/x86_64/concat_symbols.sh
-

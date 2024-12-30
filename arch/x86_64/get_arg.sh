@@ -1,5 +1,65 @@
+#
+#
+# When we start a process the memory is someyhing like:
+# +-----------------+
+# |      stack      |
+# |-----------------|
+# | environments... |
+# | NULL            |
+# | arguments...    |
+# | arg count       | <-- RSP
+# +-----------------+
+#
+# Each stack entry is a 8 byte pointer;
+#
+# Each argument is a pointer to a location where the argument string starts 
+# but in linux, the argument size are not aligned in 8 bytes:
+# +----------+----------------------+
+# | mem pos  | 123456 7812345678... |
+# |----------|----------------------|
+# | byte val | arg 1\0arg 2\0       |
+# |          | ^    ^ ^             |
+# |          | A    B C             |
+# +----------+----------------------+
+# A = start of first argument;
+# B = end of first argument;
+# C = start of second argument;
+# D = end of second argument;
+#
+# in this example, in the stack will be something like
+# +-----------------+--------+----------+
+# |      stack      | var    | value    |
+# |-----------------|--------|----------|
+# | environments... |        |          |
+# | NULL            |        |          |
+# | RSP+16          | arg[1] | ptr to 6 |
+# | RSP+8           | arg[0] | ptr to 1 |
+# | RSP             | argc   |     2    |
+# +-----------------+--------+----------+
+#
+# The problem with this is that given all registers are fixed size in 8 bytes,
+# if we copy "ptr to 1" into any register, say RSI, RSI will have the value
+# "arg 1\0ar", instead of "arg 1\0\0\0" and this will break the compare logic.
+#
+# to my acknoledge, that means we can not just copy it to registers and compare,
+# we need to make a logic to copy them to another place aligned to 8 bytes,
+# so the string end has filled with NULL until the 8 bytes alignment. 
+# and only then we can copy each 8 bytes block to registers and compare it.
+#
+# Seems to me that there is no way to compare n bytes in memory;
+# So we need to copy the memory to register before using it in test or cmp instruction.
+# so only way I know to test/compare strings in x86 is by comparing 2 registers.
+#
+# this premise is the reason why I have to alocate a memory address to copy 
+# the argument bytes into.
+#
+# Other possible approaches can include:
+# - explore SIMD instructions (e.g., AVX, SSE)
+# - Use a loop with `lodsb` to compare bytes one at a time.
+# - Use `repe cmpsb` for block comparisons of strings in memory.
+
 # changes rsi, rcx
-function detect_argsize()
+detect_argsize()
 {
 	argn=$1;
 	r_in=rsi;
@@ -80,11 +140,30 @@ function detect_argsize()
 #   we can even use substracting the next arg addr to detect the argument size (except last argument).
 # but when a function is called, the argument can be anything. and this makes things complicated.
 #
-function get_arg()
+get_arg()
 {
-	local argn="$1";
-	local addr_ptr="$2";
-	local args_typed=$({
+	debug get_arg $@;
+	local args_ptr="$1"; # the mmap allocated root address where to store parsed/copied arguments.
+	local argn="$2";	# index of the argument starting with 0 to the program name (or function address ptr);
+	local arg_ptr="$3";	# address where to put the pointer to the target address where the argument will be copied into;
+	mov $args_ptr rax;
+	mov "(rax)" rcx;
+	mov "(rcx)" rsi;
+	others_mem_args=$({
+		mov rsi rax;
+	});
+	first_mem_arg=$({
+		add 8 rcx;
+		mov rcx $arg_ptr;
+		mov "(rax)" rsi;
+		mov rcx "(rsi)";
+		jump $(xcnt<<<$others_mem_args);
+	});
+	cmp rsi 0;
+	jnz $(xcnt<<<$first_mem_arg);
+	printf $first_mem_arg;
+	printf $others_mem_args;
+	local func_arg=$({
 		# this should be used only on call functions
 		# so we use typed data and we have the return addr ptr on rsp
 		add rsp r15; # r15 is argc
@@ -92,16 +171,16 @@ function get_arg()
 		sub rsp r15;
 		add $(( 8 * (1 + argn * 2) )) rsi; # "1 +" the first 8 bytes are the argc *2 because each argument has the type prefix byte
 	});
-	local args_root=$({
+	local process_arg=$({
 		# in process root level we don't have typed args and rsp points to argc
 		mov rsp rsi;
 		add $(( 8 * (1 + argn) )) rsi; # +1 because the first arg is the argc
-		jump $(xcnt<<<${args_typed});
+		jump $(xcnt<<<${func_arg});
 	});
 	cmp r15 0; # this means we are not root level and rsp is the return value
-	jnz $(xcnt<<<${args_root});
-	printf $args_root;
-	printf $args_typed;
+	jnz $(xcnt<<<${process_arg});
+	printf $process_arg;
+	printf $func_arg;
 	detect_argsize $argn;
 	# now rcx has the string size
 	cmp r15 0;
@@ -110,7 +189,9 @@ function get_arg()
 	});
 	jz $(xcnt<<<$skip_type);
 	printf $skip_type;
-	movs rsi $addr_ptr rcx;
+	mov $arg_ptr rdi;
+	mov "(rdi)" rdi;
+	movs rsi rdi rcx;
 	#detect_string_length rsi rdx; # rdx has the string size
 	# if multiple of 8; set it to addr_ptr and we are done;
 	# modulus8(int, int):
@@ -127,4 +208,34 @@ function get_arg()
 	# 	because we need to zero higher bits in byte, avoiding further issues with bsr
 	# TODO: set me address to the target address
 	# MOV rsi addr_ptr
+}
+
+# The RSP (Register Stack Pointer) integer value is by convention the argc(argument count)
+# In x86_64 is the rsp with integer size.
+# It can be recovered in gdb by using
+# (gdb) print *((int*)($rsp))
+#
+# But given it is a runtime only value, we don't have that value at build time,
+# so we need to create a dynamic ref that can be evaluatet at runtime.
+#
+# My strategy is to set the constant _ARG_CNT_ then I can figure out latter that is means "rsp Integer"
+# Probably should prefix it with the jump sort instruction to make sure those bytes will not affect
+# the program execution. But not a issue now.
+
+get_arg_count()
+{
+	# I don't need the bytecode at this point
+	# I do need to store the value result form the bytecode to a memory address and set it to a var
+	# because in inner functions I will be able to recover it using a variable
+	#
+	# # TODO HOW TO ALLOCATE A DYNAMIC VARIABLE IN MEMORY?
+	# 	This function should receive the variable position (hex) to set
+	# 	This function should copy the pointer value currently set at rsp and copy it to the address
+	local addr="$1"; # memory where to put the argc count
+	local code="";
+	code="${code}$(mov rsp r14)";
+	code="${code}$(add r15 r14)"; # this allows set r15 as displacement and use this code in function get args
+	code="${code}$(mov "(r14)" r14)";
+	code="${code}$(mov "r14" $addr)";
+	echo -en "${code}";
 }
