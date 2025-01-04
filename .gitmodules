@@ -1,0 +1,3 @@
+[submodule "fsh"]
+	path = fsh
+	url = ../fsh
