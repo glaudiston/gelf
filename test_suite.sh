@@ -54,36 +54,39 @@ expect(){
 	pass;
 }
 
-run_all(){
-	local test_list=$(cat $0 | grep -E "^test_[^(]*\(\)\{" | cut -d "(" -f1);
-	local test_count=$(echo "$test_list" | grep -c "");
-	local OUT_TEXT=$(echo "$test_list" | 
-		while read f; 
-		do
-			{
-				TEST_OUT=$(echo -e " - $f\t...$($f)");
-				echo "$TEST_OUT";
-				echo "$TEST_OUT" >&2;
-			} &
-		done;
-		wait;
-		echo
-	);
-	local test_count_fail=$(echo "$OUT_TEXT" | grep FAIL | grep -c "");
-	local test_count_pass=$(echo "$OUT_TEXT" | grep PASS | grep -c "");
-	echo "$test_list" | while read l; do
-		echo -e "$OUT_TEXT" | grep -q "$l" || echo "WARNING: TEST RESULT MISSING FOR [$l] check if it is still running as zombie";
-	done
+run_and_report(){
+	local testcase=$1
+	local out=$(echo -e " - $testcase\t...$($testcase)");
+	echo "$out";
+	echo "$out" >&2;
+}
+summarize(){
+	local test_count="$1";
+	local output="$2";
+	local test_count_fail=$(echo "$output" | grep FAIL | grep -c "");
+	local test_count_pass=$(echo "$output" | grep PASS | grep -c "");
 	echo -e "
 Resume:
 	Total:\t$test_count
 	Passed:\t$test_count_pass
 	Failed:\t$test_count_fail"
 }
-if [ ${#@} == 0 ]; then
-	run_all;
-fi;
-for tc in ${@};
-do
-	$tc;
-done;
+
+run_all(){
+	local test_list=$({
+		[ "$1" == "" ] && 
+			{ cat $0 | grep -E "^test_[^(]*\(\)\{" | cut -d "(" -f1; } ||
+			echo $@;
+	});
+	local test_count=$(echo "$test_list" | grep -c "");
+	local OUT_TEXT=$(echo "$test_list" | 
+		while read f; do run_and_report $f & done;
+		wait;
+		echo
+	);
+	echo "$test_list" | while read l; do
+		echo -e "$OUT_TEXT" | grep -q "$l" || echo "WARNING: TEST RESULT MISSING FOR [$l] check if it is still running as zombie";
+	done
+	summarize "$test_count" "$OUT_TEXT";
+}
+run_all "${@}";
