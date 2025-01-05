@@ -8,14 +8,19 @@ fail(){ msg $RED $@; }
 pass(){ msg $GREEN; }
 
 compile_test(){
-	mkdir -p tests
-	./gelf <(cat) tests/${FUNCNAME[1]}.elf 2>tests/${FUNCNAME[1]}.build-stderr;
+	mkdir -p tests;
+	local testname=${FUNCNAME[1]}
+	if [ -f "tests/$testname" ]; then
+		# remove previous compilation files
+		rm tests/${testname}* 2>/dev/null;
+	fi;
+	./gelf <(cat) tests/$testname 2>tests/${testname}.build-stderr;
 	r=$?;
 	if [ $r -ne 0 ]; then
-		error	compilation failed. See tests/${FUNCNAME[1]}.build-stderr;
+		error	compilation failed. See tests/${testname}.build-stderr;
 		return $r;
 	fi;
-	chmod +x ./tests/${FUNCNAME[1]}.elf
+	chmod +x ./tests/${testname};
 }
 
 run_test(){
@@ -24,7 +29,7 @@ run_test(){
 		fail "run_test should be called from a function that creates and elf file with it's name";
 		return;
 	fi;
-	local elf_name="./tests/$n.elf";
+	local elf_name="./tests/$n";
 	cmd="$elf_name";
 	while (( ${#@} > 0 )); 
 	do {
