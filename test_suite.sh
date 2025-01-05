@@ -80,4 +80,10 @@ Resume:
 	Passed:\t$test_count_pass
 	Failed:\t$test_count_fail"
 }
-run_all
+if [ ${#@} == 0 ]; then
+	run_all;
+fi;
+for tc in ${@};
+do
+	$tc;
+done;
