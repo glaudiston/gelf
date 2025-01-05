@@ -21,7 +21,7 @@ array_end(){
 	# put the array size in the stack
 	push_imm $array_size;
 	# save the array addr outside the stack(in the main memory)
-	mov rsp $array_addr;
+	mov $array_addr rsp;
 	#mov rsp rax;
 	#add $(( array_size * 8 -8)) rax;
 	#mov rax "$array_addr";

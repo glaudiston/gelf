@@ -1,7 +1,8 @@
 #!/bin/bash
 # given a value and a size(defalt 8), return the expected hex dumped bytes in little endianness
 
-false && . ./utils.sh; # just for reference, we already sourced at main
+if ! declare -F printLittleEndian >/dev/null; then
+. ./utils.sh; # just for reference, we already sourced at main
 
 export LC_ALL=C
 function printBigEndian(){
@@ -56,3 +57,4 @@ function detect_endianness()
 		read -n1 -rd $'\0'; printf %i "'$REPLY"; # print the 6th byte (endianness)
 	}  </proc/self/exe;
 }
+fi;

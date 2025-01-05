@@ -1,4 +1,27 @@
+if ! declare -F mov>/dev/null; then
+. types.sh
+. logger.sh
+. endianness.sh
+. encoding.sh
+. utils.sh
+. arch/x86_64/registers.sh
+. arch/x86_64/prefix.sh
+. arch/x86_64/multi_syntax.sh
+. arch/x86_64/mod_rm.sh
+
+# mov intel syntax
 mov(){
+	local v1="$1";
+	local v2="$2";
+	debug intel asm : mov $v1 $v2;
+	if [ $v1 == "(rcx)" -a $v2 == "rcx" ]; then
+		printf 488909
+		return;
+	fi;
+	mov_att $v2 $v1;
+}
+# mov AT&T syntax
+mov_att(){
 	local v1="$1";
 	local v2="$2";
 	local code="";
@@ -124,7 +147,7 @@ mov(){
 			local v="$(px "$v2" $SIZE_32BITS_4BYTES)";
 			code="${code}${INSTR_MOV}${MOD_RM}${SIB}${v}";
 		else
-			error not implemented
+			error not implemented: mov $@
 		fi;
 		code="${code}${modrm}";
 	}
@@ -191,3 +214,55 @@ movs(){
 	printf "${prefix}${opcode}${modrm}${sib}${displacement}${immediate}";
 }
 
+MOV_AL_ADDR4="\x88\x04\x25";
+# LEA - Load Effective Address (page 1146)
+#LEAQ_RIP_rbx="$(prefix rip rbx | xd2esc)\x8d\x1d\x00\x00\x00\x00";
+LEA_rax_rax_4="\x8d\x04\x80";
+LEA_V4_rdx="$(prefix v4 rdx | xd2esc)\x8d\x14\x25";
+LEA_V4_rax="$(prefix v4 rax | xd2esc)\x8d\x04\x25";
+LEA_V4_rcx="$(prefix v4 rcx | xd2esc)\x8d\x0c\x25";
+MOV_ADDR4_rdx="$(prefix addr4 rdx | xd2esc)\x8b\x14\x25"; # followed by 4 bytes le;
+MOV_ADDR4_rax="$(prefix addr4 rax | xd2esc)\x8b\x04\x25";
+MOV_ADDR4_rsi="$(prefix addr4 rsi | xd2esc)\x8b\x34\x25";
+MOV_ADDR4_rdi="$(prefix addr4 rdi | xd2esc)\x8b\x3c\x25";
+MOV_V4_rax="$(prefix v4 rax | xd2esc)\xc7\xc0";
+MOV_V4_rcx="$(prefix v4 rcx | xd2esc)\xc7\xc1";
+MOV_V4_rdx="$(prefix v4 rdx | xd2esc)\xc7\xc2"; # MOV value and resolve address, so the content of memory address is set at the register
+MOV_V4_rsi="$(prefix v4 rsi | xd2esc)\xc7\xc6";
+MOV_V4_rdi="$(prefix v4 rdi | xd2esc)\xc7\xc7";
+MOV_V8_rax="$(prefix v8 rax | xd2esc)$( printEndianValue $(( MOV + IMM + rax )) ${SIZE_8BITS_1BYTE} )"; # 48 b8
+MOV_V8_rdx="$(prefix v8 rdx | xd2esc)$( printEndianValue $(( MOV + IMM + rdx )) ${SIZE_8BITS_1BYTE} )"; # 48 ba
+MOV_V8_rsi="$(prefix v8 rsi | xd2esc)$( printEndianValue $(( MOV + IMM + rsi )) ${SIZE_8BITS_1BYTE} )"; # 48 be
+#debug MOV_rsi=$MOV_rsi
+MOV_V8_rdi="$(prefix v8 rdi | xd2esc)$( printEndianValue $(( MOV + IMM + rdi )) ${SIZE_8BITS_1BYTE} )"; # 48 bf; #if not prepended with rex(x48) expect 32 bit register (edi: 4 bytes)
+MOV_CL_ADDR4_rdi="888F";
+MOV_R="\x89";
+MOVSB="\xa4"; # move 64bits(8 bytes) from %rsi addr to %rdi addr
+#MOVSQ="$(prefix | xd2esc)\xa5"; # move 64bits(8 bytes) from %rsi addr to %rdi addr
+REP="\xf3"; # repeat until rcx
+#MOVSBL_V4rsp_EAX="\x0F\xBE\x44\x24";
+#MOV_rsi_rcx="\x48\x89\xF1";
+#MOVSBL_V4rsi_ECX="\x0F\xBE\x4E$(printEndianValue 63 $SIZE_8BITS_1BYTE)";
+#MOVZX_DL_rdx="\x48\x0F\xB6\xD2";
+#LEA_rdx_rdx="\x48\x8B\x12";
+#MOVZX_SIL_rsi="\x48\x0F\xB6\xF6";
+#MOVZX_SIL_rdi="\x48\x0F\xB6\xFE";
+MOVZX_DL_rdi="480fb6fa";
+SBB_0_EDX="83da00";
+MOVSBL_V4_rdx_EDX="0FBE1415";
+
+# show_bytecode "mov %rsp, %rsi"
+# 4889e6
+MOV_rax_rsi="$(mov rax rsi | xd2esc)"; # xC6 move the rax to rsi #11000110
+MOV_rax_rdx="$(mov rax rdx | xd2esc)";
+MOV_rax_rdi="$(mov rax rdi | xd2esc)";
+MOV_rdx_rcx="$(mov rdx rcx | xd2esc)";
+#MOV_rsp_rsi="$(prefix rsp rsi | xd2esc)${MOV_R}\xe6"; # Copy the rsp(pointer address) to the rsp(as a pointer address).
+MOV_rsp_rax="$(mov rsp rax | xd2esc)";
+MOV_rsp_rsi="$(mov rsp rsi | xd2esc)"; # move the rsp to rsi #11000110
+MOV_rsp_rdx="$(mov rsp rdx | xd2esc)"; # move the rsp to rdx #11000010
+MOV_rsp_rdi="$(mov rsp rdi | xd2esc)";
+MOV_rsi_rax="$(mov rsi rax | xd2esc)"; # move the rsi to rdx #11110010
+MOV_rsi_rdx="$(mov rsi rdx | xd2esc)"; # move the rsi to rdx #11110010
+
+fi;

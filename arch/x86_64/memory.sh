@@ -6,3 +6,23 @@
 # sys_mmap	9
 # 	reserve a new memory page space
 . arch/x86_64/mmap.sh
+
+is_addr(){
+	is_32bit_uint $1;
+}
+
+is_addr_ptr() {
+	if ! [[ "$1" =~ ^\(.*\)$ ]]; then
+		return 1 # no
+	fi;
+	# resolve pointer address value
+	local v=$( echo $1 | tr -d '()' );
+	is_32bit_uint $v;
+}
+sys_mprotect()
+{
+	mov 10 rax;
+	mov $1 rdi; # start address
+	mov $2 rsi; # length size
+	mov $3 rdx; # protection flags
+}

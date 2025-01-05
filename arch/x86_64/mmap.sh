@@ -31,7 +31,7 @@ function sys_mmap()
 	#} else {
 	#	(1+(requested size / pagesize)) * pagesize
 	#}
-	mov ${size:=$PAGESIZE} rsi;
+	[ "$size" != "rsi" ] && mov rsi ${size:=$PAGESIZE};
 
 	# Protection flag
 	# Value	Constant	Description
@@ -44,41 +44,49 @@ function sys_mmap()
 	PROT_READ=1;
 	PROT_WRITE=2;
 	PROT_EXEC=4;
-	mov $(( PROT_READ + PROT_WRITE )) rdx;
+	mov rdx $(( PROT_READ + PROT_WRITE ));
 	# man mmap for valid flags
 	#    mov r10, 2    ; flags
 	MAP_SHARED=1;
 	MAP_PRIVATE=2;
 	MAP_SHARED_VALIDATE=3;
 	MAP_ANONYMOUS=$((2#00100000));
-	mov $MAP_PRIVATE r10;
 	# The file descriptor is expected to be at r8,
 	# but for virtual files it will fail with a -19 at rax.
 	#
-	if [ "$fd" == "rax" ]; then
-		mov rax r8;
+	if is_64bit_register "$fd"; then
+		mov r10 $MAP_PRIVATE;
+		[ r8 != $fd ] && mov r8 $fd;
 	elif [ "$fd" != "" ]; then
-		mov $fd r8;
+		mov r10 $MAP_PRIVATE;
+		mov r8 $fd;
 	else
 		# no file descriptor, so allocate a new empty block (/dev/zero)
-		mov $(( MAP_PRIVATE + MAP_ANONYMOUS )) r10;
-		mov -1 r8;
+		mov r10 $(( MAP_PRIVATE + MAP_ANONYMOUS ));
+		mov r8 -1;
 	fi;
 	#xor r8 r8;
 	#    mov r9, 0     ; offset
 	xor r9 r9
 	#    mov rax, 9    ; mmap system call number
-	mov $SYS_MMAP rax;
+	mov rax $SYS_MMAP;
 	syscall;
-	mov rax $ptr;
-	if [ "$fd" == "" ]; then
-		return;
-	fi;
-	# then we need to read the data to that location
-	mov r8 rdi;
-	system_call_read "" "rsi"; # TODO not sure the best choice here. We should do it better
-	mov rax r9;
-	# By default the sys_read will move the memory address from rax to rsi.
-	mov rsi rax; # restore rax to return the memory address
+	cmp rax 0
+	local retry_anon="$({
+		mov rax $SYS_MMAP;
+		mov r10 $(( MAP_PRIVATE + MAP_ANONYMOUS ));
+		syscall;
+		cmp rax 0;
+		# then we need to read the data to that location
+		mov rdi r8;
+		system_call_read "" "rsi"; # TODO not sure the best choice here. We should do it better
+		# now we need to storet he rax to the st_size
+		local ptr_size=8;
+		mov $(( ptr + ptr_size + st_size )) rax;
+		mov rax rsi;
+	})";
+	jnl $(xcnt<<<$retry_anon)
+	printf $retry_anon;
+	mov $ptr rax;
 }
 

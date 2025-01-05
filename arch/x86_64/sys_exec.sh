@@ -20,11 +20,11 @@ function system_call_exec()
 		dup2_child="$(system_call_dup2 "$pipe_out" "$stdout")";
 		# read_pipe will run on the parent pid.
 		read_pipe="${read_pipe}$({
-			mov $SYS_READ rax;
-			mov "${pipe_in}" rdi; mov "(edi)" edi; # fd
-			mov "${pipe_buffer_addr}" rsi; # buff
-			mov rsi "$((pipe_buffer_addr - 8))"; # set the pointer to the buffer allowing concat to work
-			mov "${pipe_buffer_size}" rdx; # count
+			mov rax $SYS_READ;
+			mov rdi "${pipe_in}"; mov rdi "(edi)"; # fd
+			mov rsi "${pipe_buffer_addr}"; # buff
+			mov "$((pipe_buffer_addr - 8))" rsi; # set the pointer to the buffer allowing concat to work
+			mov rdx "${pipe_buffer_size}"; # count
 			syscall;
 		})";
 	fi;
@@ -36,21 +36,21 @@ function system_call_exec()
 	local exec_code="$({
 		for (( i=0; i<${argc}; i++ ));
 		do {
-			mov "${args[$i]}" rax;
+			mov rax "${args[$i]}";
 			if [ "${static_map[$i]}" == 0 ]; then # it's a dynamic command, resolve it
-				mov "(rax)" rax;
+				mov rax "(rax)";
 			fi;
-			mov rax "$(( PTR_ARGS + i*8 ))";
+			mov "$(( PTR_ARGS + i*8 ))" rax;
 		}; done
 		xor rax rax;
-		mov rax "$(( PTR_ARGS + ${#args[@]} * 8 ))";
-		mov ${args[0]} rdi;
+		mov "$(( PTR_ARGS + ${#args[@]} * 8 ))" rax;
+		mov rdi ${args[0]};
 		if [ "${static_map[0]}" == 0 ]; then # it's a dynamic command, resolve it
-			mov "(rdi)" rdi;
+			mov rdi "(rdi)";
 		fi;
-		mov ${PTR_ARGS:=0} rsi;
-		mov ${PTR_ENV:=0} rdx; # const char *const envp[]
-		mov ${SYS_EXECVE} rax; # sys_execve (3b)
+		mov rsi ${PTR_ARGS:=0};
+		mov rdx ${PTR_ENV:=0}; # const char *const envp[]
+		mov rax ${SYS_EXECVE}; # sys_execve (3b)
 		syscall;
 	})";
 	# end exec code:

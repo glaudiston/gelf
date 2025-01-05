@@ -8,7 +8,7 @@
 # https://docs.oracle.com/cd/E19683-01/816-1386/chapter6-83432/index.html
 #
 # we use base64 everywhere because bash does not support \x0 on strings
-
+if ! declare -F print_elf_file_header >/dev/null; then
 # init bloc
 ARCH=$(uname -m)
 # I have no idea why, but when using execve without env, a bash call can not resolve the "uname -m" call above.
@@ -17,6 +17,7 @@ ARCH=${ARCH:=x86_64}
 . elf_constants.sh
 . types.sh
 . utils.sh
+. encoding.sh
 . logger.sh
 . endianness.sh
 . ./arch/${ARCH}/bytecode.sh
@@ -407,7 +408,7 @@ get_b64_symbol_value()
 			echo -n ${out},${symbol_len},${symbol_type},${symbol_addr},${symbol_source_code}
 			return
 		fi
-		outsize=8; # memory_addr_size; TODO: this is platform specific, in x64 is 8 bytes
+		outsize=${symbol_len}; # normally memory_addr_size ptr (8 bytes); but in ptr to open file content it is the stat struct size +mem ptr size; TODO: this is platform specific, in x64 is 8 bytes
 		data_flags="$(echo "${symbol_data}" | cut -d, -f${SNIPPET_COLUMN_DATA_FLAGS})"
 		if [ "${data_flags}" == "ARGUMENT" ]; then
 			echo -n ${out},${outsize},${SYMBOL_TYPE_DYNAMIC_ARGUMENT},${symbol_addr}
@@ -856,22 +857,21 @@ define_variable_read_from_file()
 	# Reading file involve some steps.
 	# 1. Opening the file, if succeed, we have a file descriptor
 	#    in success the rax will have the fd
-	local open_code="$(system_call_open "${filename_addr}" | xd2b64)";
+	local open_code="$(sys_open "${filename_addr}" | xd2b64)";
 	# 2. fstat that fd, so we have the information on data size, to allocate properly the memory.
 	# TODO guarantee a valid writable memory location
 	local fstat_code="$(sys_fstat "${stat_addr}" | xd2b64)";
 	# 	To do this we need to have some memory space to set the stat data struct.
 	# 	TODO decide if we should mmap every time, or have a program buffer to use.
 	# 3.a. in normal files, allocate memory with mmap using the fd.
-	local mmap_code="";
 	# 3.b. in case of virtual file like pipes or nodes(/proc/...) we can't map directly, but we still need to have a memory space to read the data in, so the fstat is still necessary. We should then use the sys_read to copy the data into memory.
 	# 4. So we can access the data directly using memory addresses.
-	local read_code="$(read_file "${symbol_type}" "${stat_addr}" "${data_offset}")";
+	local read_code="$(read_file "${symbol_type}" "${stat_addr}" "${data_offset}" | xd2b64)";
 	# it should return the bytecode, the size
 	#fd="$(set_symbol_value "${symbol_value} fd" "${SYS_OPEN}")";
 	# We should create a new dynamic symbol to have the file descriptor number
 	#CODE="${CODE}$(sys_read $)"
-	instr_bytes="${open_code}${fstat_code}${mmap_code}${read_code}"
+	instr_bytes="${open_code}${fstat_code}${read_code}"
 	instr_len=$(echo -n "${instr_bytes}" | b64cnt )
 	data_bytes="";
 	data_len="$(( stat_struct_size + ptr_data_size ))"; # Dynamic length, only at runtime we can know so give it the pointer size
@@ -888,7 +888,7 @@ define_variable_read_from_file()
 		"${CODE_LINE_B64}" \
 		"1" \
 		"0" \
-		"rax"; #TODO: this is should set the register where the write call should look at data address. and it should be a variable, because this breaks cross arch(aarch does not have RAX).
+		"";
 	return;
 }
 
@@ -1563,18 +1563,18 @@ snippet_write()
 	# expected: STDOUT, STDERR, FD...
 	local data_output=$(get_b64_symbol_value "${out}" "${SNIPPETS}" | cut -d, -f${B64_SYMBOL_VALUE_RETURN_OUT} | base64 -d | tr -d '\0' );
 	# I think we can remove the parse_data_bytes and force the symbol have the data always
-	local symbol_data=$(get_b64_symbol_value "${input_symbol_name}" "${SNIPPETS}" )
+	local symbol_data=$(get_b64_symbol_value "${input_symbol_name}" "${SNIPPETS}");
 	local symbol_type=$(echo "${symbol_data}" | cut -d, -f${B64_SYMBOL_VALUE_RETURN_TYPE});
 	local symbol_value=$(echo "$symbol_data" | cut -d, -f${B64_SYMBOL_VALUE_RETURN_OUT});
 	local symbol_addr="$(echo "${symbol_data}" | cut -d, -f${B64_SYMBOL_VALUE_RETURN_ADDR})";
-	local data_bytes=$(echo -n "${symbol_value}"| cut -d, -f1);
-	local data_bytes_len="$(echo -n "${symbol_data}"| cut -d, -f2)";
+	local data_bytes=$(echo -n "${symbol_value}");
+	local data_bytes_len="$(echo -n "${symbol_data}"| cut -d, -f${B64_SYMBOL_VALUE_RETURN_SIZE})";
 	local data_addr_v=$(echo "${symbol_data}" | cut -d, -f${B64_SYMBOL_VALUE_RETURN_ADDR});
 	if [ "${symbol_type}" != "${SYMBOL_TYPE_STATIC}" ]; then
 	{
-		data_bytes_len=0; # no data to append. just registers used.
 		if [ "${symbol_type}" == "${SYMBOL_TYPE_PROCEDURE}" ]; then
 		{
+			data_bytes_len=0; # no data to append. just registers used.
 			data_bytes="";
 			local procedure_addr=$(echo "$symbol_data" | cut -d, -f${B64_SYMBOL_VALUE_RETURN_ADDR});
 			data_addr_v="${procedure_addr}"; # point to the procedure address
@@ -2355,3 +2355,4 @@ write_elf()
 	};
 	done;
 }
+fi;

@@ -18,7 +18,8 @@
 #		[0,0,0,0,1,1,1,2,2,2,3,3,3,3,4,4,4,5,5,5,6,6,6,6,7,7,7,8,8,8,9,9,9,9,10,10,10,11,11,11,12,12,12,12,13,13,13,14,14,14,15,15,15,15,16,16,16,17,17,17,18,18,18]
 # 	output: log10 integer value at base 10
 ilog10_guess_map_size=31;
-ilog10(){
+ilog10()
+{
 	local r1="$1"; # source value register or integer value
 	local r2="$2"; # target register to put the bit count
 	local guess_map_addr="$3"; # register pointing to address of array_max_bit_val_ilog10 or address value
@@ -33,10 +34,10 @@ ilog10(){
 		# 	16 = ilog10 addr
 		# 	24 = first arg
 		# so we want n=24
-		code="${code}$(mov rsp rax)";
-		code="${code}$(add 24 rax)";
-		code="${code}$(mov "(rax)" rax)";
-		#code="${code}$(movsb "(rax)" rax)"
+		code="${code}$(mov rax rsp)";
+		code="${code}$(add rax 24)";
+		code="${code}$(mov rax "(rax)")";
+		#code="${code}$(movsb rax "(rax)")"
 		# should be the same as: movsbl 0x18(%rsp), %eax
 		# BUT it is not, because movsb copy string.
 		#code="${code}${MOVSBL_V4rsp_EAX}$(printEndianValue 24 $SIZE_8BITS_1BYTE)";
@@ -45,7 +46,7 @@ ilog10(){
 	r1="${r1:=rax}";
 	r2="${r2:=rdx}";
 	# bsr rbx, esi		# count bits into rbx
-	code="${code}$(bsr "$r1" "$r2")";
+	code="${code}$(bsr "$r2" "$r1")";
 	# movzx   eax, BYTE PTR array_max_bit_val_ilog10[1+rax] # movzx (zero extend, set the byte and fill with zeroes the remaining bits)
 	#${MOV_rsi_rcx}$(add 63 rcx | b64_2esc)
 	#code="${code}${MOVSBL_V4rsi_ECX}";
@@ -65,3 +66,4 @@ ilog10(){
 	fi;
 	echo -en "${code}${retcode}";
 }
+

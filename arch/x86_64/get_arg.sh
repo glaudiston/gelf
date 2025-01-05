@@ -1,3 +1,5 @@
+#!/bin/bash
+. $(dirname $(realpath $BASH_SOURCE))/add.sh
 #
 #
 # When we start a process the memory is someyhing like:
@@ -58,6 +60,7 @@
 # - Use a loop with `lodsb` to compare bytes one at a time.
 # - Use `repe cmpsb` for block comparisons of strings in memory.
 
+ARCH_CONST_ARGUMENT_ADDRESS="_ARG_ADDR_ARG_ADDR_";
 # changes rsi, rcx
 detect_argsize()
 {
@@ -72,8 +75,8 @@ detect_argsize()
 	#
 	# to find the arg size, use rcx as rsi
 	# increment rcx by 8
-	local non_hardcoded=$({
-		local PTR_SIZE=8
+	local PTR_SIZE=8
+	local proc_arg=$({
 		local ARGUMENT_DISPLACEMENT=$PTR_SIZE;
 		mov $r_in $r_out;
 		add $ARGUMENT_DISPLACEMENT $r_out;
@@ -112,17 +115,19 @@ detect_argsize()
 		printf $fast_str_size_detection; # this only works when we have a next value; that is why we jump over if zero.
 		printf "$str_null_size_detection";
 	});
-	local hard_coded=$({
-		mov $r_in $r_out;
-		mov "($r_out)" $r_out; # resolve pointer to address
-		cmp $r_out 0;
+	local func_arg=$({
+		mov rsp $r_in;
+		add $(( 16 + (argn * 16) )) $r_in; # retval_ptr + argc + ( type + argn_ptr )
+		# at this point r_in == arg_type;
+		mov "($r_in)" $r_in;
+		cmp $r_in 0;
 		mov 8 $r_out;
-		je $(xcnt<<<$non_hardcoded)
+		je $(xcnt<<<$proc_arg)
 	});
 	cmp r15 0; # r15 is zero only on root stack frame layer, so we don't have types on args
-	jz $(xcnt<<<$hard_coded);
-	printf $hard_coded;
-	printf $non_hardcoded;
+	jz $(xcnt<<<$func_arg);
+	printf $func_arg;
+	printf $proc_arg;
 }
 
 # get_arg should abstract two scenarios
@@ -146,34 +151,24 @@ get_arg()
 	local args_ptr="$1"; # the mmap allocated root address where to store parsed/copied arguments.
 	local argn="$2";	# index of the argument starting with 0 to the program name (or function address ptr);
 	local arg_ptr="$3";	# address where to put the pointer to the target address where the argument will be copied into;
-	mov $args_ptr rax;
-	mov "(rax)" rcx;
-	mov "(rcx)" rsi;
-	others_mem_args=$({
-		mov rsi rax;
-	});
-	first_mem_arg=$({
-		add 8 rcx;
-		mov rcx $arg_ptr;
-		mov "(rax)" rsi;
-		mov rcx "(rsi)";
-		jump $(xcnt<<<$others_mem_args);
-	});
-	cmp rsi 0;
-	jnz $(xcnt<<<$first_mem_arg);
-	printf $first_mem_arg;
-	printf $others_mem_args;
+	mov rax $args_ptr;
+	mov rcx "(rax)";
+	mov rsi "(rcx)";
+	add rcx 8;
+	mov $arg_ptr rcx;
+	mov rsi "(rax)";
+	mov "(rsi)" rcx;
 	local func_arg=$({
 		# this should be used only on call functions
 		# so we use typed data and we have the return addr ptr on rsp
 		add rsp r15; # r15 is argc
-		mov r15 rsi;
+		mov rsi r15;
 		sub rsp r15;
 		add $(( 8 * (1 + argn * 2) )) rsi; # "1 +" the first 8 bytes are the argc *2 because each argument has the type prefix byte
 	});
 	local process_arg=$({
 		# in process root level we don't have typed args and rsp points to argc
-		mov rsp rsi;
+		mov rsi rsp;
 		add $(( 8 * (1 + argn) )) rsi; # +1 because the first arg is the argc
 		jump $(xcnt<<<${func_arg});
 	});
@@ -185,13 +180,20 @@ get_arg()
 	# now rcx has the string size
 	cmp r15 0;
 	skip_type=$({
+		printf $func_arg;
 		add 8 rsi;
 	});
 	jz $(xcnt<<<$skip_type);
 	printf $skip_type;
-	mov $arg_ptr rdi;
-	mov "(rdi)" rdi;
+	mov rdi $arg_ptr;
+	mov rdi "(rdi)";
+	# here rax have the args_ptr
+	mov r8 "(rax)"; # resolve to the ptr to first non used area to update it;
+	mov r9 "(r8)"; # the the value to add
+	add rcx r9;
+	mov "(r8)" r9; # set the first 8 bytes pointing to the first non used bytes
 	movs rsi rdi rcx;
+
 	#detect_string_length rsi rdx; # rdx has the string size
 	# if multiple of 8; set it to addr_ptr and we are done;
 	# modulus8(int, int):
@@ -233,9 +235,9 @@ get_arg_count()
 	# 	This function should copy the pointer value currently set at rsp and copy it to the address
 	local addr="$1"; # memory where to put the argc count
 	local code="";
-	code="${code}$(mov rsp r14)";
-	code="${code}$(add r15 r14)"; # this allows set r15 as displacement and use this code in function get args
-	code="${code}$(mov "(r14)" r14)";
-	code="${code}$(mov "r14" $addr)";
+	code="${code}$(mov r14 rsp)";
+	code="${code}$(add r14 r15)"; # this allows set r15 as displacement and use this code in function get args
+	code="${code}$(mov r14 "(r14)")";
+	code="${code}$(mov $addr "r14")";
 	echo -en "${code}";
 }
