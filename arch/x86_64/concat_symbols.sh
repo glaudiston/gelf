@@ -17,7 +17,7 @@ concat_symbol_instr(){
 		mov $dyn_addr rsp;
 	fi;
 	if [ "$size" -eq -1 ]; then
-		mov rsi "${addr}"; # source is addr
+		mov rsi "(${addr})"; # source is addr
 		detect_string_length rsi rdx rax; # the return is set at rdx
 		mov rcx rdx;
 		# but we need it on rcx because REP decrements it
@@ -32,19 +32,14 @@ concat_symbol_instr(){
 		mov rcx $size;
 	fi;
 	mov rdi rsp; # target addr
-	local code="";
 	add rdi r8;
-	local ADD_r8_rdi="$(prefix r8 rdi)01c7";
-	printf "${ADD_r8_rdi}";
-	local ADD_rcx_r8="$(prefix rcx r8)01c8";
-	code="${code}${ADD_rcx_r8}";
+	add r8 rcx;
 	# if addr is 0 allocate some address to it.
 	# cmp rdi
 	# jg .(alloc mem instr len)
 	# alloc mem
 	local REP=f3;
 	local MOVSB=a4;
-	code="${code}${REP}${MOVSB}";
-	echo -en "${code}";
+	printf "${REP}${MOVSB}";
 }
 
