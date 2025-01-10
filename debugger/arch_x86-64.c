@@ -969,8 +969,10 @@ void x83(struct opcode_fn_args *args)
 {
 	instruction_info *rv = args->rv;
 	// no rex:	(eax,ecx,edx,ebx,esp,ebp,esi,edi)
-	// rex.B:	(r8d-r15d)
 	// rex.W:	(rax,rcx,rdx,rbx,rsp,rbp,rsi,rdi)
+	// rex.R
+	// rex.X
+	// rex.B:	(r8d-r15d)
 	// rex.WB:	(r8-r15)
 	rv->instr_size = multiple_one_byte_operation(rv, rv->instr_size, &instr, r32a, r32b,r64a,r64b);
 }
@@ -1098,7 +1100,7 @@ void x7c(struct opcode_fn_args *args)
 	int sign_flag = (regs.eflags & (1 << SF));
 	instruction_info *rv = args->rv;
 	sprintf(rv->asm_code, "jl .%s%i%s", get_color("int"), v, get_color(""));
-	sprintf(rv->comment, "0x%x:%s", regs.rip + rv->instr_size + v, zero_flag != sign_flag ? "true": "false" );
+	sprintf(rv->comment, "0x%x:%s", regs.rip + rv->instr_size + v, zero_flag != sign_flag ? "false": "true" );
 }
 
 void x80(struct opcode_fn_args *args)
