@@ -6,8 +6,6 @@ JNZ_BYTE="75";
 JNA_BYTE="\x76";
 JA_BYTE="\x77"; # CF = 0, ZF = 0
 JS_BYTE="\x77";
-JNG_V1="7E";JLE_V1="$JNG_V1";
-JG_V1="7F";
 JL_V4="\x0f\x8c";
 JGE_V4="\x0f\x8d"; # Jump if greater than or igual to zero flags: SF = OF
 JG="0F8F"; # Jump if Greater than zero; flags: SF = OF, ZF = 0
@@ -91,10 +89,23 @@ jnl(){
 	local opcode="7d";
 	echo -n $opcode$(px "$v" 1 );
 }
+jge(){
+	jnl $@;
+}
+jng(){
+	local v="$1";
+	local jng_imm8="7e";
+	local opcode="${jng_imm8}";
+	echo -n $opcode$(px "$v" 1 );
+}
+jle(){
+	jng $@;
+}
 jg(){
 	local v="$1";
 	local code=""
-	code="${code}${JG_V1}";
+	local jg_imm8="7f";
+	code="${code}${jg_imm8}";
 	code="${code}$(px "$v" 1)";
 	echo -n "${code}";
 }

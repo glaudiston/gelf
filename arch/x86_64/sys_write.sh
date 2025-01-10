@@ -51,10 +51,9 @@ function system_call_write_dyn_addr()
 	# otherwise we expect all instruction already be in the data_addr_v as base64
 	if is_64bit_register $data_addr_v; then
 		[ rsi != $data_addr_v ] && mov rsi $data_addr_v;
-	elif [ "${type}" != "${SYMBOL_TYPE_DYNAMIC_ARGUMENT}" ]; then
-		mov rsi "($data_addr_v)";
 	else
-		mov rsi $data_addr_v;
+		mov rsi "($data_addr_v)";
+		data_len=0;
 	fi
 	if [ "${data_len}" == "0" ]; then
 		detect_string_length rsi rdx rax;

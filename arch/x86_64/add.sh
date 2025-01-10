@@ -1,5 +1,9 @@
 #!/bin/bash
+if ! declare -F add >/dev/null; then
 . $(dirname $(realpath $BASH_SOURCE))/prefix.sh
+. $(dirname $(realpath $BASH_SOURCE))/../../logger.sh
+. $(dirname $(realpath $BASH_SOURCE))/../../utils.sh
+. $(dirname $(realpath $BASH_SOURCE))/multiple_one_byte_operations.sh
 # add: given a value or a register on r1, add it to r2
 # r1: can be a register id, a integer value or a address value
 # 	input: register or "[address]" or integer value
@@ -19,9 +23,14 @@ ADD_r15_rax="$(prefix r15 rax | xd2esc)\x01\xF8";
 ADD_r15_rsi="$(prefix r15 rsi | xd2esc)\x01\xFE";
 ADD_rdx_r8="$(prefix rdx r8 | xd2esc)\x01\xd0";
 add(){
-	local ADD_SHORT="83"; # ADD 8 or 16 bit operand (depend on ModR/M opcode first bit(most significant (bit 7)) been zero) and the ModR/M opcode
+	debug "begin: add $@"
 	local r1="$1";
 	local r2="$2";
+	if is_register "$r1" && is_8bit_sint "$r2"; then
+		multiple_one_byte_operation add "$r1" "$r2";
+		return;
+	fi
+	local ADD_SHORT="83"; # ADD 8 or 16 bit operand (depend on ModR/M opcode first bit(most significant (bit 7)) been zero) and the ModR/M opcode
 	local code="";
 	local p=$(prefix "$r1" "$r2");
 	if [ "$r2" = "AL" ]; then
@@ -75,4 +84,4 @@ add(){
 	fi;
 	error "not implemented: add $@"
 }
-
+fi;

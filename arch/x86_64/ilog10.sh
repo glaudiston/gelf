@@ -24,7 +24,6 @@ ilog10()
 	local r2="$2"; # target register to put the bit count
 	local guess_map_addr="$3"; # register pointing to address of array_max_bit_val_ilog10 or address value
 	local ret_addr="$4";
-	local code="";
 	local retcode="";
 	if [ "$r1" == "" ]; then
 		# when called directly act like a function,
@@ -34,36 +33,35 @@ ilog10()
 		# 	16 = ilog10 addr
 		# 	24 = first arg
 		# so we want n=24
-		code="${code}$(mov rax rsp)";
-		code="${code}$(add rax 24)";
-		code="${code}$(mov rax "(rax)")";
-		#code="${code}$(movsb rax "(rax)")"
+		mov rax rsp;
+		add rax 24;
+		mov rax "(rax)";
+		# movsb rax "(rax)";
 		# should be the same as: movsbl 0x18(%rsp), %eax
 		# BUT it is not, because movsb copy string.
-		#code="${code}${MOVSBL_V4rsp_EAX}$(printEndianValue 24 $SIZE_8BITS_1BYTE)";
+		#printf "${MOVSBL_V4rsp_EAX}$(printEndianValue 24 $SIZE_8BITS_1BYTE)";
 		retcode="$(ret)";
 	fi;
 	r1="${r1:=rax}";
 	r2="${r2:=rdx}";
-	# bsr rbx, esi		# count bits into rbx
-	code="${code}$(bsr "$r2" "$r1")";
+	bsr "$r2" "$r1"; # count r1 bits into r2 (normally from rax to rdx)
 	# movzx   eax, BYTE PTR array_max_bit_val_ilog10[1+rax] # movzx (zero extend, set the byte and fill with zeroes the remaining bits)
 	#${MOV_rsi_rcx}$(add 63 rcx | b64_2esc)
-	#code="${code}${MOVSBL_V4rsi_ECX}";
-	#code="${code}$(add $r2 $r3 | b64_2esc)";
+	# printf "${MOVSBL_V4rsi_ECX}";
+	# printf "$(add $r2 $r3 | b64_2esc)";
 	# 483B04D5 	cmp 0x0(,%rdx,8),%rax
 	# 1 0000 0FBE1415 	movsbl 0x010018(,%rdx,),%edx
 	#movsbl guess_map_addr(rdx), %edx
-	code="${code}${MOVSBL_V4_rdx_EDX}$(px $guess_map_addr $SIZE_32BITS_4BYTES)";
+	printf "${MOVSBL_V4_rdx_EDX}$(px $guess_map_addr $SIZE_32BITS_4BYTES)";
 	local power_map_addr=$((guess_map_addr + ilog10_guess_map_size));
-	code="${code}${CMP_V4_rdx_8_rax}$(px $power_map_addr $SIZE_32BITS_4BYTES)";
-	code="${code}${SBB_0_EDX}";
+	printf "${CMP_V4_rdx_8_rax}$(px $power_map_addr $SIZE_32BITS_4BYTES)";
+	printf "${SBB_0_EDX}";
 	if [ "$ret_addr" != "" ]; then
 		# mov "(rsi)" rsi;
 		#1 0000 480FB6FA 	movzx %dl,%rdi
-		code="${code}${MOVZX_DL_rdi}";
-		#code="${code}$(mov rsi $ret_addr | xd2esc)";
+		printf "${MOVZX_DL_rdi}";
+		# mov rsi $ret_addr;
 	fi;
-	echo -en "${code}${retcode}";
+	printf "${retcode}";
 }
 

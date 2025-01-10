@@ -13,14 +13,14 @@ function detect_string_length()
 	# xor rcx rcx; # ensure rcx = 0
 	#mov "(rsi)" rsi;
 	# we expect the rsi having the address of the string
-	mov "${r_in}" "${r_out}"; # let's use rcx as rsi incrementing it each loop interaction
+	mov "${r_out}" "${r_in}"; # let's use rcx as rsi incrementing it each loop interaction
 	local loop_code=$({
 		# save rip
 		# leaq (%rip), %rbx #
 		# LEAQ_RIP_rbx;
 		# get the data byte at addr+rcx into rax
 		# todo ? USE MOVSB ?
-		mov "(${r_out})" $r_tmp_64; # resolve current rcx pointer to rax (al)
+		mov $r_tmp_64 "(${r_out})"; # resolve current rcx pointer to rax (al)
 		inc ${r_out};
 		# test data byte
 		test ${r_tmp}; # test for null byte;
@@ -31,6 +31,6 @@ function detect_string_length()
 	jnz $(( -loop_size - jnz_size )); # loop until find a null byte.
 	dec "${r_out}";
 	# sub %rsi, %rcx
-	sub ${r_in} ${r_out};
+	sub ${r_out} ${r_in};
 	#JMP_rbx="ff23";
 }

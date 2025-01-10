@@ -78,15 +78,15 @@ detect_argsize()
 	local PTR_SIZE=8
 	local proc_arg=$({
 		local ARGUMENT_DISPLACEMENT=$PTR_SIZE;
-		mov $r_in $r_out;
-		add $ARGUMENT_DISPLACEMENT $r_out;
+		mov $r_out $r_in;
+		add $r_out $ARGUMENT_DISPLACEMENT $r_out;
 		# mov to the real address (not pointer to address)
-		mov "($r_out)" $r_out; # resolve pointer to address
+		mov $r_out "($r_out)"; # resolve pointer to address
 		# and subtract rcx - rsi (resulting in the result(str len) at rcx)
 		str_null_size_detection=$({
 			# if rcx is zero, then we the input is the last argument and we are unable to detect size using method;
 			# so fallback to string size detection
-			mov "($r_in)" $r_in; # resolve pointer to address
+			mov $r_in "($r_in)"; # resolve pointer to address
 			# now we have a problem:
 			#  We do know how to detect a string length. but we don't know if this is a string.
 			#  a string is a ptr to bytes, a int is just the bytes.
@@ -94,24 +94,17 @@ detect_argsize()
 			# we can use the stack frame counter as first item on rsp,
 			# so we know that the first stack frame is all string,
 			# but other requires an type array.
-			detect_string_length $r_in $r_out
+			detect_string_length $r_in $r_out;
 		});
 		fast_str_size_detection=$({
-			mov "($r_in)" $r_in; # resolve pointer to address
-			sub $r_in $r_out;
+			mov $r_in "($r_in)"; # resolve pointer to address
+			sub $r_out $r_in;
 		#	dec $r_out; # because it counts the null byte
 			jump $(xcnt<<<$str_null_size_detection);
 		});
 		fast_str_size_detection_size=$(xcnt<<<$fast_str_size_detection);
-		cmp $r_out $SYMBOL_TYPE_HARD_CODED;
-		hardcoded_size_detection=$({
-			mov 8 $r_out;
-		})
-		jnz $(xcnt<<<$hardcoded_size_detection);
-		printf $hardcoded_size_detection;
-		cmp rsp $r_out; # no argument; ptr == NULL
-		jl $(xcnt<<<$fast_str_size_detection); #
-		debug jz=[$(jz $fast_str_size_detection_size)]
+		cmp $r_out 0; # no argument; ptr == NULL
+		jz $(xcnt<<<$fast_str_size_detection); #
 		printf $fast_str_size_detection; # this only works when we have a next value; that is why we jump over if zero.
 		printf "$str_null_size_detection";
 	});
@@ -121,11 +114,17 @@ detect_argsize()
 		# at this point r_in == arg_type;
 		mov "($r_in)" $r_in;
 		cmp $r_in 0;
+		cmp $r_out $SYMBOL_TYPE_HARD_CODED;
+		hardcoded_size_detection=$({
+			mov $r_out 8;
+		})
+		jnz $(xcnt<<<$hardcoded_size_detection);
+		printf $hardcoded_size_detection;
 		mov 8 $r_out;
 		je $(xcnt<<<$proc_arg)
 	});
 	cmp r15 0; # r15 is zero only on root stack frame layer, so we don't have types on args
-	jz $(xcnt<<<$func_arg);
+	jz $(xcnt<<<$func_arg); # if zero goto proc_arg
 	printf $func_arg;
 	printf $proc_arg;
 }
@@ -151,25 +150,30 @@ get_arg()
 	local args_ptr="$1"; # the mmap allocated root address where to store parsed/copied arguments.
 	local argn="$2";	# index of the argument starting with 0 to the program name (or function address ptr);
 	local arg_ptr="$3";	# address where to put the pointer to the target address where the argument will be copied into;
-	mov rax $args_ptr;
-	mov rcx "(rax)";
-	mov rsi "(rcx)";
-	add rcx 8;
-	mov $arg_ptr rcx;
+	mov rax "($args_ptr)"; # args_ptr is the memory value that has the pointer to mmap;
 	mov rsi "(rax)";
-	mov "(rsi)" rcx;
+	cmp rsi 0;
+	local init_argsptr=$({
+		mov "(rax)" rax;
+		mov rsi "(rax)";
+	});
+	jne $(xcnt<<<$init_argsptr);
+	printf $init_argsptr;
+	add rsi 8;
+	mov "$arg_ptr" rsi;
+	mov "(rax)" rsi; # set the args_ptr value to the position where to write the argument;
 	local func_arg=$({
 		# this should be used only on call functions
 		# so we use typed data and we have the return addr ptr on rsp
-		add rsp r15; # r15 is argc
-		mov rsi r15;
-		sub rsp r15;
-		add $(( 8 * (1 + argn * 2) )) rsi; # "1 +" the first 8 bytes are the argc *2 because each argument has the type prefix byte
+		add r15 rsp ; # r15 is argc
+		mov r15 rsi;
+		sub r15 rsp;
+		add rsi $(( 8 * (1 + argn * 2) )); # "1 +" the first 8 bytes are the argc *2 because each argument has the type prefix byte
 	});
 	local process_arg=$({
 		# in process root level we don't have typed args and rsp points to argc
 		mov rsi rsp;
-		add $(( 8 * (1 + argn) )) rsi; # +1 because the first arg is the argc
+		add rsi $(( 8 * (1 + argn) )); # +1 because the first arg is the argc
 		jump $(xcnt<<<${func_arg});
 	});
 	cmp r15 0; # this means we are not root level and rsp is the return value
@@ -181,35 +185,13 @@ get_arg()
 	cmp r15 0;
 	skip_type=$({
 		printf $func_arg;
-		add 8 rsi;
+		add rsi 8;
 	});
 	jz $(xcnt<<<$skip_type);
 	printf $skip_type;
-	mov rdi $arg_ptr;
-	mov rdi "(rdi)";
+	mov rdi "($arg_ptr)";
 	# here rax have the args_ptr
-	mov r8 "(rax)"; # resolve to the ptr to first non used area to update it;
-	mov r9 "(r8)"; # the the value to add
-	add rcx r9;
-	mov "(r8)" r9; # set the first 8 bytes pointing to the first non used bytes
-	movs rsi rdi rcx;
-
-	#detect_string_length rsi rdx; # rdx has the string size
-	# if multiple of 8; set it to addr_ptr and we are done;
-	# modulus8(int, int):
-	#        mov    edx, edi
-	#        sar     edx, 31
-	#        shr     edx, 29
-	#        lea     eax, [rdi+rdx]
-	#        and     eax, 7
-	#        sub     eax, edx
-	#        ret
-	# if not multiple of 8; we need to pad zeros to align 64 bits;
-	# 	otherwise we will have issues with bsr and other number functions on registers
-	# TODO: move string to memory:
-	# 	because we need to zero higher bits in byte, avoiding further issues with bsr
-	# TODO: set me address to the target address
-	# MOV rsi addr_ptr
+	movs rsi rdi rcx; # copy the (rsi) contents to (rdi), limit by rcx bytes
 }
 
 # The RSP (Register Stack Pointer) integer value is by convention the argc(argument count)

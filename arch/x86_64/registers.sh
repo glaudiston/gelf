@@ -1,3 +1,5 @@
+#!/bin/bash
+if ! declare -F is_register >/dev/null; then
 # The x86-64 architecture has a total of 16 general-purpose registers,
 # which are named from R0 to r15. The first 8 registers,
 # R0 to R7, can be accessed using their traditional names (AX, BX, CX, DX, BP, SI, DI, and SP),
@@ -205,3 +207,5 @@ get_8bit_reg(){
 	local r="$1";
 	printf ${r_8bl[$((r))]};
 }
+
+fi;

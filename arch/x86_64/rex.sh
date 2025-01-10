@@ -1,3 +1,5 @@
+#!/bin/bash
+if ! declare -F rex >/dev/null; then
 # THE REX PREFFIX:
 #  in 64bit mode the x86 arch specifies register sizes using prefix bytes.
 #  For example, the same "0xb8" instruction that loads a 32-bit constant into eax can be used with a "0x66" prefix to load a 16-bit constant, or a "0x48" REX prefix to load a 64-bit constant.
@@ -14,8 +16,8 @@
 #
 . $(dirname $(realpath $BASH_SOURCE))/multi_syntax.sh
 rex(){
-	local reg=$1;
-	local r_m=$2;
+	local r_m=$1;
+	local reg=$2;
 	if ! use_intel_syntax; then
 		# AT&T syntax;
 		reg=$2;
@@ -52,3 +54,4 @@ rex(){
 	fi;
 	printf "%02x" $(( (2#0100 << 4) + (W<<3) + (R<<2) + (X<<1) + B ));
 }
+fi;

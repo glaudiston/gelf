@@ -1,3 +1,5 @@
+#!/bin/bash
+if ! declare -F multiple_one_byte_operation >/dev/null; then
 . arch/x86_64/registers.sh
 . arch/x86_64/rex.sh
 # prefix should detect and print all instruction prefixes like:
@@ -40,4 +42,4 @@ prefix(){
 		echo -n ${osize};
 	fi;
 }
-
+fi;

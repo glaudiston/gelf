@@ -1,4 +1,4 @@
-if ! declare -F mov>/dev/null; then
+if ! declare -F mov_loaded>/dev/null; then mov_loaded(){ :; };
 . types.sh
 . logger.sh
 . endianness.sh
@@ -14,9 +14,24 @@ mov(){
 	local v1="$1";
 	local v2="$2";
 	debug intel asm : mov $v1 $v2;
-	if [ $v1 == "(rcx)" -a $v2 == "rcx" ]; then
-		printf 488909
+	if is_register_ptr $v1 && is_64bit_register $v2; then
+	{
+		local prefix=$(rex $1 $2);
+		local opcode=89;
+		local mod=$(( v1 == rbp ));
+		local modrm=$(px $(( (mod << 6)| ($v2 << 3) | $v1 )) $SIZE_8BITS_1BYTE);
+		local sib=$({
+		[ $(( v1 )) == $(( rsp )) ] && {
+			local scale=0;
+			local base=$((v1));
+			local index=$((v1));
+			px "$(( (scale<<5) | (base<<3) | index ))" $SIZE_8BITS_1BYTE;
+		}
+		[ $(( v1 )) == $(( rbp )) ] && printf 00;
+		});
+		printf "${prefix}${opcode}${modrm}${sib}"
 		return;
+	}
 	fi;
 	mov_att $v2 $v1;
 }
@@ -25,7 +40,7 @@ mov_att(){
 	local v1="$1";
 	local v2="$2";
 	local code="";
-	local prefix=$(prefix "$v1" "$v2");
+	local prefix=$(prefix "$v2" "$v1");
 	code="${code}${prefix}";
 	local modrm="";
 	if [[ "$v1" =~ ^\(.*\)$ ]]; then	# resolve pointer address value
@@ -250,19 +265,4 @@ REP="\xf3"; # repeat until rcx
 MOVZX_DL_rdi="480fb6fa";
 SBB_0_EDX="83da00";
 MOVSBL_V4_rdx_EDX="0FBE1415";
-
-# show_bytecode "mov %rsp, %rsi"
-# 4889e6
-MOV_rax_rsi="$(mov rax rsi | xd2esc)"; # xC6 move the rax to rsi #11000110
-MOV_rax_rdx="$(mov rax rdx | xd2esc)";
-MOV_rax_rdi="$(mov rax rdi | xd2esc)";
-MOV_rdx_rcx="$(mov rdx rcx | xd2esc)";
-#MOV_rsp_rsi="$(prefix rsp rsi | xd2esc)${MOV_R}\xe6"; # Copy the rsp(pointer address) to the rsp(as a pointer address).
-MOV_rsp_rax="$(mov rsp rax | xd2esc)";
-MOV_rsp_rsi="$(mov rsp rsi | xd2esc)"; # move the rsp to rsi #11000110
-MOV_rsp_rdx="$(mov rsp rdx | xd2esc)"; # move the rsp to rdx #11000010
-MOV_rsp_rdi="$(mov rsp rdi | xd2esc)";
-MOV_rsi_rax="$(mov rsi rax | xd2esc)"; # move the rsi to rdx #11110010
-MOV_rsi_rdx="$(mov rsi rdx | xd2esc)"; # move the rsi to rdx #11110010
-
 fi;

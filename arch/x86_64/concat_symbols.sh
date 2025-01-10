@@ -40,7 +40,6 @@ concat_symbol_instr(){
 		})";
 	fi;
 	code="${code}$(mov rsp rdi)"; # target addr
-	#code="${code}${MOV_rax_rdi}";
 	local ADD_r8_rdi="$(prefix r8 rdi)01c7";
 	code="${code}${ADD_r8_rdi}";
 	local ADD_rcx_r8="$(prefix rcx r8)01c8";

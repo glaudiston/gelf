@@ -516,10 +516,8 @@ EOF
 test_ilog10(){
 	# good numbers to test
 	numbers_to_test="$({
-	for (( n=1; n < 2 ** 32; n = n * 10 )); do if [ "$n" -gt 1 ]; then echo $(( n -1 )); fi; echo $n; echo $(( n +1 )); done;
-	for (( n=2; n < 2 ** 32; n = n * 2 )); do echo $(( n -1 )); if [ $n == $(( 2 ** 31 )) ]; then break; fi;echo $n; echo $((n +1)); done;
+		local x; for (( i=0; i<10; i++ )); do x=$RANDOM$x; echo $(( ${x:0:i+1} % (2 ** 32))); done
 	} | sort -n | uniq)";
-	numbers_to_test="${RANDOM}"
 	for n in $numbers_to_test; do
 		echo -n "n=$n..." #| tee /dev/stderr;
 		local l=$(echo "scale=18; l($n)/l(10)" | bc -l | sed 's/^[.].*/0/; s/[.].*//');

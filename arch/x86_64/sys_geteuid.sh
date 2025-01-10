@@ -1,7 +1,7 @@
 
 sys_geteuid(){
 	local addr="$1";
-	mov $SYS_GETEUID rax;
+	mov rax $SYS_GETEUID;
 	syscall;
-	mov rax "$addr";
+	mov "$addr" rax;
 }

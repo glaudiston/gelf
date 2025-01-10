@@ -98,12 +98,6 @@ segments=( es cs ss ds fs gs segr6 segr7 )
 #    The last 3 bits (000) specify the source register (which in this case is rax).
 #
 # So, in summary, the ModR/M byte in the opcode "48 89 C6" indicates that we are using a register-to-register move instruction, with rsi as the destination register and rax as the source register.
-# MOV_rsp_rsi="$(prefix rsp rsi | xd2esc)${MOV_R}\x$( printf %x $(( MOVR + (rsi << 3) + rsp )) )"; # move the rsp to rsi #11000110
-# MOV__rsp__rsi="$(prefix "(rsp)" rsi | xd2esc)\x8b\x34\x24"; # mov (%rsp), %rsp; # move value resolving pointer
-# show_bytecode "MOV %rsi, (%rsp)"
-#48893424
-# show_bytecode "MOV %rsi, %rsp"
-#4889f4
 
 # About the "Effective Address":
 #

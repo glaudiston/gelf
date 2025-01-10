@@ -1,3 +1,8 @@
+#!/bin/bash
+. $(dirname $(realpath $BASH_SOURCE))/../../types.sh;
+. $(dirname $(realpath $BASH_SOURCE))/../../encoding.sh;
+. $(dirname $(realpath $BASH_SOURCE))/../../number.sh;
+. $(dirname $(realpath $BASH_SOURCE))/registers.sh;
 # Intel manual ref for modr/m:
 # Table 2-2. 32-Bit Addressing Forms with the ModR/M Byte
 MODRM_MOD_DISPLACEMENT_REG_POINTER=$(( 0 << 6 ));	# If mod is 00, no displacement follows the ModR/M byte, and the operand is IN a register (like a pointer). The operation will use the address in a register. This is used with SIB for 64bit displacements

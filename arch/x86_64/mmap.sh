@@ -77,15 +77,20 @@ function sys_mmap()
 		mov r10 $(( MAP_PRIVATE + MAP_ANONYMOUS ));
 		syscall;
 		cmp rax 0;
-		# then we need to read the data to that location
-		mov rdi r8;
-		system_call_read "" "rsi"; # TODO not sure the best choice here. We should do it better
-		# now we need to storet he rax to the st_size
-		local ptr_size=8;
-		mov $(( ptr + ptr_size + st_size )) rax;
-		mov rax rsi;
+		local read_code=$({
+			# then we need to read the data to that location
+			push rax;
+			mov rdi r8;
+			system_call_read "" "rsi";
+			# now we need to store the rax to the st_size
+			local ptr_size=8;
+			mov $(( ptr + ptr_size + st_size )) rax; # update the stat size with the read byte count;
+			pop rax;
+		});
+		jng $(xcnt<<<$read_code);
+		printf $read_code
 	})";
-	jnl $(xcnt<<<$retry_anon)
+	jnl $(xcnt<<<$retry_anon);
 	printf $retry_anon;
 	mov $ptr rax;
 }
