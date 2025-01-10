@@ -1,5 +1,5 @@
 #!/bin/bash
-if ! declare -F rex >/dev/null; then
+if ! declare -F rex_loaded >/dev/null; then rex_loaded(){ :; };
 # THE REX PREFFIX:
 #  in 64bit mode the x86 arch specifies register sizes using prefix bytes.
 #  For example, the same "0xb8" instruction that loads a 32-bit constant into eax can be used with a "0x66" prefix to load a 16-bit constant, or a "0x48" REX prefix to load a 64-bit constant.
@@ -14,15 +14,11 @@ if ! declare -F rex >/dev/null; then
 #  X bit = extends SIB 'index' field, same as R but for the SIB byte (memory operand)
 #  B bit = extends the ModR/M r/m or 'base' field or the SIB field
 #
+. $(dirname $(realpath $BASH_SOURCE))/registers.sh
 . $(dirname $(realpath $BASH_SOURCE))/multi_syntax.sh
 rex(){
 	local r_m=$1;
 	local reg=$2;
-	if ! use_intel_syntax; then
-		# AT&T syntax;
-		reg=$2;
-		r_m=$1;
-	fi;
 	if ! {
 		is_addr_ptr "$reg" || 
 		is_64bit_register "$r_m" ||
@@ -52,6 +48,9 @@ rex(){
 		R=0;
 		B=0;
 	fi;
+	if  { is_64bit_extended_register "$r_m" && is_8bit_sint "$reg"; }; then
+		R=0;
+	fi
 	printf "%02x" $(( (2#0100 << 4) + (W<<3) + (R<<2) + (X<<1) + B ));
 }
 fi;

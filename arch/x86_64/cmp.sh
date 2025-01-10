@@ -1,3 +1,9 @@
+. $(dirname $(realpath $BASH_SOURCE))/registers.sh;
+. $(dirname $(realpath $BASH_SOURCE))/prefix.sh;
+. $(dirname $(realpath $BASH_SOURCE))/mod_rm.sh;
+. $(dirname $(realpath $BASH_SOURCE))/../../logger.sh;
+. $(dirname $(realpath $BASH_SOURCE))/../../encoding.sh;
+. $(dirname $(realpath $BASH_SOURCE))/../../number.sh;
 # CMP
 cmp(){
 	local v1="$1";
@@ -6,12 +12,13 @@ cmp(){
 	local mod_rm="";
 	local code="";
 	code="${code}$(prefix "$v1" "$v2")";
+	debug "cmp $@..."
 	if is_8bit_register "$v1"; then
 	{
 		opcode="38";
 		if is_8bit_register "$v2"; then
 		{
-			mod_rm="$(px $((MODRM_MOD_NO_EFFECTIVE_ADDRESS + (v1 << 3) + v2 )) $SIZE_8BITS_1BYTE)";
+			mod_rm="$(px $((MODRM_MOD_NO_EFFECTIVE_ADDRESS + (v2 << 3) + v1 )) $SIZE_8BITS_1BYTE)";
 			code="${code}${opcode}${mod_rm}";
 			echo -en "$code";
 			debug "asm: cmp $@; # $code";
@@ -85,7 +92,7 @@ cmp(){
 				# code="$(printf "%02x" $(( (2#0100 << 4) + (W<<3) + (R<<2) + (X<<1) + B )))";
 				local cmp_v1="${cmp}$(px $(( MODRM_MOD_NO_EFFECTIVE_ADDRESS + MODRM_OPCODE_CMP + v1 )) $SIZE_8BITS_1BYTE)";
 				# we need to call rex again because here we are using intel syntax (imm8 later)
-				code="$(rex "$v2" "$v1")${cmp_v1}$(px $v2 $SIZE_8BITS_1BYTE)";
+				code="$code${cmp_v1}$(px $v2 $SIZE_8BITS_1BYTE)";
 				local rv=$(echo -en "${code}");
 				debug "asm: cmp $@; # $rv"
 				echo -n "$rv";
@@ -102,7 +109,7 @@ cmp(){
 		fi;
 		if is_64bit_register "$v2"; then
 			local b1="39";
-			local b2="$(px $((MODRM_MOD_NO_EFFECTIVE_ADDRESS + (v1 << 3) + v2 )) $SIZE_8BITS_1BYTE)";
+			local b2="$(px $((MODRM_MOD_NO_EFFECTIVE_ADDRESS + (v2 << 3) + v1 )) $SIZE_8BITS_1BYTE)";
 			local rv="${code}${b1}${b2}";
 			debug "asm: cmp $@; # $rv";
 			echo -n "$rv";
