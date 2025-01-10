@@ -722,7 +722,7 @@ define_variable_increment()
 		symbol_data=$(get_b64_symbol_value "${symbol_id}" "${SNIPPETS}")
 		symbol_type=$(echo "${symbol_data}" | cut -d, -f${B64_SYMBOL_VALUE_RETURN_TYPE});
 		symbol_value=$(echo "$symbol_data" | cut -d, -f${B64_SYMBOL_VALUE_RETURN_OUT} | base64 -d);
-		instr_bytes="${instr_bytes}$(set_increment $dyn_data_offset $symbol_value $symbol_type)";
+		instr_bytes="${instr_bytes}$(set_increment $dyn_data_offset $symbol_value $symbol_type | xd2b64)";
 	done
 	local instr_len="$(echo "${instr_bytes}" | b64cnt)";
 	local data_bytes="";
@@ -1027,7 +1027,8 @@ define_variable_from_test()
 	local field_b_addr=$(echo "$field_data_b" | cut -d, -f${B64_SYMBOL_VALUE_RETURN_ADDR})
 	local field_type_b=$(echo "${field_data_b}" | cut -d, -f${B64_SYMBOL_VALUE_RETURN_TYPE});
 	local field_b_v=$(echo "${field_data_b}" | cut -d, -f${B64_SYMBOL_VALUE_RETURN_OUT} | base64 -d)
-	local instr_bytes=$(compare "${field_a_v:=0}" "${field_b_v:=0}" "$field_type_a" "$field_type_b")
+	local instr_bytes=$(compare "${field_a_v:=0}" "${field_b_v:=0}" "$field_type_a" "$field_type_b" | xd2b64)
+	debug "compare instr_bytes are: $instr_bytes";
 	local instr_len=$(echo "$instr_bytes" | b64cnt);
 	local data_bytes="";
 	local data_len=0;

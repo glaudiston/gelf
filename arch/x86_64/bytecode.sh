@@ -483,23 +483,22 @@ set_increment()
 	local addr=$1;
 	local value=$2;
 	local value_type=$3;
-	local code="";
-	code="${code}${MOV_V4_rdx}$(printEndianValue "${addr}" "${SIZE_32BITS_4BYTES}")";
-	code="${code}$(mov "(rdx)" rdx | xd2esc)";
+	mov rdx "$addr";
+	mov rdx "(rdx)";
 	if [ "$value" == 1 ]; then
-		code="${code}$(inc rdx | xd2esc)";
+		inc rdx;
 	elif [ "$value" -gt -128 -a "$value" -lt 128 ]; then
-		code="${code}$(add "${value}" rdx | xd2esc)";
+		add rdx "${value}";
 	elif [ "$value_type" == $SYMBOL_TYPE_HARD_CODED ]; then
-		code="${code}${ADD_V4_rdx}$(printEndianValue "${value}" "${SIZE_32BITS_4BYTES}")";
+		printf "${ADD_V4_rdx}$(printEndianValue "${value}" "${SIZE_32BITS_4BYTES}")";
 	else
-		code="${code}$(xor rsi rsi | xd2esc)";
-		code="${code}${MOV_V4_rsi}$(printEndianValue "${value}" "${SIZE_32BITS_4BYTES}")";
-		code="${code}$(mov "(rsi)" rsi | xd2esc)";
-		code="${code}${ADD_rsi_rdx}";
+		xor rsi rsi;
+		printf "${MOV_V4_rsi}$(printEndianValue "${value}" "${SIZE_32BITS_4BYTES}")";
+		mov "(rsi)" rsi;
+		printf "${ADD_rsi_rdx}";
 	fi;
-	code="${code}$(mov rdx "$addr" | xd2esc)";
-	echo -en "${code}" | base64 -w0;
+	mov "$addr" rdx;
+	echo -en "${code}";
 }
 
 init_bloc(){
