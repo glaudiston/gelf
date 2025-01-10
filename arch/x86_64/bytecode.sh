@@ -1,6 +1,7 @@
 #!/bin/bash
 . arch/system_call_linux_x86.sh
 . arch/x86_64/add.sh
+. arch/x86_64/mul.sh
 . arch/x86_64/array.sh
 . arch/x86_64/bind.sh
 . arch/x86_64/bsr.sh
@@ -184,21 +185,21 @@ shlq(){
 	error not implemented/supported
 }
 shrq(){
-	local v1=$1;
-	local v2=$2;
-	local p=$(prefix "$v1" "$v2");
-	if is_valid_number "$v1"; then
+	local reg=$1;
+	local nbits=$2;
+	local p=$(prefix "$nbits" "$reg");
+	if is_valid_number "$nbits"; then
 		local opcode1="c1";
-		local opcode2="$( px $(( 16#e8 + v2 )) $SIZE_8BITS_1BYTE)";
+		local opcode2="$( px $(( 16#e8 + reg )) $SIZE_8BITS_1BYTE)";
 		local code="";
-		code="${code}${p}${opcode1}${opcode2}$(px $((v1)) $SIZE_8BITS_1BYTE)";
+		code="${code}${p}${opcode1}${opcode2}$(px $((nbits)) $SIZE_8BITS_1BYTE)";
 		echo -n "${code}";
 		debug "asm: shrq $@; # $code"
 		return;
 	fi;
-	if [ "$v1" == "cl" ]; then
+	if [ "$nbits" == "cl" ]; then
 		local opcode1="d3";
-		local opcode2="$( px $(( 16#e8 + v2 )) $SIZE_8BITS_1BYTE)";
+		local opcode2="$( px $(( 16#e8 + reg )) $SIZE_8BITS_1BYTE)";
 		local code="";
 		code="${code}${p}${opcode1}${opcode2}";
 		local rv=$(echo -n "${code}");
@@ -207,36 +208,6 @@ shrq(){
 		return;
 	fi;
 	error not implemented/supported
-}
-# signed integer multiply
-imul(){
-	# IMUL_rdx_rax="$(prefix rdx rax | xd2esc)\x0f\xaf\xc2";
-	local v1="$1";
-	local v2="$2";
-	local p="$(prefix "$1" "$2")";
-	if is_valid_number "$1"; then
-		# 486BF60A	# imul $10,%rsi ; imul rsi,rsi,byte +0xa
-		#
-		local b1="6b";
-		# f0 + target reg + reg mul
-		local b2="$(px $(( MODRM_MOD_NO_EFFECTIVE_ADDRESS + (v2<<3) + v2)) $SIZE_8BITS_1BYTE)";
-		local b3="$(px "$v1" $SIZE_8BITS_1BYTE)";
-		c="$p$b1$b2$b3";
-		echo -n "$c";
-		debug "imul $@; # $c"
-		return;
-	fi;
-	if is_register "$1"; then
-		# 480fafc2	imul %rdx,%rax
-		local b1="0f";
-		local b2="af";
-		local b3="$(px $(( MODRM_MOD_NO_EFFECTIVE_ADDRESS + (v1 << 3) + v2)) $SIZE_8BITS_1BYTE)";
-		c="$p$b1$b2$b3";
-		echo -n "$c";
-		debug "imul $@; # $c"
-		return;
-	fi;
-	error not implemented: imul $@
 }
 
 dec(){
@@ -448,8 +419,8 @@ function system_call_fork()
 function system_call_pipe()
 {
 	local pipe_addr="$1";
-	mov "${SYS_PIPE}" rax;
-	mov "${pipe_addr}" rdi;
+	mov rax "${SYS_PIPE}";
+	mov rdi "${pipe_addr}";
 	syscall;
 }
 

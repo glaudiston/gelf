@@ -3,6 +3,17 @@
 # tests should be functions prefixed with test_A
 #
 
+test_arch_x86_64(){
+	for f in arch/x86_64/*_test.sh; do
+		local got=$($f || error "$f");
+		if grep -q ERROR<<<"$got"; then
+			error "arch test %f failed";
+			return 1;
+		fi;
+		pass "$f";
+	done;
+}
+
 test_sys_exit_code(){
 	compile_test <<EOF
 :	v	42

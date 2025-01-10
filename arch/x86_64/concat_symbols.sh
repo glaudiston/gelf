@@ -6,45 +6,38 @@ concat_symbol_instr(){
 	local dyn_addr="$2";
 	local size="$3";
 	local idx="$4";
-	local code="";
 	#local mmap_size_code="$(mov $(( 1 << 12 )) rsi)";
 	#local mmap_code="$(sys_mmap "${mmap_size_code}")"
 	# unable to move addr to addr;
 	# so let's mov addr to a reg,
 	# then reg to addr;
 	if [ "$idx" == 1 ]; then # on first item zero r8 to accum the size
-		code="${code}$({
-			xor r8 r8;
-			push r8;	# create zeroed target space at stack;
-			mov rsp $dyn_addr;
-		})";
+		xor r8 r8;
+		push r8;	# create zeroed target space at stack;
+		mov $dyn_addr rsp;
 	fi;
 	if [ "$size" -eq -1 ]; then
-		code="${code}$({
-			mov "${addr}" rsi; # source is addr
-			detect_string_length rsi rdx rax; # the return is set at rdx
-			mov rdx rcx;
-		})"; # but we need it on rcx because REP decrements it
+		mov rsi "${addr}"; # source is addr
+		detect_string_length rsi rdx rax; # the return is set at rdx
+		mov rcx rdx;
+		# but we need it on rcx because REP decrements it
 	elif [ "$size" -eq -2 ]; then # procedure pointer
-		code="${code}$({
-			mov "($addr)" rsi; # source addr
-			# the return is set at rdx
-			mov rdx rcx;
-		})"; # but we need it on rcx because REP decrements it
-		echo -en "${code}";
+		mov rsi "($addr)"; # source addr
+		# the return is set at rdx
+		mov rcx rdx;
+		# but we need it on rcx because REP decrements it
 		return;
 	else
-		code="${code}$({
-			mov "$addr" rsi; # source addr
-			mov $size rcx;
-		})";
+		mov rsi "$addr"; # source addr
+		mov rcx $size;
 	fi;
-	code="${code}$(mov rsp rdi)"; # target addr
+	mov rdi rsp; # target addr
+	local code="";
+	add rdi r8;
 	local ADD_r8_rdi="$(prefix r8 rdi)01c7";
-	code="${code}${ADD_r8_rdi}";
+	printf "${ADD_r8_rdi}";
 	local ADD_rcx_r8="$(prefix rcx r8)01c8";
 	code="${code}${ADD_rcx_r8}";
-
 	# if addr is 0 allocate some address to it.
 	# cmp rdi
 	# jg .(alloc mem instr len)

@@ -1,4 +1,7 @@
+#!/bin/bash
+
 if ! declare -F encode_array_to_b64_csv >/dev/null; then
+. $(dirname $(realpath $BASH_SOURCE))/endianness.sh
 encode_array_to_b64_csv() {
 	local IFS=$'\t'
 	local array=($@)

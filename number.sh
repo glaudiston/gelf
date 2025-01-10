@@ -1,3 +1,4 @@
+#!/bin/bash
 if ! declare -F is_valid_number >/dev/null; then
 is_valid_number()
 {

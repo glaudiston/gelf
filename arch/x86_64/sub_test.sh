@@ -1,11 +1,7 @@
 #!/bin/bash
 
 test_sub_reg_reg(){
-	local got=$(sub $@ 2>/dev/null);
-	local expected=$(asm_hex<<<"sub %$2, %$1");
-	if [ "${got,,}" != "${expected,,}" ]; then
-		echo "ERROR: given [sub $@] expected [${expected,,}] but got [${got,,}]";
-	fi;
+	test_op_reg_reg sub $@;
 }
 
 set_subtrahend(){

@@ -44,7 +44,7 @@ rex(){
 	if is_8bit_extended_register "$r_m"; then
 		R=1;
 	fi;
-	if is_8bit_extended_register "$reg"; then
+	if is_8bit_extended_register "$reg" || { is_64bit_extended_register "$reg" && is_8bit_sint "$r_m"; }; then
 		B=1;
 	fi;
 	if is_8bit_extended_register "$r_m" && is_8bit_register "$reg" && ! is_8bit_extended_register "$reg"; then
