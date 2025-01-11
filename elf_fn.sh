@@ -799,12 +799,12 @@ define_variable_arg()
 	snippets=$({
 		echo -e "$snippets\n$a";
 	});
-	local args_ptr=$(get_args_ptr "$snippets");
 	if [ "$a" != "" ]; then
 		instr_len=$(echo -n $a | cut -d, -f$SNIPPET_COLUMN_INSTR_LEN);
 		instr_offset=$(( instr_offset + instr_len ));
 		dyn_data_offset="$(( dyn_data_offset + 8 ))";
 	fi;
+	local args_ptr=$(get_args_ptr "$snippets");
 	local arg_number="${sec_arg/@/}";
 	# create a new dynamic symbol called ${symbol_name}
 	local instr_bytes="$(get_arg $args_ptr $arg_number $dyn_data_offset| xd2b64)";
@@ -1988,6 +1988,10 @@ parse_snippets()
 		"" \
 		"0";
 	IFS='';
+	# i think is better to mmap args memory here,
+	# but found hard to manage the side effects for now,
+	# so keep commented.
+	# SNIPPETS=$(echo "$SNIPPETS"; ensure_args_ptr $SNIPPETS);
 	echo "${CODE_INPUT}" | while read CODE_LINE;
 	do
 		RESULT=$(parse_snippet "${ROUND}" "${PH_VADDR_V}" "${INSTR_TOTAL_SIZE}" "${static_data_size}" "${CODE_LINE}" "${SNIPPETS}" "${deep}");

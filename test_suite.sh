@@ -72,9 +72,11 @@ summarize(){
 	local test_count_pass=$(echo "$output" | grep PASS | grep -c "");
 	echo -e "
 Resume:
-	Total:\t$test_count
+	Test functions:\t$test_count
 	Passed:\t$test_count_pass
-	Failed:\t$test_count_fail"
+	Failed:\t$test_count_fail
+"
+[ "$(( test_count_fail +test_count_pass ))" != "$test_count" ] && echo "some test functions have multiple subtests"
 }
 
 run_all(){

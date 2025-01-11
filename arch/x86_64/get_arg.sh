@@ -109,18 +109,18 @@ detect_argsize()
 		printf "$str_null_size_detection";
 	});
 	local func_arg=$({
-		mov rsp $r_in;
-		add $(( 16 + (argn * 16) )) $r_in; # retval_ptr + argc + ( type + argn_ptr )
+		mov $r_in rsp;
+		add $r_in $(( 16 + (argn * 16) )); # retval_ptr + argc + ( type + argn_ptr )
 		# at this point r_in == arg_type;
-		mov "($r_in)" $r_in;
-		cmp $r_in 0;
-		cmp $r_out $SYMBOL_TYPE_HARD_CODED;
+		mov $r_in "($r_in)";
+		cmp $r_in $SYMBOL_TYPE_HARD_CODED;
+		#cmp $r_out $SYMBOL_TYPE_HARD_CODED;
 		hardcoded_size_detection=$({
-			mov $r_out 8;
+			mov $r_out 8; # 8 bytes ( integer )
 		})
 		jnz $(xcnt<<<$hardcoded_size_detection);
 		printf $hardcoded_size_detection;
-		mov 8 $r_out;
+		mov $r_out 8;
 		je $(xcnt<<<$proc_arg)
 	});
 	cmp r15 0; # r15 is zero only on root stack frame layer, so we don't have types on args
@@ -166,7 +166,7 @@ get_arg()
 		# this should be used only on call functions
 		# so we use typed data and we have the return addr ptr on rsp
 		add r15 rsp ; # r15 is argc
-		mov r15 rsi;
+		mov rsi r15;
 		sub r15 rsp;
 		add rsi $(( 8 * (1 + argn * 2) )); # "1 +" the first 8 bytes are the argc *2 because each argument has the type prefix byte
 	});

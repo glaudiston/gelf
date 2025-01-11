@@ -387,9 +387,9 @@ function ret()
 
 	#local LEAVE="\xc9"; #seems leave breaks in a segfault
 	if [ "$symbol_value" != "" ]; then
-		mov ${symbol_value:=0} rdi;
+		mov rdi ${symbol_value:=0};
 		if [ "$symbol_type" != $SYMBOL_TYPE_HARD_CODED ]; then
-			mov "(rdi)" rdi;
+			mov rdi "(rdi)";
 		fi;
 	fi;
 	# run RET
@@ -458,15 +458,14 @@ set_increment()
 	mov rdx "(rdx)";
 	if [ "$value" == 1 ]; then
 		inc rdx;
-	elif [ "$value" -gt -128 -a "$value" -lt 128 ]; then
+	elif [ is_valid_number "$value" -a "$value_type" == $SYMBOL_TYPE_HARD_CODED ]; then
 		add rdx "${value}";
-	elif [ "$value_type" == $SYMBOL_TYPE_HARD_CODED ]; then
-		printf "${ADD_V4_rdx}$(printEndianValue "${value}" "${SIZE_32BITS_4BYTES}")";
 	else
 		xor rsi rsi;
-		printf "${MOV_V4_rsi}$(printEndianValue "${value}" "${SIZE_32BITS_4BYTES}")";
-		mov "(rsi)" rsi;
-		printf "${ADD_rsi_rdx}";
+		mov rsi "${value}";
+		mov rsi "(rsi)";
+		mov rsi "(rsi)";
+		add rdx rsi;
 	fi;
 	mov "$addr" rdx;
 	echo -en "${code}";

@@ -13,7 +13,6 @@ if ! declare -F mov_loaded>/dev/null; then mov_loaded(){ :; };
 mov(){
 	local v1="$1";
 	local v2="$2";
-	debug intel asm : mov $v1 $v2;
 	if is_register_ptr $v1 && is_64bit_register $v2; then
 	{
 		local prefix=$(rex $1 $2);
