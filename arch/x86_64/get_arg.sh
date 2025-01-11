@@ -189,7 +189,11 @@ get_arg()
 	});
 	jz $(xcnt<<<$skip_type);
 	printf $skip_type;
-	mov rdi "($arg_ptr)";
+	mov rax "($args_ptr)"; # args_ptr is the memory value that has the pointer to mmap;
+	mov rax "(rax)";
+	add rax rcx;
+	mov "$args_ptr" rax;
+	mov rdi "($arg_ptr)"; # update the root of args memory space (first ptr bytes) to the first free space (end of used memory)
 	# here rax have the args_ptr
 	movs rsi rdi rcx; # copy the (rsi) contents to (rdi), limit by rcx bytes
 }

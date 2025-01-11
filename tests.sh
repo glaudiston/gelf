@@ -5,9 +5,10 @@
 
 test_arch_x86_64(){
 	for f in arch/x86_64/*_test.sh; do
+		echo -n "   - $f\t...";
 		local got=$($f || error "$f");
 		if grep -q ERROR<<<"$got"; then
-			error "arch test %f failed";
+			error "arch test $f failed: $got";
 			return 1;
 		fi;
 		pass "$f";
