@@ -19,15 +19,16 @@ compare()
 		mov rcx "$b";
 	fi;
 	if [ "${type_a}" == "$SYMBOL_TYPE_DYNAMIC_ARGUMENT" ]; then
-		printf "${LEA_V4_rax}$(printEndianValue "$a" "${SIZE_32BITS_4BYTES}")";
-		mov "(rax)" rax;
+		mov rax $a;
+		mov rax "(rax)";
+		mov rax "(rax)";
 	fi;
 	if [ "${type_a}" == "$SYMBOL_TYPE_DYNAMIC" ]; then
 		mov rax "$a";
 		mov rax "(rax)";
 	fi;
 	if [ "${type_b}" == "$SYMBOL_TYPE_DYNAMIC" ]; then
-		printf "${LEA_V4_rcx}$(printEndianValue "$b" "${SIZE_32BITS_4BYTES}")";
+		mov rcx $b;
 		mov rcx "(rcx)";
 		mov rcx "(rcx)";
 	fi;
