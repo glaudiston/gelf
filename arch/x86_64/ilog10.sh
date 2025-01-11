@@ -30,11 +30,13 @@ ilog10()
 		# so the number will be rsp + n, move it to rax where n can be:
 		# 	0 = rsp = (return addr)
 		# 	8 = 2 ( argc )
-		# 	16 = ilog10 addr
-		# 	24 = first arg
+		# 	16 = ilog10 type (constant 6 == TYPE_FUNCTION_PTR)
+		# 	24 = ilog10 addr
+		# 	32 = first arg type
+		# 	40 = first arg
 		# so we want n=24
 		mov rax rsp;
-		add rax 24;
+		add rax 40;
 		mov rax "(rax)";
 		# movsb rax "(rax)";
 		# should be the same as: movsbl 0x18(%rsp), %eax
