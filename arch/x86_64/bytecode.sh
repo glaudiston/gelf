@@ -458,7 +458,7 @@ set_increment()
 	mov rdx "(rdx)";
 	if [ "$value" == 1 ]; then
 		inc rdx;
-	elif [ is_valid_number "$value" -a "$value_type" == $SYMBOL_TYPE_HARD_CODED ]; then
+	elif is_valid_number "$value" && [ "$value_type" == $SYMBOL_TYPE_HARD_CODED ]; then
 		add rdx "${value}";
 	else
 		xor rsi rsi;

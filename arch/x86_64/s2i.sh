@@ -19,10 +19,18 @@ s2i(){
 		# tmp code start
 		#
 		mov $reg_str_addr rsp;
-		add $reg_str_addr 40; # 40 == (retval+argc+s2i_ptr_type+s2i_ptr+arg_ptr_type) * 8 bytes
+		add $reg_str_addr 32; # arg type == (rsp+retval+argc+s2i_ptr_type+s2i_ptr) * 8 bytes
+		mov $reg_tmp_s "($reg_str_addr)"; # resolve the value type to another register;
+		add $reg_str_addr 8; # add 8 to get the argment next to the type;
 		mov $reg_str_addr "(${reg_str_addr})";	# resolve the stack mem ptr to the heap mem ptr
-		mov $reg_str_addr "(${reg_str_addr})";	# resolve the heap mem ptr to the mmap argument ptr;
-		mov $reg_str_addr "(${reg_str_addr})";	# resolve the mmap arg ptr to load the first 8 bytes at the tmp register
+		cmp $reg_tmp_s $SYMBOL_TYPE_HARD_CODED; is argument hard coded ?
+		local resolve_arg_value=$({
+			# only required when not hard coded values;
+			mov $reg_str_addr "(${reg_str_addr})";	# resolve the heap mem ptr to the mmap argument ptr;
+			mov $reg_str_addr "(${reg_str_addr})";	# resolve the mmap arg ptr to load the first 8 bytes at the tmp register
+		})
+		jz $(xcnt<<<$resolve_arg_value); # hard coded values can not resolve pointers;
+		printf "$resolve_arg_value"; # only for dynamic values like process arguments;
 		#
 		# tmp code end
 		xor $reg_tmp_i $reg_tmp_i;	# clean up target int reg

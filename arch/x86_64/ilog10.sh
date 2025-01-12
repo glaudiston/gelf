@@ -36,8 +36,14 @@ ilog10()
 		# 	40 = first arg
 		# so we want n=24
 		mov rax rsp;
-		add rax 40;
+		add rax 32; # arg type (retaddr + argc + fn_ptr + arg_type : 8 bytes each)
+		mov rdx "(rax)";
+		add rax 8; # next byte is the argument value
 		mov rax "(rax)";
+		cmp rdx $SYMBOL_TYPE_HARD_CODED; # is argument hard coded ?
+		local resolve_rax=$(mov rax "(rax)";); # only need to resolve more for non hardcoded addresses ones
+		jz $(xcnt<<<$resolve_rax); # hard coded values does not need to resolve pointers to other memory address;
+		printf "$resolve_rax";
 		# movsb rax "(rax)";
 		# should be the same as: movsbl 0x18(%rsp), %eax
 		# BUT it is not, because movsb copy string.

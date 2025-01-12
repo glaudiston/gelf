@@ -24,9 +24,16 @@ i2s(){
 			# expect to have the value on rax already;
 		fi;
 		mov rax rsp;
-		add rax 40; # retvaladdr+argc+i2s_ptr_type+i2s_ptr+arg_type (8 bytes each);
+		add rax 32; # arg type: (retval+argc+i2s_ptr_tye+i2s_ptr) 8 bytes each;
+		mov rdi rax;
+		cmp rdi $SYMBOL_TYPE_HARD_CODED;
+		local resolve_value=$({
+			mov rax "(rax)"; # resolve the mem, resulting in the int value be in stack
+		})
+		add rax 8; # add to rsp+40 (rsp+32+8) (retvaladdr+argc+i2s_ptr_type+i2s_ptr+arg_type) (8 bytes each);
+		jz $(xcnt<<<$resolve_value)
+		printf $resolve_value;
 		mov rax "(rax)"; # resolve stack addr in reg to mem where the int value is
-		mov rax "(rax)"; # resolve the mem, resulting in the int value be in stack
 		cmp rax 0;
 		local return_if_zero="$({
 			add rax 48; # 0x30; asc digit 0
@@ -40,7 +47,7 @@ i2s(){
 	})";
 	printf "${init_code}";
 	# now rax has the int value
-	local ilog10_skip_stack=10; # expected to skip first part of ilog10 code, so it will not try to recover the value from stack. This will break at any change on ilog10 begin code
+	local ilog10_skip_stack=26; # expected to skip first part of ilog10 code, so it will not try to recover the value from stack. This will break at any change on ilog10 begin code
 	local init_codesize=$(xcnt<<<"${init_code}");
 	local displacement=$(( CURRENT_RIP + init_codesize -ilog10_skip_stack ));
 	call_procedure ${ilog10_addr} ${displacement} | b64xd;
