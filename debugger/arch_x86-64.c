@@ -2004,7 +2004,7 @@ void get_current_address(char *s_curr_addr, struct user_regs_struct *regs){
 	sprintf(s_curr_addr, "%llx", regs->rip);
 }
 
-#define instr_spec_list_count 30
+#define instr_spec_list_count 31
 struct instruction_spec instr_spec_list[instr_spec_list_count] = {
 	{
 		.s_asm_instruction = "add",
@@ -2194,6 +2194,28 @@ struct instruction_spec instr_spec_list[instr_spec_list_count] = {
 			.has_modrm = NO,
 		},
 		.operands = {{.type = operand_imm8}},
+		.immediate = IMM8,
+		.fn_ptr = NULL,
+	},
+	{
+		.s_asm_instruction = "imul",
+		.opcode = {
+			.bytes = { 0x6b },
+			.size = opcode_size_8_bits,
+			.has_modrm = MANDATORY,
+		},
+		.operands = {
+			{
+			.mode = RW,
+			.type = operand_modrm_rm,
+			},
+			{
+			.mode = R,
+			.type = operand_imm8,
+			},
+			{.type = operand_none},
+		},
+		.has_sib = OPTIONAL,
 		.immediate = IMM8,
 		.fn_ptr = NULL,
 	},
