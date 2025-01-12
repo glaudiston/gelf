@@ -425,7 +425,7 @@ test_fibonacci_generate(){
 	!	sys_write	stdout	nstr
 	:	f	[]	fib	last	fibn	limit
 	!	f
-	!	ret
+	!	ret f
 :	}
 :	a	0
 :	b	1
@@ -526,20 +526,25 @@ EOF
 }
 
 test_ilog10(){
-	# good numbers to test
-	numbers_to_test="$({
-		local x; for (( i=0; i<10; i++ )); do x=$RANDOM$x; echo $(( ${x:0:i+1} % (2 ** 32))); done
-	} | sort -n | uniq)";
-	for n in $numbers_to_test; do
-		echo -n "n=$n..." #| tee /dev/stderr;
-		local l=$(echo "scale=18; l($n)/l(10)" | bc -l | sed 's/^[.].*/0/; s/[.].*//');
-		compile_test <<EOF
-:	n	$n
+	compile_test <<EOF
+:	ns	@1
+:	na	[]	.s2i	ns
+:	n	!	na
 :	c	[]	.ilog10	n
 :	x	!	c
 !	sys_exit	x
 EOF
-		o=$(run_test);
+	# our current code uses rax to decode the number string into value;
+	# so only asc string values that fit in rax can be used;
+	# this means the last valid number to test is: 99999999
+	# rax: 0x3939393939393939
+	numbers_to_test="$({
+		local x; for (( i=0; i<8; i++ )); do x=$RANDOM$x; echo $(( ${x:0:i+1} % (2 ** 32))); done
+	} | sort -n | uniq)";
+	for n in $numbers_to_test; do
+		echo -n "n=$n..." #| tee /dev/stderr;
+		local l=$(echo "scale=18; l($n)/l(10)" | bc -l | sed 's/^[.].*/0/; s/[.].*//');
+		o=$(run_test $n);
 		expect $? $l #| tee /dev/stderr;
 	done;
 }
