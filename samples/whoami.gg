@@ -1,0 +1,8 @@
+:	passwd file	/etc/passwd
+:	passwd	<=	passwd file
+:	loginuid file	/proc/self/loginuid
+:	user id	<=	loginuid file
+:	stdout	1
+!	sys_write	stdout	user id
+:	ok	0
+!	sys_exit	ok

@@ -135,7 +135,7 @@ void printMemoryValue(pid_t child, unsigned long r, int deep)
 	printMemoryValue(child, v, deep+1);
 	char * buff = malloc(BUFF_SIZE);
 	peek_string(child, (void*)r, buff); // str?
-	buff[BUFF_SIZE]=0;
+	buff[BUFF_SIZE-1]=0;
 	printf(" H(0x%lx) == S(\"%s\") %s", r, buff, lastbyte);
 	free(buff);
 }
@@ -168,9 +168,9 @@ void interactive_help(){
 }
 
 char * history_file=".gelf-debugger-history";
+char previous_input[256];
 void interact_user(pid_t pid, void * regs)
 {
-	char previous_input[256];
 	while (true){
 		char prompt[50];
 		char color_reset[16]="\e[0m";
@@ -184,12 +184,12 @@ void interact_user(pid_t pid, void * regs)
 			exit(2);
 		}
 		if (strlen(user_input) == 0){
-			continue;
+			user_input=(char *)&previous_input[0];
 		}
 		if (strcmp(previous_input,user_input) != 0){
+			strcpy(previous_input, user_input);
 			add_history(user_input);
 		}
-		sprintf(previous_input, "%s", user_input);
 		if (strcmp(user_input,"?")==0 || strcmp(user_input,"help")==0){
 			interactive_help();
 			continue;
@@ -363,6 +363,7 @@ int main(int argc, char *argv[])
 		char ** env = &argv[cmd_options.cmd_index];
 		execvp(filename, env); // replace this child forked thread with the binary to trace
 	} else {
+		init_arch(); // init arch specific structs
 		// parent thread (pid has the child pid)
 		trace_watcher(pid);
 	}

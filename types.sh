@@ -15,14 +15,15 @@ SYMBOL_TYPE_HARD_CODED=0;
 # Used for constants hardcoded like STDOUT, STDERR and any other values known at build time.
 SYMBOL_TYPE_STATIC=1;
 # Runtime variables stored at memory. Unable to recover the address at built time.
-SYMBOL_TYPE_DYNAMIC=2;
-SYMBOL_TYPE_ARRAY=3;
+SYMBOL_TYPE_DYNAMIC=2; # like args with integers
+SYMBOL_TYPE_DYNAMIC_ARGUMENT=3; # like args with pointers to string
+SYMBOL_TYPE_ARRAY=4;
 # Values Stored at processor register fields.
-SYMBOL_TYPE_REGISTER=4;
+SYMBOL_TYPE_REGISTER=5;
 # Instructions stored
-SYMBOL_TYPE_PROCEDURE=5;
+SYMBOL_TYPE_PROCEDURE=6;
 # system calls that can return values into variables
-SYMBOL_TYPE_SYSCALL=6;
+SYMBOL_TYPE_SYSCALL=7;
 # receives the type as first argument
 # and the value as second argument
 # and return the hex string representation

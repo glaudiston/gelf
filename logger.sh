@@ -1,5 +1,6 @@
 #!/bin/bash
 
+if ! declare -F backetrace >/dev/null; then
 backtrace(){
 	local i=1;
 	while caller $i;
@@ -24,3 +25,5 @@ function error()
 	echo -e "[ERROR] $@" >&2
 	backtrace >&2
 }
+
+fi;

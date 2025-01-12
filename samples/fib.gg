@@ -1,0 +1,18 @@
+:	terminal	1
+:	fibonacci	{
+	:	anterior	@1
+	:	último	@2
+	:	limite	@3
+	:	fib	+	anterior	último
+	:	suficiente	?	fib	limite
+	?	suficiente	>=	write	terminal	fib
+	:	próximo	[]	fibonacci	último	fib	limite
+	!	próximo
+	!	ret
+}
+:	a	0
+:	b	1
+:	c	1000
+!	fibonacci	a	b	c
+:	ok	0
+!	sys_exit	ok

@@ -8,18 +8,38 @@ fail(){ msg $RED $@; }
 pass(){ msg $GREEN; }
 
 compile_test(){
-	mkdir -p tests
-	./gelf <(cat) tests/${FUNCNAME[1]}.elf 2>tests/${FUNCNAME[1]}.build-stderr;
+	mkdir -p tests;
+	local testname=${FUNCNAME[1]}
+	if [ -f "tests/$testname" ]; then
+		# remove previous compilation files
+		rm tests/${testname}* 2>/dev/null;
+	fi;
+	./gelf <(cat) tests/$testname 2>tests/${testname}.build-stderr;
 	r=$?;
 	if [ $r -ne 0 ]; then
-		error	compilation failed. See tests/${FUNCNAME[1]}.build-stderr;
+		error	compilation failed. See tests/${testname}.build-stderr;
 		return $r;
 	fi;
-	chmod +x ./tests/${FUNCNAME[1]}.elf
+	chmod +x ./tests/${testname};
 }
 
 run_test(){
-	./tests/${FUNCNAME[1]}.elf $@
+	local n="${FUNCNAME[1]}";
+	if [ "${#n}" == 0 ]; then
+		fail "run_test should be called from a function that creates and elf file with it's name";
+		return;
+	fi;
+	local elf_name="./tests/$n";
+	cmd="$elf_name";
+	while (( ${#@} > 0 )); 
+	do {
+		cmd="${cmd} '$1'"
+		shift;
+	};
+	done
+	#echo "run command: [$cmd]" >&2;
+	eval ${cmd}
+	#${elf_name} $@ # this does not work because empty arguments are removed
 }
 
 expect(){
@@ -39,30 +59,41 @@ expect(){
 	pass;
 }
 
+run_and_report(){
+	local testcase=$1
+	local out=$(echo -e " - $testcase\t...$($testcase)");
+	echo "$out";
+	echo "$out" >&2;
+}
+summarize(){
+	local test_count="$1";
+	local output="$2";
+	local test_count_fail=$(echo "$output" | grep FAIL | grep -c "");
+	local test_count_pass=$(echo "$output" | grep PASS | grep -c "");
+	echo -e "
+Resume:
+	Test functions:\t$test_count
+	Passed:\t$test_count_pass
+	Failed:\t$test_count_fail
+"
+[ "$(( test_count_fail +test_count_pass ))" != "$test_count" ] && echo "some test functions have multiple subtests"
+}
+
 run_all(){
-	local test_list=$(cat $0 | grep -E "^test_[^(]*\(\)\{" | cut -d "(" -f1);
+	local test_list=$({
+		[ "$1" == "" ] && 
+			{ cat $0 | grep -E "^test_[^(]*\(\)\{" | cut -d "(" -f1; } ||
+			echo $@;
+	});
 	local test_count=$(echo "$test_list" | grep -c "");
 	local OUT_TEXT=$(echo "$test_list" | 
-		while read f; 
-		do
-			{
-				TEST_OUT=$(echo -e " - $f\t...$($f)");
-				echo "$TEST_OUT";
-				echo "$TEST_OUT" >&2;
-			} &
-		done;
+		while read f; do run_and_report $f & done;
 		wait;
 		echo
 	);
-	local test_count_fail=$(echo "$OUT_TEXT" | grep FAIL | grep -c "");
-	local test_count_pass=$(echo "$OUT_TEXT" | grep PASS | grep -c "");
 	echo "$test_list" | while read l; do
 		echo -e "$OUT_TEXT" | grep -q "$l" || echo "WARNING: TEST RESULT MISSING FOR [$l] check if it is still running as zombie";
 	done
-	echo -e "
-Resume:
-	Total:\t$test_count
-	Passed:\t$test_count_pass
-	Failed:\t$test_count_fail"
+	summarize "$test_count" "$OUT_TEXT";
 }
-run_all
+run_all "${@}";

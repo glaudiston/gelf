@@ -8,7 +8,7 @@
 # https://docs.oracle.com/cd/E19683-01/816-1386/chapter6-83432/index.html
 #
 # we use base64 everywhere because bash does not support \x0 on strings
-
+if ! declare -F print_elf_file_header >/dev/null; then
 # init bloc
 ARCH=$(uname -m)
 # I have no idea why, but when using execve without env, a bash call can not resolve the "uname -m" call above.
@@ -17,14 +17,15 @@ ARCH=${ARCH:=x86_64}
 . elf_constants.sh
 . types.sh
 . utils.sh
+. encoding.sh
 . logger.sh
 . endianness.sh
-. ./arch/system_call_linux_${ARCH}.sh
+. ./arch/${ARCH}/bytecode.sh
 . snippet_parser.sh
 
 get_program_headers_count()
 {
-	# for now we only have it hard coded 
+	# for now we only have it hard coded
 	# TODO implement it to dynamically detect and set a value.
 	echo 1;
 }
@@ -38,36 +39,36 @@ print_elf_file_header()
 	local SH_SIZE="$SH_SIZE"; # use the constant in local scope to allow change it locally
 
 	# SECTION ELF HEADER START
-	EI_CLASS="\x00";	# Arch 2 bytes
+	EI_CLASS="00";	# Arch 2 bytes
 	[ "$ARCH" == "x86" ] && {
-		EI_CLASS="\x01";
+		EI_CLASS="01";
 		EM_386=3
 		EM=$EM_386
 	}
 	[ "$ARCH" == "x86_64" ] && {
-		EI_CLASS="\x02";
+		EI_CLASS="02";
 		EM_X86_64=62
 		EM=$EM_X86_64
 	}
 	[ "$ARCH" == "aarch64" ] && {
-		EI_CLASS="\x02";
+		EI_CLASS="02";
 		EM_AARCH64=183
 		EM=$EM_AARCH64
-		ELFCLASS64="\x02";
+		ELFCLASS64="02";
 		EI_CLASS=$ELFCLASS64
 	}
 
-	EI_DATA="$(printEndianValue $(detect_endianness) ${SIZE_8BITS_1BYTE})" # get endianness from current bin
-	EI_VERSION="\x01";	# ELF VERSION 1 (current)
+	EI_DATA="$(px $(detect_endianness) ${SIZE_8BITS_1BYTE})" # get endianness from current bin
+	EI_VERSION="01";	# ELF VERSION 1 (current)
 	ELFOSABI_SYSV=0;
 	ELFOSABI_HPUX=1;
-	EI_OSABI="\x00";	# Operation System Applications Binary Interface (UNIX - System V-NONE)
-	EI_ABIVERSION="\x00";
-	EI_PAD="$(printEndianValue 0 $SIZE_64BITS_8BYTES)"; # reserved non used pad bytes
+	EI_OSABI="00";	# Operation System Applications Binary Interface (UNIX - System V-NONE)
+	EI_ABIVERSION="00";
+	EI_PAD="$(px 0 $SIZE_64BITS_8BYTES)"; # reserved non used pad bytes
 	ET_EXEC=2;	# Executable file
-	EI_ETYPE="$(printEndianValue $ET_EXEC $Elf64_Half)";		# DYN (Shared object file) code 3
-	EI_MACHINE="$(printEndianValue $EM $Elf64_Half)";
-	EI_MACHINE_VERSION="$(printEndianValue 1 $Elf64_Word)";
+	EI_ETYPE="$(px $ET_EXEC $Elf64_Half)";		# DYN (Shared object file) code 3
+	EI_MACHINE="$(px $EM $Elf64_Half)";
+	EI_MACHINE_VERSION="$(px 1 $Elf64_Word)";
 
 	PH_COUNT=$(get_program_headers_count);
 	PH_TOTAL_SIZE=$(( PH_SIZE * PH_COUNT ));
@@ -83,17 +84,17 @@ print_elf_file_header()
 	PH_TOTAL_SIZE +
 	SH_TOTAL_SIZE
 	));
-	EI_ENTRY="$(printEndianValue ${ENTRY_V} $Elf64_Addr)";	# VADDR relative program code entry point uint64_t
-	EI_PHOFF="$(printEndianValue "${EH_SIZE}" $Elf64_Off)";	# program header offset in bytes, starts immediatelly after header, so the offset is the header size
-	EI_SHOFF="$(printEndianValue ${SHOFF_V} $Elf64_Off)";	# section header offset in bytes
-	EI_FLAGS="$(printEndianValue 0 $Elf64_Word)";		# uint32_t
-	EI_EHSIZE="$(printEndianValue ${EH_SIZE} $Elf64_Half)";	# elf header size in bytes
-	EI_PHENTSIZE="$(printEndianValue $PH_SIZE $Elf64_Half)";# program header entry size (constant = sizeof(Elf64_Phdr))
-	EI_PHNUM="$(printEndianValue $PH_COUNT $Elf64_Half)"; 	# number of program header entries
+	EI_ENTRY="$(px ${ENTRY_V} $Elf64_Addr)";	# VADDR relative program code entry point uint64_t
+	EI_PHOFF="$(px "${EH_SIZE}" $Elf64_Off)";	# program header offset in bytes, starts immediatelly after header, so the offset is the header size
+	EI_SHOFF="$(px ${SHOFF_V} $Elf64_Off)";	# section header offset in bytes
+	EI_FLAGS="$(px 0 $Elf64_Word)";		# uint32_t
+	EI_EHSIZE="$(px ${EH_SIZE} $Elf64_Half)";	# elf header size in bytes
+	EI_PHENTSIZE="$(px $PH_SIZE $Elf64_Half)";# program header entry size (constant = sizeof(Elf64_Phdr))
+	EI_PHNUM="$(px $PH_COUNT $Elf64_Half)"; 	# number of program header entries
 	# section table def
-	EI_SHENTSIZE="$(printEndianValue $SH_SIZE $Elf64_Half)";# section header size in bytes(contant sizeof(Elf64_Shdr))
-	EI_SHNUM="$(printEndianValue $SH_COUNT $Elf64_Half)"; 	# section header count
-	EI_SHSTRNDX="$(printEndianValue 0 $Elf64_Half)"; 	# section header table index of entry of section name string table
+	EI_SHENTSIZE="$(px $SH_SIZE $Elf64_Half)";# section header size in bytes(contant sizeof(Elf64_Shdr))
+	EI_SHNUM="$(px $SH_COUNT $Elf64_Half)"; 	# section header count
+	EI_SHSTRNDX="$(px 0 $Elf64_Half)"; 	# section header table index of entry of section name string table
 
 	# 00-0f
 	SECTION_ELF_HEADER="${ELFMAG}${EI_CLASS}${EI_DATA}${EI_VERSION}${EI_OSABI}${EI_PAD}"; # 16 bytes
@@ -105,13 +106,17 @@ print_elf_file_header()
 	SECTION_ELF_HEADER="${SECTION_ELF_HEADER}${EI_FLAGS}${EI_EHSIZE}${EI_PHENTSIZE}${EI_PHNUM}${EI_SHENTSIZE}${EI_SHNUM}${EI_SHSTRNDX}";
 
 	# SECTION ELF HEADER END
-	echo -en "${SECTION_ELF_HEADER}" | base64 -w0;
+	echo -en "${SECTION_ELF_HEADER}";
 }
 
 # https://stackoverflow.com/questions/16812574/elf-files-what-is-a-section-and-why-do-we-need-it
+# program headers are the memory segmentation definition
+# We need at least one, what is where the elf binary will be stored;
+# We can set it to rw and use it for everything, but seems a bad idea;
 get_program_segment_headers()
 {
 	local PH_VADDR_V="$1";
+	local elf_size="$2";
 
 	# https://www.airs.com/blog/archives/45
 	# this point the current segment offset is 0x40
@@ -124,10 +129,11 @@ get_program_segment_headers()
 								# must be after the current program size. Elf64_Addr p_vaddr 8;
 	PH_PADDR="$(printEndianValue 0 $Elf64_Addr)"		# Elf64_Addr p_paddr 8;
 								# Physical address is deprecated and ignored for executables, libs and shared obj files.
-	# PH_FILESZ and PH_MEMSZ should point to the first code position in elf
-	# 16#78 == (EH_SIZE == x40 == 64) + (PH_SIZE == x38 == 56)
-	PH_FILESZ="$(printEndianValue $(( EH_SIZE + PH_SIZE )) $Elf64_Xword)"	# Elf64_Xword p_filesz 8;
-	PH_MEMSZ="$(printEndianValue $(( EH_SIZE + PH_SIZE )) $Elf64_Xword)"	# Elf64_Xword p_memsz 8;
+	# for now let's allocate 16K on our current loaded rwx mem segment space
+	# I think I should set this to the minimum, not writable,
+	# and create other segments for dynamic memory;
+	PH_FILESZ="$(printEndianValue $elf_size $Elf64_Xword)"	# Elf64_Xword p_filesz 8;
+	PH_MEMSZ="$(printEndianValue $(( (1<<16) )) $Elf64_Xword)"	# Elf64_Xword p_memsz 8;
 	# p_align: Loadable process segments must have congruent values for p_vaddr and p_offset,
 	#          modulo the page size.
 	#          This member gives the value to which the segments are aligned in memory and in the file.
@@ -169,7 +175,8 @@ get_tbl_index() {
 	str=$( base64 -w0 <<< $1)
 	idx=$(grep -q "$str" <<< $string_table | cut -d: -f1)
 	if [ "$idx" == "" ]; then
-		string_table="${string_table}$str";
+		string_table="${string_table}
+$str";
 		grep -c "" <<< "$string_table"
 		return
 	fi
@@ -239,9 +246,10 @@ print_elf_body()
 {
 	local PH_VADDR_V="$1";
 	local SH_COUNT="$2";
-	local snippets_file=$3
+	local snippets_file="$3";
+	local elf_size="$4";
 
-	local PROGRAM_HEADERS=$(get_program_segment_headers "$PH_VADDR_V" );
+	local PROGRAM_HEADERS=$(get_program_segment_headers "$PH_VADDR_V" "$elf_size");
 
 	local SH_TOTAL_SIZE="$(( SH_COUNT * SH_SIZE ))";
 	local SECTION_HEADERS="$(get_section_headers)"; # test empty
@@ -251,7 +259,7 @@ print_elf_body()
 	);
 
 	local static_data_count=0;
-	local DATA_ALL="$(cat "${snippets_file}" | 
+	local DATA_ALL="$(cat "${snippets_file}" |
 		while read d;
 		do
 			local dt=$(echo -en "$d" | cut -d, -f${SNIPPET_COLUMN_TYPE});
@@ -264,7 +272,7 @@ print_elf_body()
 				echo -en "\x00" | base64 -w0; # ensure a null byte to split data
 				let static_data_count++;
 			fi;
-		done; 
+		done;
 	)";
 
 	local SECTION_ELF_DATA="";
@@ -332,6 +340,7 @@ get_b64_symbol_value()
 	# empty value
 	if [ "$symbol_name" == "" ]; then
 		echo -n ",0,${SYMBOL_TYPE_HARD_CODED},0";
+		return;
 	fi;
 	# hard coded number
 	if is_valid_number "$symbol_name"; then {
@@ -399,12 +408,18 @@ get_b64_symbol_value()
 			echo -n ${out},${symbol_len},${symbol_type},${symbol_addr},${symbol_source_code}
 			return
 		fi
-		outsize=8; # memory_addr_size; TODO: this is platform specific, in x64 is 8 bytes
-		echo -n ${out},${outsize},${SYMBOL_TYPE_DYNAMIC},${symbol_addr}
+		outsize=${symbol_len}; # normally memory_addr_size ptr (8 bytes); but in ptr to open file content it is the stat struct size +mem ptr size; TODO: this is platform specific, in x64 is 8 bytes
+		data_flags="$(echo "${symbol_data}" | cut -d, -f${SNIPPET_COLUMN_DATA_FLAGS})"
+		if [ "${data_flags}" == "ARGUMENT" ]; then
+			echo -n ${out},${outsize},${SYMBOL_TYPE_DYNAMIC_ARGUMENT},${symbol_addr}
+		else
+			echo -n ${out},${outsize},${SYMBOL_TYPE_DYNAMIC},${symbol_addr}
+		fi;
 		return;
 	};
 	fi
-	if is_valid_number "$(echo "${symbol_value}" | base64 -d)"; then {
+	if is_valid_number "$(echo "${symbol_value}" | base64 -d)"; then
+	{
 		out="$symbol_value";
 		outsize=$(echo -n "${out}" | b64cnt)
 		echo -n ${out},${outsize},${SYMBOL_TYPE_HARD_CODED}
@@ -456,7 +471,7 @@ set_symbol_value()
 is_a_valid_number_on_base(){
 	SNIPPETS=$2
 	base=$(get_b64_symbol_value "base" "${SNIPPETS}" | cut -d, -f${B64_SYMBOL_VALUE_RETURN_OUT} | base64 -d);
-	echo -n "$(( ${base:10}#${raw_data_bytes} ))" 2>&1 >/dev/null || 
+	echo -n "$(( ${base:10}#${raw_data_bytes} ))" 2>&1 >/dev/null ||
 		return 1;
 	echo "${base:10}"
 	return;
@@ -502,7 +517,7 @@ is_hard_coded_value()
 	# TODO: implement a better way this one just work for numbers
 	# binary null values will report somethink like:
 	# elf_fn.sh: line 502: warning: command substitution: ignored null byte in input
-	local v="$(echo "$1" | base64 -d)";
+	local v="$(echo "$1" | base64 -d | tr -d '\0')"; # tr just to avoid the annoying bash warning message
 	local symbol_name="$2";
 	if [ "$v" == "" ];then
 		return $NO_ERR;
@@ -598,7 +613,7 @@ get_snippets_until_line()
 	local line="$1";
 	local SNIPPETS="$2";
 	echo "$SNIPPETS" | while read l;
-	do 
+	do
 		item=$(echo "$l" | cut -d, -f$SNIPPET_COLUMN_SOURCE_CODE);
 		if [ "$item" == "$symbol_name" ]; then
 			break;
@@ -611,7 +626,7 @@ get_snippets_until_symbol()
 	local symbol_name="$1";
 	local SNIPPETS="$2";
 	echo "$SNIPPETS" | while read l;
-	do 
+	do
 		item=$(echo "$l" | cut -d, -f$SNIPPET_COLUMN_SUBNAME);
 		if [ "$item" == "$symbol_name" ]; then
 			break;
@@ -707,7 +722,7 @@ define_variable_increment()
 		symbol_data=$(get_b64_symbol_value "${symbol_id}" "${SNIPPETS}")
 		symbol_type=$(echo "${symbol_data}" | cut -d, -f${B64_SYMBOL_VALUE_RETURN_TYPE});
 		symbol_value=$(echo "$symbol_data" | cut -d, -f${B64_SYMBOL_VALUE_RETURN_OUT} | base64 -d);
-		instr_bytes="${instr_bytes}$(set_increment $dyn_data_offset $symbol_value $symbol_type)";
+		instr_bytes="${instr_bytes}$(set_increment $dyn_data_offset $symbol_value $symbol_type | xd2b64)";
 	done
 	local instr_len="$(echo "${instr_bytes}" | b64cnt)";
 	local data_bytes="";
@@ -727,17 +742,78 @@ define_variable_increment()
 	return;
 }
 
+# get_args_ptr recover the allocated address where the arguments should be stored
+get_args_ptr()
+{
+	local snippets="$1";
+	echo "$snippets" |
+	grep "SYMBOL_TABLE,2,_INTERNAL_ARGS_MMAP," |
+	tail -1 |
+	cut -d, -f${SNIPPET_COLUMN_DATA_OFFSET};
+}
+
+# ensure_args_ptr is called when we do use arguments;
+# first use it calls mmap to allocate memory and creates
+# snippet to store the memory address dinamically set by sys_mmap
+ensure_args_ptr()
+{
+	local snippets="$1";
+	local args_ptr=$(get_args_ptr "$snippets")
+	if [ "$args_ptr" != "" ]; then
+		return
+	fi;
+	local snippet_type="${SYMBOL_TYPE_DYNAMIC}";
+	local snippet_name="_INTERNAL_ARGS_MMAP";
+	local data_offset="${dyn_data_offset}";
+	local instr_bytes="$(sys_mmap $PAGESIZE "" "$data_offset"|xd2b64)";
+	local instr_size="$(echo $instr_bytes | b64cnt)"
+	local data_bytes="";
+	local data_bytes_len="8";
+	local bloc_outer_code_b64="$(echo -n "builtin..args_mmap" | base64 -w0)";
+	local bloc_source_lines_count="0";
+	local bloc_usage_count="0";
+	local bloc_return="";
+	local bloc_dependencies="";
+	struct_parsed_snippet \
+		"SYMBOL_TABLE" \
+		"${snippet_type}" \
+		"${snippet_name}" \
+		"${instr_offset}" \
+		"${instr_bytes}" \
+		"${instr_size}" \
+		"${data_offset}" \
+		"${data_bytes}" \
+		"${data_bytes_len}" \
+		"${bloc_outer_code_b64}" \
+		"${bloc_source_lines_count}" \
+		"${bloc_usage_count}" \
+		"${bloc_return}" \
+		"${bloc_dependencies}";
+}
+
 define_variable_arg()
 {
-	local arg_number="${sec_arg/@/}"
+	local snippets="$1";
+	local a=$(ensure_args_ptr $snippets);
+	echo $a;
+	snippets=$({
+		echo -e "$snippets\n$a";
+	});
+	if [ "$a" != "" ]; then
+		instr_len=$(echo -n $a | cut -d, -f$SNIPPET_COLUMN_INSTR_LEN);
+		instr_offset=$(( instr_offset + instr_len ));
+		dyn_data_offset="$(( dyn_data_offset + 8 ))";
+	fi;
+	local args_ptr=$(get_args_ptr "$snippets");
+	local arg_number="${sec_arg/@/}";
 	# create a new dynamic symbol called ${symbol_name}
-	local instr_bytes="$(get_arg $dyn_data_offset $arg_number)";
+	local instr_bytes="$(get_arg $args_ptr $arg_number $dyn_data_offset| xd2b64)";
 	local instr_len=$(echo -n "${instr_bytes}" | b64cnt );
 	# this address will receive the point to the arg variable set in rsp currently;
 	# a better solution would be not have this space in binary but in memory.
 	# but it is good enough for now. because we don't really have a dynamic memory now
 	local data_bytes="";
-	data_len="8"; # pointer size
+	data_len="8"; # pointer size (to the reserved mmap space for this arg)
 	struct_parsed_snippet \
 		"SYMBOL_TABLE" \
 		"${SYMBOL_TYPE_PROCEDURE}" \
@@ -749,7 +825,11 @@ define_variable_arg()
 		"${data_bytes}" \
 		"${data_len}" \
 		"${CODE_LINE_B64}" \
-		"1";
+		"1" \
+		"" \
+		"" \
+		"" \
+		"ARGUMENT";
 	return;
 }
 
@@ -777,22 +857,21 @@ define_variable_read_from_file()
 	# Reading file involve some steps.
 	# 1. Opening the file, if succeed, we have a file descriptor
 	#    in success the rax will have the fd
-	local open_code="$(system_call_open "${filename_addr}" | xd2b64)";
+	local open_code="$(sys_open "${filename_addr}" | xd2b64)";
 	# 2. fstat that fd, so we have the information on data size, to allocate properly the memory.
 	# TODO guarantee a valid writable memory location
 	local fstat_code="$(sys_fstat "${stat_addr}" | xd2b64)";
 	# 	To do this we need to have some memory space to set the stat data struct.
 	# 	TODO decide if we should mmap every time, or have a program buffer to use.
 	# 3.a. in normal files, allocate memory with mmap using the fd.
-	local mmap_code="";
 	# 3.b. in case of virtual file like pipes or nodes(/proc/...) we can't map directly, but we still need to have a memory space to read the data in, so the fstat is still necessary. We should then use the sys_read to copy the data into memory.
 	# 4. So we can access the data directly using memory addresses.
-	local read_code="$(read_file "${symbol_type}" "${stat_addr}" "${data_offset}")";
+	local read_code="$(read_file "${symbol_type}" "${stat_addr}" "${data_offset}" | xd2b64)";
 	# it should return the bytecode, the size
 	#fd="$(set_symbol_value "${symbol_value} fd" "${SYS_OPEN}")";
 	# We should create a new dynamic symbol to have the file descriptor number
 	#CODE="${CODE}$(sys_read $)"
-	instr_bytes="${open_code}${fstat_code}${mmap_code}${read_code}"
+	instr_bytes="${open_code}${fstat_code}${read_code}"
 	instr_len=$(echo -n "${instr_bytes}" | b64cnt )
 	data_bytes="";
 	data_len="$(( stat_struct_size + ptr_data_size ))"; # Dynamic length, only at runtime we can know so give it the pointer size
@@ -809,7 +888,7 @@ define_variable_read_from_file()
 		"${CODE_LINE_B64}" \
 		"1" \
 		"0" \
-		"rax"; #TODO: this is should set the register where the write call should look at data address. and it should be a variable, because this breaks cross arch(aarch does not have RAX).
+		"";
 	return;
 }
 
@@ -847,7 +926,7 @@ define_variable_from_exec()
 	local args_addr="$(( pipe_addr + pipe_struct_size ))"; # the array address
 	local args_size=$(( 8 * ${#args[@]} + 8 )) # 8 to cmd, 8 for each argument and 8 to null to close the array
 	local env_addr=$(( args_addr + args_size ));
-	local env_size=8; 
+	local env_size=8;
 	env_size=0;
 	env_addr=0; # no support for env, set NULL
 	local argsparam="${args[@]}";
@@ -887,11 +966,10 @@ define_concat_variable(){
 		local sym_dyn_data_size=$(get_sym_dyn_data_size "${symbol_name}" "${SNIPPETS}")
 		if [ "${symbol_type}" == "${SYMBOL_TYPE_STATIC}" ]; then
 			static_value="$( echo "${static_value}${symbol_value}" | base64 -d | base64 -w0 )";
-			instr_bytes="${instr_bytes}$(concat_symbol_instr "${symbol_addr}" "${dyn_data_offset}" "${symbol_len}" "$i")";
+			instr_bytes="${instr_bytes}$(concat_symbol_instr "${symbol_addr}" "${dyn_data_offset}" "${symbol_len}" "$i" | xd2b64)";
 		else
 			dyn_args="$(( dyn_args + 1 ))";
-			sym_dyn_data_size=$(get_sym_dyn_data_size "${symbol_name}" "${SNIPPETS}")
-			instr_bytes="${instr_bytes}$(concat_symbol_instr "$(( symbol_addr ))" "${dyn_data_offset}" "-1" "$i")";
+			instr_bytes="${instr_bytes}$(concat_symbol_instr "$(( symbol_addr ))" "${dyn_data_offset}" "-1" "$i" | xd2b64)";
 		fi;
 	done;
 	# if all arguments are static, we can merge them at build time
@@ -949,7 +1027,8 @@ define_variable_from_test()
 	local field_b_addr=$(echo "$field_data_b" | cut -d, -f${B64_SYMBOL_VALUE_RETURN_ADDR})
 	local field_type_b=$(echo "${field_data_b}" | cut -d, -f${B64_SYMBOL_VALUE_RETURN_TYPE});
 	local field_b_v=$(echo "${field_data_b}" | cut -d, -f${B64_SYMBOL_VALUE_RETURN_OUT} | base64 -d)
-	local instr_bytes=$(compare "${field_a_v:=0}" "${field_b_v:=0}" "$field_type_a" "$field_type_b")
+	local instr_bytes=$(compare "${field_a_v:=0}" "${field_b_v:=0}" "$field_type_a" "$field_type_b" | xd2b64)
+	debug "compare instr_bytes are: $instr_bytes";
 	local instr_len=$(echo "$instr_bytes" | b64cnt);
 	local data_bytes="";
 	local data_len=0;
@@ -984,15 +1063,19 @@ define_array_variable(){
 	do
 		local symbol_name=$(echo -n "${code_line_elements[$i]}");
 		local symbol_data=$(get_b64_symbol_value "${symbol_name}" "${SNIPPETS}" )
-		local symbol_addr="$(echo "${symbol_data}" | cut -d, -f${B64_SYMBOL_VALUE_RETURN_ADDR})";
+		local symbol_addr=$(echo "${symbol_data}" | cut -d, -f${B64_SYMBOL_VALUE_RETURN_ADDR});
 		local symbol_type=$(echo "${symbol_data}" | cut -d, -f${B64_SYMBOL_VALUE_RETURN_TYPE});
 		local symbol_value=$(echo "$symbol_data" | cut -d, -f${B64_SYMBOL_VALUE_RETURN_OUT} |base64 -d);
 		if [ "${symbol_type}" == $SYMBOL_TYPE_PROCEDURE ]; then
-			# TODO detect the jump size
+			local proc_instr_len="$( echo "$SNIPPETS" | grep "PROCEDURE_TABLE,[^,]*,${symbol_name}," | tail -1 |
+				cut -d, -f${SNIPPET_COLUMN_INSTR_LEN} )";
 			local jump_size=2; # instruction length of the jump over before the code
+			if [ "$proc_instr_len" -gt 127 ]; then
+				jump_size=5;
+			fi;
 			symbol_addr=$(( symbol_addr + jump_size ));
 		fi;
-		instr_bytes="${instr_bytes}$(array_add "${dyn_data_offset}" "$((i-deep-1))" "${symbol_addr}" "$symbol_type" "$symbol_value"|xd2b64)";
+		instr_bytes="${instr_bytes}$(array_add "${dyn_data_offset}" "$((i-deep-1))" "${symbol_addr}" "${symbol_type}" "${symbol_value}" | xd2b64)";
 	done;
 	local array_size=$(( ${#code_line_elements[@]} - (deep + 1) -1));
 	instr_bytes="${instr_bytes}$(array_end "${dyn_data_offset}" "$array_size" | xd2b64)";
@@ -1063,7 +1146,7 @@ is_function(){
 	local symbol_name="$1";
 	local snippets="$2";
 	if \
-		is_system_function $symbol_name || 
+		is_system_function $symbol_name ||
 		is_internal_function $symbol_name ||
 		is_user_function "$symbol_name" "${SNIPPETS}";
 	then
@@ -1110,7 +1193,7 @@ get_jmp_size(){
 	local target="$2";
 	local jmp_size=2; # all procedures have a jmp instruction at begining. it can be 2 or 5 bytes. 2 if the procedure body is smaller than 128 bytes;
 	local target_instr_size="$( echo "$SNIPPETS" | grep "PROCEDURE_TABLE,[^,]*,${target}," | cut -d, -f${SNIPPET_COLUMN_INSTR_LEN} )";
-	if [ "${target_instr_size:=0}" -gt 127 ]; then 
+	if [ "${target_instr_size:=0}" -gt 127 ]; then
 		jmp_size=5;
 	fi;
 	debug "get_jmp_size for $2 is $jmp_size";
@@ -1205,15 +1288,18 @@ define_variable(){
 	fi;
 	if [[ "$sec_arg" =~ ^@[0-9]*$ ]]; then # capture the argument into variable
 	{
-		define_variable_arg
-		return
+		dynamic_data_offset=$(get_current_dynamic_data_offset "${SNIPPETS}" "${CODE_LINE_B64}");
+		static_data_offset=$current_static_data_address;
+		dyn_data_offset="$(( zero_data_offset + static_data_size + dynamic_data_offset))";
+		define_variable_arg "$SNIPPETS";
+		return;
 	}
 	fi
 	if [[ "$sec_arg" =~ ^@[$]$ ]]; then # capture the argument count into variable
 	{
 		# create a new dynamic symbol called ${symbol_name}
 		# That should point to the rbp register first 8 bytes (int)
-		# argc_addr: memory address to put the argc 
+		# argc_addr: memory address to put the argc
 		#   should i use the snippets data?
 		argc_pos=$dyn_data_offset;
 		instr_bytes="$(get_arg_count $argc_pos | xd2b64)";
@@ -1423,7 +1509,7 @@ parse_code_bloc(){
 define_code_block(){
 	# TODO add identation validation
 	#
-	# TODO prepend a jump move over the end of this block, so this code will be executed only if a explicit goto or call is requested. 
+	# TODO prepend a jump move over the end of this block, so this code will be executed only if a explicit goto or call is requested.
 	new_bloc="$(parse_code_bloc "$SNIPPETS")";
 	local bloc_name=$(echo "$new_bloc" | cut -d, -f${SNIPPET_COLUMN_SUBNAME})
 	if [ "$SNIPPETS" == "" ]; then
@@ -1478,18 +1564,18 @@ snippet_write()
 	# expected: STDOUT, STDERR, FD...
 	local data_output=$(get_b64_symbol_value "${out}" "${SNIPPETS}" | cut -d, -f${B64_SYMBOL_VALUE_RETURN_OUT} | base64 -d | tr -d '\0' );
 	# I think we can remove the parse_data_bytes and force the symbol have the data always
-	local symbol_data=$(get_b64_symbol_value "${input_symbol_name}" "${SNIPPETS}" )
+	local symbol_data=$(get_b64_symbol_value "${input_symbol_name}" "${SNIPPETS}");
 	local symbol_type=$(echo "${symbol_data}" | cut -d, -f${B64_SYMBOL_VALUE_RETURN_TYPE});
 	local symbol_value=$(echo "$symbol_data" | cut -d, -f${B64_SYMBOL_VALUE_RETURN_OUT});
 	local symbol_addr="$(echo "${symbol_data}" | cut -d, -f${B64_SYMBOL_VALUE_RETURN_ADDR})";
-	local data_bytes=$(echo -n "${symbol_value}"| cut -d, -f1);
-	local data_bytes_len="$(echo -n "${symbol_data}"| cut -d, -f2)";
+	local data_bytes=$(echo -n "${symbol_value}");
+	local data_bytes_len="$(echo -n "${symbol_data}"| cut -d, -f${B64_SYMBOL_VALUE_RETURN_SIZE})";
 	local data_addr_v=$(echo "${symbol_data}" | cut -d, -f${B64_SYMBOL_VALUE_RETURN_ADDR});
 	if [ "${symbol_type}" != "${SYMBOL_TYPE_STATIC}" ]; then
 	{
-		data_bytes_len=0; # no data to append. just registers used.
 		if [ "${symbol_type}" == "${SYMBOL_TYPE_PROCEDURE}" ]; then
 		{
+			data_bytes_len=0; # no data to append. just registers used.
 			data_bytes="";
 			local procedure_addr=$(echo "$symbol_data" | cut -d, -f${B64_SYMBOL_VALUE_RETURN_ADDR});
 			data_addr_v="${procedure_addr}"; # point to the procedure address
@@ -1497,7 +1583,7 @@ snippet_write()
 		fi;
 	}
 	fi;
-	# TODO: detect if using dyn data addr and pass it 
+	# TODO: detect if using dyn data addr and pass it
 	local input_symbol_return="$( echo "$SNIPPETS" | grep "SYMBOL_TABLE,[^,]*,${input_symbol_name}," | cut -d, -f${SNIPPET_COLUMN_RETURN} )";
 	if [ "${input_symbol_return}" != "" ]; then
 		data_addr_v="${input_symbol_return}";
@@ -1640,7 +1726,7 @@ do_exec(){
 	local args_addr="$(( dyn_data_offset ))"; # the array address
 	local args_size=$(( 8 * ${#args[@]} + 8 )) # 8 to cmd, 8 for each argument and 8 to null to close the array
 	local env_addr=$(( args_addr + args_size ));
-	local env_size=8; 
+	local env_size=8;
 	env_size=0;
 	env_addr=0; # no support for env, set NULL
 	local data_len=$(( args_size + env_size )); # 8 to each array (args and env)
@@ -1835,9 +1921,9 @@ parse_snippet()
 	local previous_snippet=$( echo "${SNIPPETS}" | tail -1 );
 	local instr_offset=$(get_instr_offset "${previous_snippet}");
 	local zero_data_offset=$( get_zero_data_offset "$PH_VADDR_V" "$INSTR_TOTAL_SIZE" );
-	local dynamic_data_offset=$(get_current_dynamic_data_offset "${SNIPPETS}" "${CODE_LINE_B64}");
 	local static_data_displacement=$(get_current_static_data_displacement "${SNIPPETS}" "${CODE_LINE_B64}");
 	local current_static_data_address=$((zero_data_offset + static_data_displacement));
+	local dynamic_data_offset=$(get_current_dynamic_data_offset "${SNIPPETS}" "${CODE_LINE_B64}");
 	local static_data_offset=$current_static_data_address;
 	local dyn_data_offset="$(( zero_data_offset + static_data_size + dynamic_data_offset))";
 
@@ -1902,6 +1988,10 @@ parse_snippets()
 		"" \
 		"0";
 	IFS='';
+	# i think is better to mmap args memory here,
+	# but found hard to manage the side effects for now,
+	# so keep commented.
+	# SNIPPETS=$(echo "$SNIPPETS"; ensure_args_ptr $SNIPPETS);
 	echo "${CODE_INPUT}" | while read CODE_LINE;
 	do
 		RESULT=$(parse_snippet "${ROUND}" "${PH_VADDR_V}" "${INSTR_TOTAL_SIZE}" "${static_data_size}" "${CODE_LINE}" "${SNIPPETS}" "${deep}");
@@ -1921,6 +2011,7 @@ parse_snippets()
 # That includes NONE OF the data section (string table, the elf and program headers
 detect_instruction_size_from_code()
 {
+	[ -e "$1" ] &&
 	cat $1 | grep -E "^(INSTRUCTION|SNIPPET_CALL|SYMBOL_TABLE|PROCEDURE_TABLE)," |
 	cut -d, -f${SNIPPET_COLUMN_INSTR_LEN} |
 	awk '{s+=$1}END{print s}'
@@ -1929,7 +2020,7 @@ detect_instruction_size_from_code()
 detect_static_data_size_from_code()
 {
 	local static_data_size=$(
-		cat $1 | while read l;
+		[ -e "$1" ] && cat $1 | while read l;
 		do
 			if [ "${l}" == "" ]; then
 				continue;
@@ -1964,20 +2055,33 @@ create_internal_ilog10_snippet()
 	local jump_bytes="$(jump_relative $instr_size|xd2b64)";
 	instr_bytes=$(echo "$jump_bytes$instr_bytes");
 	instr_size="$(echo $instr_bytes | b64cnt)";
-	local data_bytes="$(
+	local data_bytes="$({
+		# data for ilog10; each byte in this array define,
+		# given the bsr for a number, which index on the next ilo10 data table should we use?
+		# samples:
+		# 1 : bsr=0; idx: 0; < 10
+		# 2 ; bsr=1; idx: 0; < 10
+		# 4 ; bsr=2; idx: 0; < 10
+		# 8 ; bsr=3; idx: 0; < 10
+		# 16; bsr=4; idx: 1; < 100
+		# 32; bsr=5; idx: 1; < 100
+		# 64; bsr=6; idx: 1; < 100
+		# 128; bsr=7; idx: 2; < 1000
+		# but we always subtract 1, because bsr returns the bit index instead of how many bits;
 		for (( i=1; i<32; i++));
 		do
 			v=$(( 2 ** i ));
 			l=$(echo "scale=8;l($v)/l(10)" | bc -l);
 			l=${l/.*/};
 			printf %02x ${l:=0};
+		# data for ilog10; 
 		done | xxd --ps -r | base64 -w0;
-		for (( i=0; i<11; i++ ));
+		for (( i=0; i<12; i++ ));
 		do
 			v=$(( 10 ** i ));
 			echo -en "$(printEndianValue ${v} $SIZE_64BITS_8BYTES)" | base64 -w0;
 		done;
-	)";
+	})";
 	local data_bytes_sum=$(echo $data_bytes | b64cnt);
 	local bloc_outer_code_b64="$(echo -n "builtin..ilog10" | base64 -w0)";
 	local bloc_source_lines_count=0;
@@ -2033,7 +2137,6 @@ create_internal_s2i_snippet()
 	local instr_offset="$(get_instr_offset "$( echo "$SNIPPETS" | tail -1)")";
 	local zero_data_pos=$(get_zero_data_offset "$PH_VADDR_V" "$INSTR_TOTAL_SIZE");
 	local dyn_data_size=$(get_dynamic_data_size "${SNIPPETS}")
-	debug "zero_data_pos=$zero_data_pos; dyn_data_size=$dyn_data_size;\n$SNIPPETS"
 	local dynamic_data_offset="$(( zero_data_pos + dyn_data_size ))"
 	local instr_bytes="$(s2i | xdr | base64 -w0)";
 	local instr_size="$(echo "$instr_bytes" | b64cnt)";
@@ -2075,7 +2178,6 @@ create_internal_i2s_snippet()
 	local instr_offset="$(get_instr_offset "$( echo "$SNIPPETS" | tail -1)")";
 	local zero_data_pos=$(get_zero_data_offset "$PH_VADDR_V" "$INSTR_TOTAL_SIZE");
 	local dyn_data_size=$(get_dynamic_data_size "${SNIPPETS}")
-	debug "zero_data_pos=$zero_data_pos; dyn_data_size=$dyn_data_size;\n$SNIPPETS"
 	local dynamic_data_offset="$(( zero_data_pos + dyn_data_size ))"
 	local ilog10_addr=$(get_internal_addr .ilog10 "${SNIPPETS}");
 	local power10_addr=$(get_power10_addr "${SNIPPETS}");
@@ -2148,9 +2250,9 @@ detect_internal_dependencies(){
 			cut -d, -f$SNIPPET_COLUMN_DEPENDENCIES |
 			tr "," "\n" | uniq | sed '/^$/d' |
 		while read dep;
-		do 
-			if is_internal_function $dep; then 
-				echo $dep; 
+		do
+			if is_internal_function $dep; then
+				echo $dep;
 			fi;
 		done;
 	)";
@@ -2171,7 +2273,7 @@ parseRound(){
 	local snippets_file="$2";
 	internal_snippet_filename="${snippets_file}.internal";
 	local snippets=$(
-		echo "${INPUT_SOURCE_CODE}" | 
+		echo "${INPUT_SOURCE_CODE}" |
 			parse_snippets \
 				"${ROUND_FINAL}" \
 				"${PH_VADDR_V}" \
@@ -2181,13 +2283,12 @@ parseRound(){
 	);
 	local INSTR_TOTAL_SIZE=$(detect_instruction_size_from_code "${snippets_file}");
 	local static_data_size=$(detect_static_data_size_from_code "${snippets_file}");
-	debug static_data_size=$static_data_size INSTR_TOTAL_SIZE=$INSTR_TOTAL_SIZE
 	local internal_dependencies=$(detect_internal_dependencies "${snippets}" "${internal_snippet_filename}");
-	debug "internal dependencies: [$internal_dependencies]";
 	echo -n "" > "${internal_snippet_filename}";
 	echo "$internal_dependencies" |
 		while read dep;
 		do
+			[ "$dep" == "" ] && continue;
 			out="$(create_internal_snippet \
 				"$dep" \
 				"$(cat ${internal_snippet_filename})" \
@@ -2220,10 +2321,11 @@ write_elf()
 	# Virtual Memory Offset
 	local PH_VADDR_V=$(./ph_vaddr_v)
 	if [ "$PH_VADDR_V" == "" ]; then
+		# mmap_min_addr kernel config says where is the minimum valid segment to load the elf
 		PH_VADDR_V=$(cat /proc/sys/vm/mmap_min_addr)
 	fi;
 	if [ "$PH_VADDR_V" == "" ]; then
-		PH_VADDR_V=$(( 1 << 16 ));
+		PH_VADDR_V=$(( 1 << 16 )); # 64KiB
 	fi;
 	local SH_COUNT=$(get_section_headers_count "");
 	local INPUT_SOURCE_CODE="$(cat)";
@@ -2248,17 +2350,27 @@ write_elf()
 	parseRound 2 "${snippets_file}"; # Detect internal dependencies size; upate instructions, static and dynamic data size;
 	parseRound 3 "${snippets_file}"; # final parse with correct addresses displacements;
 
-	local ELF_BODY="$(
-		print_elf_body \
-			"${PH_VADDR_V}" \
-			"${SH_COUNT}" \
-			"$snippets_file";
-	)";
-	local ELF_FILE_HEADER="$(
-		print_elf_file_header \
-			"${PH_VADDR_V}" \
-			"${SH_COUNT}";
-	)";
-	echo -ne "${ELF_FILE_HEADER}${ELF_BODY}" |
-		base64 -d > $ELF_FILE_OUTPUT;
+	local elf_size=0;
+	for ((i=0; i<2; i++));
+	do {
+		# need to do twice because we don't have the final file size on first time;
+		# could be better just to replace the filesz on program segment header (LOAD type);
+		local ELF_BODY="$(
+			print_elf_body \
+				"${PH_VADDR_V}" \
+				"${SH_COUNT}" \
+				"$snippets_file" \
+				"$elf_size";
+		)";
+		local ELF_FILE_HEADER="$(
+			print_elf_file_header \
+				"${PH_VADDR_V}" \
+				"${SH_COUNT}" | xd2b64;
+		)";
+		echo -ne "${ELF_FILE_HEADER}${ELF_BODY}" |
+			base64 -d > $ELF_FILE_OUTPUT;
+		elf_size=$(wc -c<$ELF_FILE_OUTPUT)
+	};
+	done;
 }
+fi;
