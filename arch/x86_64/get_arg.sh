@@ -110,7 +110,7 @@ detect_argsize()
 	});
 	local func_arg=$({
 		mov $r_in rsp;
-		add $r_in $(( 16 + (argn * 16) )); # retval_ptr + argc + ( type + argn_ptr )
+		add $r_in $(( 24 + (argn * 16) )); # retval_ptr + (previous rbp) + argc + ( type + argn_ptr )
 		# at this point r_in == arg_type;
 		mov $r_in "($r_in)";
 		cmp $r_in $SYMBOL_TYPE_HARD_CODED;

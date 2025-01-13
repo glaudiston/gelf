@@ -6,7 +6,8 @@ if ! declare -F s2i_loaded; then s2i_loaded(){ :; };
 . $(dirname $(realpath $BASH_SOURCE))/cmp.sh
 # s2i string to integer
 # given a string address convert it to integer
-s2i(){
+s2i()
+{
 	local reg_str_addr="rax";
 	local reg_str_8="al";
 	local reg_tmp_s="rsi";
@@ -18,12 +19,12 @@ s2i(){
 	local init="$({
 		# tmp code start
 		#
-		mov $reg_str_addr rsp;
-		add $reg_str_addr 32; # arg type == (rsp+retval+argc+s2i_ptr_type+s2i_ptr) * 8 bytes
+		mov $reg_str_addr rsp; # rsp is ptr to rip return address
+		add $reg_str_addr 40; # arg type == (rip_ret_addr+(previous rbp)+argc+s2i_ptr_type+s2i_ptr) * 8 bytes
 		mov $reg_tmp_s "($reg_str_addr)"; # resolve the value type to another register;
 		add $reg_str_addr 8; # add 8 to get the argment next to the type;
 		mov $reg_str_addr "(${reg_str_addr})";	# resolve the stack mem ptr to the heap mem ptr
-		cmp $reg_tmp_s $SYMBOL_TYPE_HARD_CODED; is argument hard coded ?
+		cmp $reg_tmp_s $SYMBOL_TYPE_HARD_CODED; # is argument hard coded ?
 		local resolve_arg_value=$({
 			# only required when not hard coded values;
 			mov $reg_str_addr "(${reg_str_addr})";	# resolve the heap mem ptr to the mmap argument ptr;

@@ -29,7 +29,7 @@ function system_call_write()
 	}
 	elif [ "$type" == "${SYMBOL_TYPE_PROCEDURE}" ]; then
 	{
-		call_procedure ${DATA_ADDR_V} ${CURRENT_RIP} | b64xd;
+		call_procedure ${DATA_ADDR_V} ${CURRENT_RIP};
 		mov rax $SYS_WRITE;
 		mov rdx r9;
 		mov rdi $OUT;

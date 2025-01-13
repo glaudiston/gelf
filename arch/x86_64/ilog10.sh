@@ -36,7 +36,7 @@ ilog10()
 		# 	40 = first arg
 		# so we want n=24
 		mov rax rsp;
-		add rax 32; # arg type (retaddr + argc + fn_ptr + arg_type : 8 bytes each)
+		add rax 40; # arg type (retaddr + (previous rbp) + argc + fn_ptr + arg_type : 8 bytes each)
 		mov rdx "(rax)";
 		add rax 8; # next byte is the argument value
 		mov rax "(rax)";

@@ -1218,7 +1218,7 @@ define_variable_from_fn(){
 		target_offset="$( echo $target_fn_data | cut -d, -f${SNIPPET_COLUMN_INSTR_OFFSET} )";
 		#data_len=$(echo $target_fn_data | cut -d, -f${SNIPPET_COLUMN_DATA_LEN});
 		local jmp_size=$(get_jmp_size "${SNIPPETS}" "${target}" );
-		instr_bytes="$(call_procedure "$((target_offset + jmp_size))" "${instr_offset}" "" "${retval_addr}")";
+		instr_bytes="$(call_procedure "$((target_offset + jmp_size))" "${instr_offset}" "" "${retval_addr}" | xd2b64)";
 		error "fn call not implemented";
 		# create an array with the fn as first arg
 		# use the array to call
@@ -1233,7 +1233,7 @@ define_variable_from_fn(){
 		#data_len=$(echo $target_fn_data | cut -d, -f${SNIPPET_COLUMN_DATA_LEN});
 		local jmp_size=$(get_jmp_size "${SNIPPETS}" "${target_fn}" );
 		target_addr=$((target_addr + jmp_size));
-		instr_bytes="$(call_procedure "${target_addr}" "${instr_offset}" "${SYMBOL_TYPE_ARRAY}" "${retval_addr}")";
+		instr_bytes="$(call_procedure "${target_addr}" "${instr_offset}" "${SYMBOL_TYPE_ARRAY}" "${retval_addr}" | xd2b64 )";
 	}
 	fi;
 	instr_len="$(echo $instr_bytes | b64cnt)";
@@ -1658,7 +1658,7 @@ do_call(){
 		local target_addr=$(echo $target_fn_data | cut -d, -f${SNIPPET_COLUMN_INSTR_OFFSET});
 		local jmp_size=$(get_jmp_size "${SNIPPETS}" "${target_fn}" );
 		target_addr=$(( target_addr + jmp_size ));
-		instr_bytes="$(call_procedure "${target_addr}" "${instr_offset}" "${SYMBOL_TYPE_ARRAY}")";
+		instr_bytes="$(call_procedure "${target_addr}" "${instr_offset}" "${SYMBOL_TYPE_ARRAY}" | xd2b64)";
 		local instr_len="$(echo "${instr_bytes}" | base64 -d |  wc -c)";
 		struct_parsed_snippet \
 			"SNIPPET_CALL" \
@@ -1684,7 +1684,7 @@ do_call(){
 		return;
 	fi;
 	local jmp_size=$(get_jmp_size "${SNIPPETS}" "${target}" );
-	local call_bytes="$(call_procedure "$((target_offset + jmp_size))" "${instr_offset}" )";
+	local call_bytes="$(call_procedure "$((target_offset + jmp_size))" "${instr_offset}" | xd2b64)";
 	local call_len="$(echo "${call_bytes}" | b64cnt)";
 	struct_parsed_snippet \
 		"SNIPPET_CALL" \
@@ -1791,7 +1791,7 @@ do_ilog10(){
 	local target="${code_line_elements[$(( 4 + deep-1 ))]}";
 	debug "do ilog on base $base for the target $target"
 	target_offset="$( echo "$SNIPPETS" | grep "PROCEDURE_TABLE,[^,]*,${target}," | cut -d, -f${SNIPPET_COLUMN_INSTR_OFFSET} )";
-	jmp_bytes="$(jump "$((target_offset + 2))" "${instr_offset}" | xd2b64)";
+	jmp_bytes="$(call_procedure "$((target_offset + 2))" "${instr_offset}" | xd2b64)";
 	jmp_len="$(echo "${jmp_bytes}" | b64cnt)";
 	struct_parsed_snippet \
 		"SNIPPET_CALL" \
