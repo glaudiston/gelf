@@ -395,13 +395,13 @@ test_recursive_exec_fib(){
 :	ok	0
 :	fiba	[]	.i2s	fib
 :	fibstr	!	fiba
+:	stdout	1
 :	end	{
-	!	sys_write	limit
+	!	sys_write	stdout	limitstr
 	!	sys_exit	ok
 }
 :	continue	?	fib	limit
 !	continue	?=	end
-:	stdout	1
 :	delim	,
 !	sys_write	stdout	fibstr
 !	sys_write	stdout	delim
