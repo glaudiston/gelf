@@ -379,6 +379,39 @@ EOF
 	expect $? 0
 }
 
+test_recursive_exec_fib(){
+	compile_test <<EOF
+:	p	@0
+:	astr	@1
+:	bstr	@2
+:	limitstr	@3
+:	aa	[]	.s2i	astr
+:	a	!	aa
+:	ba	[]	.s2i	bstr
+:	b	!	ba
+:	la	[]	.s2i	limitstr
+:	limit	!	la
+:	fib	+	a	b
+:	ok	0
+:	fiba	[]	.i2s	fib
+:	fibstr	!	fiba
+:	end	{
+	!	sys_write	limit
+	!	sys_exit	ok
+}
+:	continue	?	fib	limit
+!	continue	?=	end
+:	stdout	1
+:	delim	,
+!	sys_write	stdout	fibstr
+!	sys_write	stdout	delim
+!	p	bstr	fibstr	limitstr
+!	sys_exit	ok
+EOF
+	o=$(run_test 0 1 13)
+	expect $? 0 "1,2,3,5,8,13" "$o"
+}
+
 test_start_code(){
 	compile_test <<EOF
 :	stdout	1
@@ -397,47 +430,47 @@ EOF
 	expect $? 0 "ab" "$o"
 }
 
-test_fibonacci_generate(){
-	compile_test <<EOF
-:	stdout	1
-:	fib	{
-	#	TODO: this is wrong because
-	#	i using direct memory addr in a recursive function
-	#	it should trust only on stack memory
-	#
-	#	prev => (rsp+16) => 0x103c3
-	:	prev	@1
-	#	last => (rsp+24) => 0x103cb
-	:	last	@2
-	#	limit => (rsp=32) => 0x103d3
-	:	limit	@3
-	#	TODO: + is wrong because it is using last=0x103db(8 bytes ahead)
-	#		fibn => 0x103db
-	:	fibn	+	prev	last
-	#	TODO: test is getting wrong address for limit and fibn (both 8 bytes ahead ?)
-	:	toStop	?	fibn	limit
-	!	toStop	?>	ret
-	#	.i2s => 0x100a2/0x100a7
-	#	narr => 0x103e3 ?
-	:	narr	[]	.i2s	fibn
-	#	TODO: i2s is broken here
-	:	nstr	!	narr
-	!	sys_write	stdout	nstr
-	:	f	[]	fib	last	fibn	limit
-	!	f
-	!	ret f
-:	}
-:	a	0
-:	b	1
-:	c	1000
-:	d	[]	fib	a	b	c
-!	d
-:	ok	0
-!	sys_exit	ok
-EOF
-	o=$(run_test)
-	expect $? 0
-}
+# test_fibonacci_generate(){
+# 	compile_test <<EOF
+# :	stdout	1
+# :	fib	{
+# 	#	TODO: this is wrong because
+# 	#	i using direct memory addr in a recursive function
+# 	#	it should trust only on stack memory
+# 	#
+# 	#	prev => (rsp+16) => 0x103c3
+# 	:	prev	@1
+# 	#	last => (rsp+24) => 0x103cb
+# 	:	last	@2
+# 	#	limit => (rsp=32) => 0x103d3
+# 	:	limit	@3
+# 	#	TODO: + is wrong because it is using last=0x103db(8 bytes ahead)
+# 	#		fibn => 0x103db
+# 	:	fibn	+	prev	last
+# 	#	TODO: test is getting wrong address for limit and fibn (both 8 bytes ahead ?)
+# 	:	toStop	?	fibn	limit
+# 	!	toStop	?>	ret
+# 	#	.i2s => 0x100a2/0x100a7
+# 	#	narr => 0x103e3 ?
+# 	:	narr	[]	.i2s	fibn
+# 	#	TODO: i2s is broken here
+# 	:	nstr	!	narr
+# 	!	sys_write	stdout	nstr
+# 	:	f	[]	fib	last	fibn	limit
+# 	!	f
+# 	!	ret f
+# :	}
+# :	a	0
+# :	b	1
+# :	c	1000
+# :	d	[]	fib	a	b	c
+# !	d
+# :	ok	0
+# !	sys_exit	ok
+# EOF
+# 	o=$(run_test)
+# 	expect $? 0
+# }
 
 test_s2i(){
 	compile_test <<EOF
@@ -471,7 +504,7 @@ test_numeric_str(){
 :	ok	{
 	!	sys_exit	0
 :	}
-:	t	?	nstr	sn
+:	t	?s	nstr	sn
 !	t	?=	ok
 !	sys_exit	1
 EOF

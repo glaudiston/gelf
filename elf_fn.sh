@@ -1027,6 +1027,11 @@ define_variable_from_test()
 	local field_b_addr=$(echo "$field_data_b" | cut -d, -f${B64_SYMBOL_VALUE_RETURN_ADDR})
 	local field_type_b=$(echo "${field_data_b}" | cut -d, -f${B64_SYMBOL_VALUE_RETURN_TYPE});
 	local field_b_v=$(echo "${field_data_b}" | cut -d, -f${B64_SYMBOL_VALUE_RETURN_OUT} | base64 -d)
+	if [ "$1" == string ]; then {
+		field_type_a=$SYMBOL_TYPE_DYNAMIC_STRING;
+		field_type_b=$SYMBOL_TYPE_DYNAMIC_STRING;
+	}
+	fi;
 	local instr_bytes=$(compare "${field_a_v:=0}" "${field_b_v:=0}" "$field_type_a" "$field_type_b" | xd2b64)
 	debug "compare instr_bytes are: $instr_bytes";
 	local instr_len=$(echo "$instr_bytes" | b64cnt);
@@ -1268,6 +1273,12 @@ define_variable(){
 	#local symbol_name="$(echo -n "${symbol_name/:*/}")";
 	local sec_arg="$(echo -n "${code_line_elements[$(( 2 + deep-1 ))]}")"
 	local symbol_data="$(echo "$SNIPPETS" | grep "SYMBOL_TABLE,[^,]*,${symbol_name}," | tail -1)";
+	if [ "$sec_arg" == "?s" ]; then # define a test
+	{
+		define_variable_from_test string
+		return
+	}
+	fi;
 	if [ "$sec_arg" == "?" ]; then # define a test
 	{
 		define_variable_from_test

@@ -108,7 +108,6 @@ i2s(){
 	# jmp back
 	jmp "$(( - $(xcnt <<<"${codepart2}") -jmpv1_size ))";
 	# code "after_loop"
-	# TODO code="${code}${MOV_v0_ADDR4_rdi}$(printEndianValue $str_addr $SIZE_32BITS_4BYTES)"; # append the 00 to close the string
 	mov rdi $str_addr;
 	ret;
 }

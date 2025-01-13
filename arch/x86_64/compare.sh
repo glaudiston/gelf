@@ -30,6 +30,15 @@ compare()
 	if [ "${type_b}" == "$SYMBOL_TYPE_DYNAMIC" ]; then
 		mov rcx $b;
 		mov rcx "(rcx)";
+	fi;
+	if [ "${type_a}" == "$SYMBOL_TYPE_DYNAMIC_STRING" ]; then
+		mov rax "$a";
+		mov rax "(rax)";
+		mov rax "(rax)";
+	fi;
+	if [ "${type_b}" == "$SYMBOL_TYPE_DYNAMIC_STRING" ]; then
+		mov rcx $b;
+		mov rcx "(rcx)";
 		mov rcx "(rcx)";
 	fi;
 	cmp rax rcx;
