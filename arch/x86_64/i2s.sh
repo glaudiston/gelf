@@ -24,7 +24,7 @@ i2s(){
 			# expect to have the value on rax already;
 		fi;
 		mov rax rsp;
-		add rax 32; # arg type: (retval+argc+i2s_ptr_tye+i2s_ptr) 8 bytes each;
+		add rax 40; # arg type: (retval+(previous rbp)+argc+i2s_ptr_tye+i2s_ptr) 8 bytes each;
 		mov rdi rax;
 		cmp rdi $SYMBOL_TYPE_HARD_CODED;
 		local resolve_value=$({
@@ -50,7 +50,7 @@ i2s(){
 	local ilog10_skip_stack=26; # expected to skip first part of ilog10 code, so it will not try to recover the value from stack. This will break at any change on ilog10 begin code
 	local init_codesize=$(xcnt<<<"${init_code}");
 	local displacement=$(( CURRENT_RIP + init_codesize -ilog10_skip_stack ));
-	call_procedure ${ilog10_addr} ${displacement} | b64xd;
+	call_procedure ${ilog10_addr} ${displacement};
 	# at this point rdx == 3 (log 10 (n))
 	# rax is the integer value (0x3e8==1000)
 	# rdx is the remaining digit count(base 10) from ilog10
@@ -108,7 +108,6 @@ i2s(){
 	# jmp back
 	jmp "$(( - $(xcnt <<<"${codepart2}") -jmpv1_size ))";
 	# code "after_loop"
-	# TODO code="${code}${MOV_v0_ADDR4_rdi}$(printEndianValue $str_addr $SIZE_32BITS_4BYTES)"; # append the 00 to close the string
 	mov rdi $str_addr;
 	ret;
 }

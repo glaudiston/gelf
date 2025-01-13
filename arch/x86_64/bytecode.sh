@@ -1,5 +1,6 @@
 #!/bin/bash
 . arch/system_call_linux_x86.sh
+. arch/x86_64/call_procedure.sh
 . arch/x86_64/add.sh
 . arch/x86_64/mul.sh
 . arch/x86_64/array.sh
@@ -307,68 +308,6 @@ function getpagesize()
 	syscall;
 }
 
-# call procedure
-# Intel Ref: Table B-15.
-#
-# CALL – Call Procedure (in same segment)
-#  direct 1110 1000 : displacement32
-#  register indirect 0100 WR00w 1111 1111 : 11 010 reg
-#  memory indirect 0100 W0XB w 1111 1111 : mod 010 r/m
-# CALL – Call Procedure (in other segment)
-#  indirect 1111 1111 : mod 011 r/m
-#  indirect 0100 10XB 0100 1000 1111 1111 : mod 011 r/m
-function call_procedure()
-{
-	local TARGET="$1";
-	local CURRENT="$2";
-	local ARGS_TYPE="$3";
-	local retval_addr="$4";
-	local code="";
-	if [ "$ARGS_TYPE" == $SYMBOL_TYPE_ARRAY ]; then
-		local array_code="$(mov r15 8 | xd2esc)"; # r15+rsp to ignore the return addr when parsing args
-		code="${code}${array_code}";
-		array_code_size="$(echo -en "$array_code" | wc -c)";
-		CURRENT=$((CURRENT + array_code_size)); # append current bytecode size
-	fi;
-	# call procedure (in same segment)
-	# we don't have a short call in x64.
-	# direct has a 32bit displacement to receive the near relative address
-
-	# debug "calling: TARGET:[$TARGET], CURRENT:[${CURRENT}]"
-	local OPCODE_SIZE=1;
-	local DISPLACEMENT_BITS=32; # 4 bytes
-	local CALL_NEAR_SIZE=$(( OPCODE_SIZE + DISPLACEMENT_BITS / 8 )); # 5 bytes
-	local RELATIVE=$(( TARGET - CURRENT - CALL_NEAR_SIZE ));
-	if [ "$(( (RELATIVE >= - ( 1 << ( DISPLACEMENT_BITS -1 ) )) && (RELATIVE <= ( 1 << ( DISPLACEMENT_BITS -1) ) -1) ))" -eq 1 ]; then
-		local OPCODE_CALL_NEAR="\xe8"; #direct call with 32bit displacement
-		local NEAR_ADDR_V="$(printEndianValue $RELATIVE $SIZE_32BITS_4BYTES)"; # call addr
-		local BYTES="${OPCODE_CALL_NEAR}${NEAR_ADDR_V}";
-		code="${code}${BYTES}";
-		if [ "$retval_addr" != "" ]; then
-			code="${code}$({
-				#mov "(rdi)" rdi;
-				mov $retval_addr rdi;
-			} | xd2esc)";
-		fi;
-		echo -en "$code" | base64 -w0;
-		debug "call_procedure $@: $(echo -ne "$code" | base64 -w0)"
-		return;
-	fi;
-	error "call not implemented for this address size: CURRENT: $CURRENT, TARGET: $TARGET, RELATIVE: $RELATIVE";
-
-	FAR_CALL="\x9a";
-	MODRM="$(printEndianValue $(( MODRM_MOD_NO_EFFECTIVE_ADDRESS + MODRM_OPCODE_SUB + rsp )) $SIZE_8BITS_1BYTE)";
-	addr="$(( 16#000100b8 ))"
-	BYTES="\xe8${CALL_ADDR}";
-	code="${code}${BYTES}";
-	if [ "$retval_addr" != "" ]; then
-		#code="${code}$(mov "(rdi)" rdi| xd2esc)";
-		code="${code}$(mov $retval_addr rdi | xd2esc)";
-	fi;
-	echo -en "$code" | base64 -w0;
-	debug "call_procedure $@:: $code"
-}
-
 function ret()
 {
 	local symbol_value="$1";
@@ -451,6 +390,7 @@ function system_call_dup2()
 
 set_increment()
 {
+	debug set_increment $@
 	local addr=$1;
 	local value=$2;
 	local value_type=$3;
@@ -460,8 +400,11 @@ set_increment()
 		inc rdx;
 	elif is_valid_number "$value" && [ "$value_type" == $SYMBOL_TYPE_HARD_CODED ]; then
 		add rdx "${value}";
+	elif is_valid_number "$value" && [ "$value_type" == $SYMBOL_TYPE_DYNAMIC ]; then
+		mov rsi "${value}";
+		mov rsi "(rsi)";
+		add rdx "rsi";
 	else
-		xor rsi rsi;
 		mov rsi "${value}";
 		mov rsi "(rsi)";
 		mov rsi "(rsi)";
