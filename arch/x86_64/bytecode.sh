@@ -390,6 +390,7 @@ function system_call_dup2()
 
 set_increment()
 {
+	debug set_increment $@
 	local addr=$1;
 	local value=$2;
 	local value_type=$3;
@@ -399,8 +400,11 @@ set_increment()
 		inc rdx;
 	elif is_valid_number "$value" && [ "$value_type" == $SYMBOL_TYPE_HARD_CODED ]; then
 		add rdx "${value}";
+	elif is_valid_number "$value" && [ "$value_type" == $SYMBOL_TYPE_DYNAMIC ]; then
+		mov rsi "${value}";
+		mov rsi "(rsi)";
+		add rdx "rsi";
 	else
-		xor rsi rsi;
 		mov rsi "${value}";
 		mov rsi "(rsi)";
 		mov rsi "(rsi)";
