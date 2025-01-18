@@ -84,3 +84,58 @@ to disasm a bytecode to the asm instruction:
 echo -ne "4889c2" | xxd --ps -r | ndisasm -b 64 -
 00000000  4889C2            mov rdx,rax
 ```
+
+Current test status:
+```
+./tests.sh
+ - test_sys_exit_code	...PASS 
+ - test_arg_count	...PASS 
+ - test_sys_write_hard_coded_value	...PASS 
+ - test_hello_world	...PASS 
+ - test_custom_bytecode	...PASS 
+ - test_exec	...PASS 
+ - test_hello_world_base64	...PASS 
+ - test_exec_with_static_args	...PASS 
+ - test_fn	...PASS 
+ - test_read_virtual_file	...PASS 
+ - test_read_text_file	...PASS 
+ - test_concat_static_symbols	...PASS 
+ - test_condition	...PASS 
+ - test_sys_write_out_arg	...PASS 
+ - test_sys_geteuid	...PASS 
+ - test_s2i	...PASS ;PASS ;
+ - test_loop	...PASS 
+ - test_exec_capture_stdout	...PASS 
+ - test_start_code	...PASS 
+ - test_arch_x86_64	...   - arch/x86_64/add_test.sh	...PASS 
+   - arch/x86_64/cmp_test.sh	...PASS 
+   - arch/x86_64/mov_test.sh	...PASS 
+   - arch/x86_64/mul_test.sh	...PASS 
+   - arch/x86_64/sub_test.sh	...PASS 
+ - test_exec_concat	...PASS 
+ - test_recursive_call	...PASS 
+ - test_check_var_is_empty	...PASS ;PASS ;
+ - test_ilog10	...n=5...PASS 
+n=18...PASS 
+n=184...PASS 
+n=1384...PASS 
+n=28952...PASS 
+n=274872...PASS 
+n=2428727...PASS 
+n=10871242...PASS 
+ - test_concat_dyn_symbols	...PASS 
+ - test_exec_with_input_args	...PASS 
+ - test_concat_dyn_stat_symbols	...PASS 
+ - test_concat_stat_dyn_symbols	...PASS ;PASS ;
+ - test_i2s	...PASS ;PASS ;
+ - test_numeric_str	...PASS ;PASS ;PASS ;
+ - test_fn_args	...PASS 
+ - test_recursive_exec_fib	...PASS 
+
+Resume:
+	Test functions:	32
+	Passed:	43
+	Failed:	0
+
+some test functions have multiple subtests
+```
