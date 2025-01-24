@@ -510,6 +510,16 @@ parse_data_bytes()
 	echo -n "${raw_data_bytes}"
 }
 
+is_static_value()
+{
+	local symbol_name=$(echo $1 | base64 -d);
+	local symbol_data="$(echo "$SNIPPETS" | grep -E "^[^,]*,[^,]*,${symbol_name}," |grep -vE "^COMMENT"| tail -1)";
+	if [ "$symbol_data" == "" ]; then
+		return 0;
+	fi;
+	return 1;
+}
+
 is_hard_coded_value()
 {
 	local NO_ERR=0;
@@ -615,7 +625,7 @@ get_snippets_until_line()
 	echo "$SNIPPETS" | while read l;
 	do
 		item=$(echo "$l" | cut -d, -f$SNIPPET_COLUMN_SOURCE_CODE);
-		if [ "$item" == "$symbol_name" ]; then
+		if [ "$item" == "$line" ]; then
 			break;
 		fi;
 		echo "$l";
@@ -638,7 +648,11 @@ get_snippets_until_symbol()
 is_static_data_snippet()
 {
 	local snip="$1";
+	local snip_name=$(echo "$snip" | cut -d, -f"$SNIPPET_COLUMN_SUBNAME");
 	local snip_type=$(echo "$snip" | cut -d, -f"$SNIPPET_COLUMN_TYPE");
+	if [ $snip_type == $SYMBOL_TYPE_STATIC ]; then
+		return 0;
+	fi;
 	if [ $snip_type == $SYMBOL_TYPE_HARD_CODED ]; then
 		return 1;
 	fi;
@@ -898,7 +912,6 @@ define_variable_read_from_file()
 define_variable_from_exec()
 {
 	local cmd="$(echo -n "${code_line_elements[$(( 3 + deep-1 ))]}")"
-	debug "exec into var cmd=[$cmd]"
 	# TODO for now positional args are good enough, but a better way is to have named args and env as an array or map each;
 	local args=( );
 	local static_map=( );
@@ -960,7 +973,6 @@ define_concat_variable(){
 	for (( i=1; i<$(( ${#code_line_elements[@]} - deep)); i++ ));
 	do
 		local symbol_name=$(echo -n "${code_line_elements[$(( i - deep+2 ))]}");
-		debug "Concat var [$symbol_name] deep[$deep]"
 		local symbol_data=$(get_b64_symbol_value "${symbol_name}" "${SNIPPETS}" )
 		local symbol_type=$(echo "${symbol_data}" | cut -d, -f${B64_SYMBOL_VALUE_RETURN_TYPE});
 		local symbol_value=$(echo "$symbol_data" | cut -d, -f${B64_SYMBOL_VALUE_RETURN_OUT});
@@ -1036,7 +1048,6 @@ define_variable_from_test()
 	}
 	fi;
 	local instr_bytes=$(compare "${field_a_v:=0}" "${field_b_v:=0}" "$field_type_a" "$field_type_b" | xd2b64)
-	debug "compare instr_bytes are: $instr_bytes";
 	local instr_len=$(echo "$instr_bytes" | b64cnt);
 	local data_bytes="";
 	local data_len=0;
@@ -1065,7 +1076,6 @@ define_array_variable(){
 	local dependencies="";
 	if is_function "$first_item"; then
 		dependencies="${first_item}";
-		debug "setting deps for array to $dependencies"
 	fi;
 	for (( i=$(( ${#code_line_elements[@]} -1 )); i>$((deep + 1)); i-- ));
 	do
@@ -1158,10 +1168,8 @@ is_function(){
 		is_internal_function $symbol_name ||
 		is_user_function "$symbol_name" "${SNIPPETS}";
 	then
-		debug "$symbol_name is a function"
 		return $YES
 	fi;
-	debug "$symbol_name is NOT a function";
 	return $NO
 }
 # is_function_call: given a symbol name of type array, check the first array item if it is a procedure that can be executed with a direct bytecode call
@@ -1183,7 +1191,6 @@ is_function_call(){
 		return $YES;
 	fi;
 	if [ "$symbol_type" == $SYMBOL_TYPE_ARRAY ]; then
-		debug "testing array $symbol_name for function call"
 		# check if the first item at the array is a function
 		first_array_arg=$(echo $symbol_source_code | base64 -d| cut -d: -f2- | cut -f4);
 		if is_function "$first_array_arg"; then
@@ -1204,7 +1211,6 @@ get_jmp_size(){
 	if [ "${target_instr_size:=0}" -gt 127 ]; then
 		jmp_size=5;
 	fi;
-	debug "get_jmp_size for $2 is $jmp_size";
 	echo $jmp_size;
 }
 
@@ -1364,6 +1370,9 @@ define_variable(){
 		data_bytes="$(set_symbol_value "${symbol_value}" "${SNIPPETS}")";
 		data_len="$( echo -n "${data_bytes}" | b64cnt)";
 		local symbol_type=${SYMBOL_TYPE_DYNAMIC}
+		if is_static_value "${data_bytes}"; then
+			symbol_type=${SYMBOL_TYPE_STATIC}
+		fi;
 		if is_hard_coded_value "${data_bytes}" "${symbol_name}"; then
 			data_len=0; # hard-coded values does not use data space
 			symbol_type=${SYMBOL_TYPE_HARD_CODED}
@@ -1470,7 +1479,6 @@ parse_code_bloc(){
 	local bloc_dependencies="$(echo "$recursive_parse"  |
 		cut -d, -f$SNIPPET_COLUMN_DEPENDENCIES | tr "," "\n" | sort | uniq | sed '/^$/d' | tr '\n' ',' | sed 's/,$//g';
 	)";
-	debug "bloc dependencies: $bloc_dependencies"
 	local instr_size_sum="$( echo "${instr_bytes}" |
 		b64cnt |
 		awk '{s+=$1}END{print s}';
@@ -1803,7 +1811,6 @@ do_goto(){
 do_ilog10(){
 	base="10"
 	local target="${code_line_elements[$(( 4 + deep-1 ))]}";
-	debug "do ilog on base $base for the target $target"
 	target_offset="$( echo "$SNIPPETS" | grep "PROCEDURE_TABLE,[^,]*,${target}," | cut -d, -f${SNIPPET_COLUMN_INSTR_OFFSET} )";
 	jmp_bytes="$(call_procedure "$((target_offset + 2))" "${instr_offset}" | xd2b64)";
 	jmp_len="$(echo "${jmp_bytes}" | b64cnt)";
@@ -2142,7 +2149,6 @@ get_power10_addr()
 create_internal_s2i_snippet()
 {
 	local symbol_name="$1";
-	debug creating $symbol_name
 	local SNIPPETS="$2";
 	local PH_VADDR_V="$3";
 	local INSTR_TOTAL_SIZE="$4";
@@ -2183,7 +2189,6 @@ create_internal_s2i_snippet()
 create_internal_i2s_snippet()
 {
 	local symbol_name="$1";
-	debug creating $symbol_name
 	local SNIPPETS="$2";
 	local PH_VADDR_V="$3";
 	local INSTR_TOTAL_SIZE="$4";
