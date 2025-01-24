@@ -517,7 +517,7 @@ is_hard_coded_value()
 	# TODO: implement a better way this one just work for numbers
 	# binary null values will report somethink like:
 	# elf_fn.sh: line 502: warning: command substitution: ignored null byte in input
-	local v="$(echo "$1" | base64 -d | tr -d '\0')"; # tr just to avoid the annoying bash warning message
+	local v="$(echo "$1" | base64 -d | xxd --ps)";
 	local symbol_name="$2";
 	if [ "$v" == "" ];then
 		return $NO_ERR;
@@ -525,7 +525,7 @@ is_hard_coded_value()
 	if [ "${symbol_name}" == "input" ]; then
 		return $NO_ERR;
 	fi;
-	if is_valid_number "$v"; then
+	if is_valid_number "$(echo -n $v | xxd --ps -r | tr -d "\0")"; then
 		return $NO_ERR;
 	fi;
 	return $ERR;
@@ -639,6 +639,9 @@ is_static_data_snippet()
 {
 	local snip="$1";
 	local snip_type=$(echo "$snip" | cut -d, -f"$SNIPPET_COLUMN_TYPE");
+	if [ $snip_type == $SYMBOL_TYPE_HARD_CODED ]; then
+		return 1;
+	fi;
 	local snip_data_bytes=$(echo "$snip" | cut -d, -f "$SNIPPET_COLUMN_DATA_BYTES");
 	if is_hard_coded_value "${snip_data_bytes}"; then
 		return 1;
@@ -666,7 +669,7 @@ count_static_data()
 				fi;
 			fi;
 		done | awk '{s+=$1}END{print s}';
-	)
+	);
 	echo ${static_data_count:=0}
 }
 
