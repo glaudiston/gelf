@@ -1,12 +1,6 @@
 #!/bin/bash
-
-if ! declare -F backetrace >/dev/null; then
-backtrace(){
-	local i=1;
-	while caller $i;
-	do let i++;
-	done
-}
+. $(dirname $(realpath $BASH_SOURCE))/pragma_once.sh && return 0
+. $(dirname $(realpath $BASH_SOURCE))/backtrace.sh
 
 function debug()
 {
@@ -26,4 +20,3 @@ function error()
 	backtrace >&2
 }
 
-fi;
