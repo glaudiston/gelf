@@ -1,7 +1,16 @@
+#!/bin/bash
+#!/bin/bash
+. $(dirname $(realpath $BASH_SOURCE))/../../pragma_once.sh
+
 PAGESIZE=$(( 4 * 1024 )); # 4KiB
 # map a memory region
 #|rax|syscall___________________|rdi______________|rsi________________|rdx________________|r10________________|r8_______________|r9________|
-#| 9 |sys_mmap                 |unsigned long   |unsigned long len |int prot          |int flags         |int fd          |long off |
+#| 9 |sys_mmap                  |unsigned long    |unsigned long len  |int prot           |int flags          |int fd           |long off  |
+# args:
+#  rax: syscall code = 9(sys_mmap)
+#  rdi: memory region to use = 0 (let kernel choose) 
+#  rsi: page size (4k by default)
+#  r10: memory access mode
 # Returns:
 #  rax Memory Address
 #  r8 FD

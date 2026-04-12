@@ -1,10 +1,11 @@
 #!/bin/bash
-if ! declare -F add >/dev/null; then
-. $(dirname $(realpath $BASH_SOURCE))/prefix.sh
-. $(dirname $(realpath $BASH_SOURCE))/mod_rm.sh
-. $(dirname $(realpath $BASH_SOURCE))/../../logger.sh
-. $(dirname $(realpath $BASH_SOURCE))/../../utils.sh
-. $(dirname $(realpath $BASH_SOURCE))/multiple_one_byte_operations.sh
+CUR_SRC=$(dirname $(realpath $BASH_SOURCE));
+. ${CUR_SRC}/../../pragma_once.sh && return 0;
+. ${CUR_SRC}/prefix.sh
+. ${CUR_SRC}/mod_rm.sh
+. ${CUR_SRC}/../../logger.sh
+. ${CUR_SRC}/../../utils.sh
+. ${CUR_SRC}/multiple_one_byte_operations.sh
 # add: given a value or a register on addend, add it to augend
 # addend: can be a register id, a integer value or a address value
 # 	input: register or "[address]" or integer value
@@ -80,9 +81,8 @@ add(){
 	}
 	else
 	{
-		error "mem ref not implemented yet"
+		error "mem ref not implemented yet: [add $@]"
 	}
 	fi;
 	error "not implemented: add $@"
-}
-fi;
+};

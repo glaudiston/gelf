@@ -12,7 +12,7 @@ function system_call_read()
 	else
 		mov rdx $len;
 	fi;
-	if [ "$DATA_ADDR" == "" ]; then
+	if [ "${data_addr}" == "" ]; then
 		#use rax
 		mov rsi rax;
 	else
@@ -21,5 +21,3 @@ function system_call_read()
 	mov rax $SYS_READ;
 	syscall;
 }
-
-

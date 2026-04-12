@@ -1,7 +1,7 @@
 #!/bin/bash
-if ! declare -F multiple_one_byte_operation >/dev/null; then
-. arch/x86_64/registers.sh
-. arch/x86_64/rex.sh
+. $(dirname $(realpath $BASH_SOURCE))/../../pragma_once.sh && return 0
+. $(dirname $(realpath $BASH_SOURCE))/registers.sh
+. $(dirname $(realpath $BASH_SOURCE))/rex.sh
 # prefix should detect and print all instruction prefixes like:
 # rex: Prefix (0x40 - 0x4F):
 # 	The REX prefix is used in 64-bit mode to extend the instruction set to handle 64-bit operands and additional registers.
@@ -42,4 +42,3 @@ prefix(){
 		echo -n ${osize};
 	fi;
 }
-fi;

@@ -1,6 +1,7 @@
 #!/bin/bash
 . arch/system_call_linux_x86.sh
 . arch/x86_64/call_procedure.sh
+. arch/x86_64/ret.sh
 . arch/x86_64/add.sh
 . arch/x86_64/mul.sh
 . arch/x86_64/array.sh
@@ -227,20 +228,35 @@ inc(){
 	echo -n "${p}${inc_op}${reg}";
 }
 
+## multiple one byte operations:
+## 	00-3f(dword [32b reg]);
+## 		add(00-07);
+## 		or(08-0F);
+## 		adc(10-17);
+## 		sbb(18-1F);
+## 		and(20-27);
+## 		sub(28-2F);
+## 		xor(30-37);
+## 		cmp(38-3F);
+## 	C0-FF(32b reg):
+## 		add(C0-C7);
+## 		or(C8-CF);
+## 		adc(D0-D7);
+## 		sbb(D8-DF);
+## 		and(E0-E7);
+## 		sub(E8-EF);
+## 		xor(F0-F7);
+## 		cmp(F8-FF);
+##
+# http://ref.x86asm.net/coder64.html
+. $(dirname $(realpath $BASH_SOURCE))/../../pragma_once.sh && return 0
+. $(dirname $(realpath $BASH_SOURCE))/one_byte_operation.sh
+. $(dirname $(realpath $BASH_SOURCE))/or.sh
+
 xor(){
-	local v1="$1";
-	local v2="$2";
-	local p=$(prefix "$v1" "$v2");
-	local c="";
-	c="$c$p";
-	local xor=31;
-	c="$c$xor";
-	if is_64bit_register "$v1" && is_64bit_register "$v2"; then
-		local modrm=$( px $(( MODRM_MOD_NO_EFFECTIVE_ADDRESS + ( v1 << 3 ) + v2 )) $SIZE_8BITS_1BYTE);
-		c="$c${modrm}";
-	fi;
-	printf "${c}";
-	debug "asm: xor $@; # $c";
+	debug "asm: xor $@"
+	local op=31;
+	one_byte_operation "$op" "$1" "$2";
 }
 
 #MOV_DATA_rax="$(prefix v4 rax | xd2esc)\x0f\xb6\x06"; # movzbq (%rsi), %rax

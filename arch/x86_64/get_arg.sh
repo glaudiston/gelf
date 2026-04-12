@@ -1,8 +1,9 @@
 #!/bin/bash
+. $(dirname $(realpath $BASH_SOURCE))/../../pragma_once.sh && return 0
 . $(dirname $(realpath $BASH_SOURCE))/add.sh
 #
 #
-# When we start a process the memory is someyhing like:
+# When we start a process the memory is something like:
 # +-----------------+
 # |      stack      |
 # |-----------------|
@@ -43,14 +44,14 @@
 # if we copy "ptr to 1" into any register, say RSI, RSI will have the value
 # "arg 1\0ar", instead of "arg 1\0\0\0" and this will break the compare logic.
 #
-# to my acknoledge, that means we can not just copy it to registers and compare,
+# to my knowledge, that means we can not just copy it to registers and compare,
 # we need to make a logic to copy them to another place aligned to 8 bytes,
 # so the string end has filled with NULL until the 8 bytes alignment. 
 # and only then we can copy each 8 bytes block to registers and compare it.
 #
 # Seems to me that there is no way to compare n bytes in memory;
 # So we need to copy the memory to register before using it in test or cmp instruction.
-# so only way I know to test/compare strings in x86 is by comparing 2 registers.
+# the only way I know to test/compare strings in x86 is by comparing 2 registers.
 #
 # this premise is the reason why I have to alocate a memory address to copy 
 # the argument bytes into.
@@ -78,7 +79,7 @@ detect_argsize()
 	local PTR_SIZE=8
 	local proc_arg=$({
 		local ARGUMENT_DISPLACEMENT=$PTR_SIZE;
-		mov $r_out $r_in;
+		mov $r_out $r_in; # mov rcx rsi;
 		add $r_out $ARGUMENT_DISPLACEMENT $r_out;
 		# mov to the real address (not pointer to address)
 		mov $r_out "($r_out)"; # resolve pointer to address
@@ -138,30 +139,37 @@ detect_argsize()
 # stack level is zero at start frame and increase by 1 each frame deep 
 # reflecting the number of stack frames to the root stack frame
 #
-# rbp should be set to stack level at the current frame;
+# rbp should be set to stack level addr at the current frame;
 #
-# When program starts, we know everithing is a string, we can manage to parse argument as string.
-#   we can even use substracting the next arg addr to detect the argument size (except last argument).
+# When program starts, we know everything is a string, we can manage to parse argument as string.
+#   we can even use substract the next arg addr to detect the argument size (except last argument).
 # but when a function is called, the argument can be anything. and this makes things complicated.
+# then we set the type to each argument on function calls
 #
 get_arg()
 {
 	debug get_arg $@;
-	local args_ptr="$1"; # the mmap allocated root address where to store parsed/copied arguments.
+	local args_mmap_ptr="$1";	# the mmap allocated root address where to store parsed/copied arguments.
 	local argn="$2";	# index of the argument starting with 0 to the program name (or function address ptr);
 	local arg_ptr="$3";	# address where to put the pointer to the target address where the argument will be copied into;
-	mov rax "($args_ptr)"; # args_ptr is the memory value that has the pointer to mmap;
-	mov rsi "(rax)";
-	cmp rsi 0;
+
+	# check if this is the last argument (0x0)
+	mov rax "($args_mmap_ptr)";	# set rsi pointing to mmap args allocated space
+	mov rsi "(rax)";	# move the mmap first value to rsi that should 
+	cmp rsi 0;		# the first 8 bytes in mmap are the ptr to the last argument
+				#  if zero, not initalized;
+
 	local init_argsptr=$({
-		mov "(rax)" rax;
-		mov rsi "(rax)";
+		# set the mmap address as initial value
+		# so when add 8 will reach the first valid ptr to an empty valid mmap space
+		mov rsi rax;	# set args_mmap_ptr to itself
 	});
 	jne $(xcnt<<<$init_argsptr);
 	printf $init_argsptr;
-	add rsi 8;
-	mov "$arg_ptr" rsi;
-	mov "(rax)" rsi; # set the args_ptr value to the position where to write the argument;
+
+	add rsi 8;		# adding 8 bytes we are expected to reach a valid empty mmap space to set the copied argument data
+	mov "$arg_ptr" rsi;	# store rsi ptr value inside the target addr, then in the first 8 mmap bytes we have the ptr to the last parsed argument
+	mov "(rax)" rsi;	# set the args_mmap_ptr value to the position where to write the argument;
 	local func_arg=$({
 		# this should be used only on call functions
 		# so we use typed data and we have the return addr ptr on rsp
@@ -176,26 +184,27 @@ get_arg()
 		add rsi $(( 8 * (1 + argn) )); # +1 because the first arg is the argc
 		jump $(xcnt<<<${func_arg});
 	});
-	cmp r15 0; # this means we are not root level and rsp is the return value
-	jnz $(xcnt<<<${process_arg});
+	cmp r15 0; # if r15 has value means we are not in root level and rsp is the return value
+	jnz $(xcnt<<<${process_arg}); # we already should have the last cmp r15, 0 on the ZF
 	printf $process_arg;
 	printf $func_arg;
 	detect_argsize $argn;
 	# now rcx has the string size
-	cmp r15 0;
+	cmp r15 0; # check again if in root process or function (zero on root)
 	skip_type=$({
 		printf $func_arg;
 		add rsi 8;
 	});
 	jz $(xcnt<<<$skip_type);
 	printf $skip_type;
-	mov rax "($args_ptr)"; # args_ptr is the memory value that has the pointer to mmap;
-	mov rax "(rax)";
-	add rax rcx;
-	mov "$args_ptr" rax;
+
 	mov rdi "($arg_ptr)"; # update the root of args memory space (first ptr bytes) to the first free space (end of used memory)
-	# here rax have the args_ptr
-	movs rsi rdi rcx; # copy the (rsi) contents to (rdi), limit by rcx bytes
+	# here rax have the args_mmap_ptr
+	movs rsi rdi rcx; # copy the (rsi) contents to (rdi), limit by rcx bytes using movsb
+	# but it should be 64 bit aligned
+	or rdi 7; # set the last 3 bits to on (7i = 111b);
+	inc rdi;  # the next byte is aligned and free;
+	mov "$args_mmap_ptr" rdi;	# ensure the first 8 mmap bytes have the ptr to the first free mmap position
 }
 
 # The RSP (Register Stack Pointer) integer value is by convention the argc(argument count)

@@ -1,4 +1,7 @@
 #!/bin/bash
+. $(dirname $(realpath $BASH_SOURCE))/../../pragma_once.sh && return 0;
+. $(dirname $(realpath $BASH_SOURCE))/test_asm.sh;
+
 run(){
 	local SOURCE_DIR="$(dirname $(realpath $BASH_SOURCE))";
 	. $SOURCE_DIR/registers.sh;
@@ -17,7 +20,7 @@ test_mov_u8_ptrreg()
 	local v=$(echo $r| tr "," " " | tr -s " " | tr " " "\t");
 	local expected=$(asm_hex<<<"mov $1, (%$2)");
 	if [ "${result,,}" != "${expected,,}" ]; then
-		echo "ERROR: given [$c] got [$r] but expected [$expected]";
+		err "$c" "$expected" "$r";
 	fi;
 }
 test_mov_reg_u8()
@@ -28,7 +31,7 @@ test_mov_reg_u8()
 	local v=$(echo $r| tr "," " " | tr -s " " | tr " " "\t");
 	local expected=$(asm_hex<<<"mov \$$2, %$1");
 	if [ "${result,,}" != "${expected,,}" ]; then
-		echo "test_mov_reg_u8 ERROR: given [$c] got [$result] but expected [$expected]";
+		err "$c" "$expected" "$result";
 	fi;
 }
 test_mov_reg_u32()
@@ -39,7 +42,7 @@ test_mov_reg_u32()
 	local v=$(echo $r| tr "," " " | tr -s " " | tr " " "\t");
 	local expected=$(asm_hex<<<"mov \$$2, %$1");
 	if [ "${got,,}" != "${expected,,}" ]; then
-		echo "test_mov_reg_u32 ERROR: given [$c] got [$got] but expected [${expected,,}]";
+		err "$c" "$expected" "$got"
 	fi;
 }
 test_mov_reg_ptrreg()
@@ -53,7 +56,8 @@ test_mov_reg_ptrreg()
 	local src=$(cut -f5<<<$v);
 	if [ "$c" != "$op $tgt $src" ]; then
 		expected=$(asm_hex<<<"$op (%$2), %$1");
-		echo "ERROR: given [$c] got [$code] but expected [$op $tgt $src][$expected]";
+		err "$c" "$expected" "$code" 
+		# but expected [$op $tgt $src][$expected]";
 	fi;
 }
 test_mov_ptrreg_reg()
@@ -65,7 +69,7 @@ test_mov_ptrreg_reg()
 	local code=$(cut -f2<<<$v);
 	local expected=$(asm_hex<<<"mov %$2, (%$1)");
 	if [ "${got,,}" != "${expected,,}" ]; then
-		echo "ERROR: given [$c] got [$got] but expected [$expected]";
+		err "$c" "$expected" "$got";
 	fi;
 }
 
@@ -81,7 +85,7 @@ test_mov_reg_reg()
 	local src=$(cut -f5<<<$v);
 	local expected=$(asm_hex<<<"$op %$src, %$tgt");
 	if [ "${got,,}" != "${expected,,}" ]; then
-		echo "ERROR: given [$c] got [$got] but expected[$expected]";
+		err "$c" "$expected" "$got"
 	fi;
 }
 

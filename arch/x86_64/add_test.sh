@@ -1,4 +1,6 @@
 #!/bin/bash
+. $(dirname $(realpath $BASH_SOURCE))/../../pragma_once.sh && return 0;
+. $(dirname $(realpath $BASH_SOURCE))/test_asm.sh;
 
 test_add_reg_reg(){
 	test_op_reg_reg add $@;

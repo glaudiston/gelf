@@ -1,13 +1,13 @@
 if ! declare -F mov_loaded>/dev/null; then mov_loaded(){ :; };
-. types.sh
-. logger.sh
-. endianness.sh
-. encoding.sh
-. utils.sh
-. arch/x86_64/registers.sh
-. arch/x86_64/prefix.sh
-. arch/x86_64/multi_syntax.sh
-. arch/x86_64/mod_rm.sh
+. $(dirname $(realpath $BASH_SOURCE))/../../types.sh
+. $(dirname $(realpath $BASH_SOURCE))/../../logger.sh
+. $(dirname $(realpath $BASH_SOURCE))/../../endianness.sh
+. $(dirname $(realpath $BASH_SOURCE))/../../encoding.sh
+. $(dirname $(realpath $BASH_SOURCE))/../../utils.sh
+. $(dirname $(realpath $BASH_SOURCE))/registers.sh
+. $(dirname $(realpath $BASH_SOURCE))/prefix.sh
+. $(dirname $(realpath $BASH_SOURCE))/multi_syntax.sh
+. $(dirname $(realpath $BASH_SOURCE))/mod_rm.sh
 
 # mov intel syntax
 mov(){
