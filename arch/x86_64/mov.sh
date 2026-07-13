@@ -1,3 +1,5 @@
+#!/bin/bash
+
 if ! declare -F mov_loaded>/dev/null; then mov_loaded(){ :; };
 . $(dirname $(realpath $BASH_SOURCE))/../../types.sh
 . $(dirname $(realpath $BASH_SOURCE))/../../logger.sh

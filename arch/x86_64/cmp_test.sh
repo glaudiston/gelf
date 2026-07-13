@@ -1,4 +1,6 @@
 #!/bin/bash
+set -euo pipefail
+. $(dirname $(realpath $BASH_SOURCE))/test_asm.sh;
 
 test_cmp_reg_reg(){
 	test_op_reg_reg cmp $@;

@@ -1,9 +1,13 @@
+#!/bin/bash
+set -euo pipefail
+
 . $(dirname $(realpath $BASH_SOURCE))/registers.sh;
 . $(dirname $(realpath $BASH_SOURCE))/prefix.sh;
 . $(dirname $(realpath $BASH_SOURCE))/mod_rm.sh;
 . $(dirname $(realpath $BASH_SOURCE))/../../logger.sh;
 . $(dirname $(realpath $BASH_SOURCE))/../../encoding.sh;
 . $(dirname $(realpath $BASH_SOURCE))/../../number.sh;
+. $(dirname $(realpath $BASH_SOURCE))/test_asm.sh;
 # CMP
 cmp(){
 	local v1="$1";

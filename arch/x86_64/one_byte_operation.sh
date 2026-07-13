@@ -1,4 +1,4 @@
-. $(dirname $(realpath $BASH_SOURCE))/../../pragma_once.sh && return 0
+. $(dirname $(realpath $BASH_SOURCE))/../../pragma_once.sh || return 0
 . $(dirname $(realpath $BASH_SOURCE))/../../encoding.sh
 . $(dirname $(realpath $BASH_SOURCE))/../../types.sh
 . $(dirname $(realpath $BASH_SOURCE))/mod_rm.sh

@@ -1,5 +1,5 @@
 #!/bin/bash
-. $(dirname $(realpath $BASH_SOURCE))/../../pragma_once.sh && return 0
+. $(dirname $(realpath $BASH_SOURCE))/../../pragma_once.sh || return 0
 . $(dirname $(realpath $BASH_SOURCE))/registers.sh
 . $(dirname $(realpath $BASH_SOURCE))/rex.sh
 # prefix should detect and print all instruction prefixes like:

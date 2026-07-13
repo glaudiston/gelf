@@ -1,6 +1,6 @@
 #!/bin/bash
 CUR_SRC=$(dirname $(realpath $BASH_SOURCE));
-. ${CUR_SRC}/../../pragma_once.sh && return 0;
+. ${CUR_SRC}/../../pragma_once.sh || return 0;
 . ${CUR_SRC}/prefix.sh
 . ${CUR_SRC}/mod_rm.sh
 . ${CUR_SRC}/../../logger.sh

@@ -1,13 +1,20 @@
 #!/bin/bash
-. $(dirname $(realpath $BASH_SOURCE))/../../pragma_once.sh && return 0;
+#. $(dirname $(realpath $BASH_SOURCE))/../../pragma_once.sh || return 0;
 . $(dirname $(realpath $BASH_SOURCE))/test_asm.sh;
+
+set_r1()
+{
+	local v1=${r_64[$1]};
+	iterate $1 "[ \$1 -lt ${#r_64[@]} ]" "set_r2 $v1";
+	test_mov_reg_u8 $v1 $(( RANDOM % 256 ));
+	test_mov_reg_u32 $v1 $(( RANDOM % (2 ** 32) ));
+}
 
 run(){
 	local SOURCE_DIR="$(dirname $(realpath $BASH_SOURCE))";
 	. $SOURCE_DIR/registers.sh;
 	. $SOURCE_DIR/mov.sh;
 	. $SOURCE_DIR/test_asm.sh;
-	. $SOURCE_DIR/../../fsh/fsh.sh;
 	. $SOURCE_DIR/../../fsh/fsh.sh;
 	iterate 0 "[ \$1 -lt ${#r_64[@]} ]" set_r1;
 }
@@ -96,14 +103,6 @@ set_r2()
 	test_mov_reg_reg $v1 $v2;
 	test_mov_ptrreg_reg $v1 $v2;
 	#test_mov_reg_ptrreg $v1 $v2;
-}
-
-set_r1()
-{
-	local v1=${r_64[$1]};
-	iterate $1 "[ \$1 -lt ${#r_64[@]} ]" "set_r2 $v1";
-	test_mov_reg_u8 $v1 $(( RANDOM % 256 ));
-	test_mov_reg_u32 $v1 $(( RANDOM % (2 ** 32) ));
 }
 
 run

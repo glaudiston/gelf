@@ -1,5 +1,5 @@
 #!/bin/bash
-. $(dirname $(realpath $BASH_SOURCE))/../../pragma_once.sh && return 0;
+. $(dirname $(realpath $BASH_SOURCE))/../../pragma_once.sh || return 0;
 . $(dirname $(realpath $BASH_SOURCE))/../../types.sh
 . $(dirname $(realpath $BASH_SOURCE))/prefix.sh
 . $(dirname $(realpath $BASH_SOURCE))/mod_rm.sh
