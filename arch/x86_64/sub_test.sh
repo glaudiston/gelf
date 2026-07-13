@@ -12,7 +12,7 @@ set_subtrahend(){
 
 set_minuend(){
 	local v=${r_64[$1]};
-	iterate $1 "[ \$1 -lt ${#r_64[@]} ]" "set_subtrahend $v";
+	iterate 0 "[ \$1 -lt ${#r_64[@]} ]" "set_subtrahend $v";
 }
 
 run(){

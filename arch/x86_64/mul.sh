@@ -1,5 +1,5 @@
 #!/bin/bash
-if ! declare -F mul_loaded >/dev/null; then mul_loaded(){ :; };
+. $(dirname $(realpath $BASH_SOURCE))/../../pragma_once.sh || return 0
 . $(dirname $(realpath $BASH_SOURCE))/prefix.sh;
 . $(dirname $(realpath $BASH_SOURCE))/mod_rm.sh;
 . $(dirname $(realpath $BASH_SOURCE))/../../logger.sh;
@@ -42,4 +42,3 @@ imul(){
 	fi;
 	error not implemented: imul $@
 }
-fi;

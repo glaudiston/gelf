@@ -14,7 +14,7 @@ set_op_a(){
 
 set_op_b(){
 	local v=${r_64[$1]};
-	iterate $1 "[ \$1 -lt ${#r_64[@]} ]" "set_op_a $v";
+	iterate 0 "[ \$1 -lt ${#r_64[@]} ]" "set_op_a $v";
 }
 
 run(){

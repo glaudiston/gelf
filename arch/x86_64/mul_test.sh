@@ -10,7 +10,7 @@ set_multiplicand(){
 }
 set_multiplier(){
 	local v=${r_64[$1]};
-	iterate $1 "[ \$1 -lt ${#r_64[@]} ]" "set_multiplicand $v";
+	iterate 0 "[ \$1 -lt ${#r_64[@]} ]" "set_multiplicand $v";
 	test_op_reg_u8 imul $v
 }
 run(){

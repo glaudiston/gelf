@@ -1,5 +1,5 @@
 #!/bin/bash
-if ! declare -F s2i_loaded; then s2i_loaded(){ :; };
+. $(dirname $(realpath $BASH_SOURCE))/../../pragma_once.sh || return 0
 . $(dirname $(realpath $BASH_SOURCE))/mov.sh
 . $(dirname $(realpath $BASH_SOURCE))/mul.sh
 . $(dirname $(realpath $BASH_SOURCE))/add.sh
@@ -62,4 +62,3 @@ s2i()
 	mov rdi $reg_tmp_i;	# record the value at target address
 	ret;
 }
-fi;
