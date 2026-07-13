@@ -1,6 +1,6 @@
 #!/bin/bash
-
-if ! declare -F mov_loaded>/dev/null; then mov_loaded(){ :; };
+set -euo pipefail
+. $(dirname $(realpath $BASH_SOURCE))/../../pragma_once.sh || return 0
 . $(dirname $(realpath $BASH_SOURCE))/../../types.sh
 . $(dirname $(realpath $BASH_SOURCE))/../../logger.sh
 . $(dirname $(realpath $BASH_SOURCE))/../../endianness.sh
@@ -10,6 +10,7 @@ if ! declare -F mov_loaded>/dev/null; then mov_loaded(){ :; };
 . $(dirname $(realpath $BASH_SOURCE))/prefix.sh
 . $(dirname $(realpath $BASH_SOURCE))/multi_syntax.sh
 . $(dirname $(realpath $BASH_SOURCE))/mod_rm.sh
+. $(dirname $(realpath $BASH_SOURCE))/bytecode.sh
 
 # mov intel syntax
 mov(){
@@ -266,4 +267,3 @@ REP="\xf3"; # repeat until rcx
 MOVZX_DL_rdi="480fb6fa";
 SBB_0_EDX="83da00";
 MOVSBL_V4_rdx_EDX="0FBE1415";
-fi;

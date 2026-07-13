@@ -14,4 +14,5 @@ or(){
 }
 
 # accept args to the bash script, useful for debugging
-[ "$#" -gt 0 ] && or "$@"
+[ "$#" -gt 0 ] && or "$@" || :;
+

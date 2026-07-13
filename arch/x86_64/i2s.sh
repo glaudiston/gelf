@@ -68,7 +68,8 @@ i2s(){
 	local codepart2="$({
 		local dec_power_code="$({
 			# This will run at bottom
-			printf "${SUB_ADDR4_rax_rax}$(px $power10_addr $SIZE_32BITS_4BYTES)";
+			#printf "${SUB_ADDR4_rax_rax}$(px $power10_addr $SIZE_32BITS_4BYTES)";
+			printf "$(sub rax "$(px $power10_addr $SIZE_32BITS_4BYTES)")";
 			inc rcx;
 		})";
 		local loopcode="$({

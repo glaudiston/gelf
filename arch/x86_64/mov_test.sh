@@ -1,11 +1,40 @@
 #!/bin/bash
+set -euo pipefail
+
 #. $(dirname $(realpath $BASH_SOURCE))/../../pragma_once.sh || return 0;
 . $(dirname $(realpath $BASH_SOURCE))/test_asm.sh;
+
+test_mov_reg_reg()
+{
+	local c="mov $1 $2";
+	local got=$($c 2>/dev/null)
+	local r=$(echo $got| xxd --ps -r | ndisasm -b 64 -);
+	local v=$(echo $r| tr "," " " | tr -s " " | tr " " "\t");
+	local code=$(cut -f2<<<$v);
+	local op=$(cut -f3<<<$v);
+	local tgt=$(cut -f4<<<$v);
+	local src=$(cut -f5<<<$v);
+	local expected=$(asm_hex<<<"$op %$src, %$tgt");
+	if [ "${got,,}" != "${expected,,}" ]; then
+		err "$c" "$expected" "$got"
+	else
+		ok "$*" "${got}";
+	fi;
+}
+
+set_r2()
+{
+	local v1=$1;
+	local v2=${r_64[$2]};
+	test_mov_reg_reg $v1 $v2;
+	test_mov_ptrreg_reg $v1 $v2;
+	#test_mov_reg_ptrreg $v1 $v2;
+}
 
 set_r1()
 {
 	local v1=${r_64[$1]};
-	iterate $1 "[ \$1 -lt ${#r_64[@]} ]" "set_r2 $v1";
+	iterate 0 "[ \$1 -lt ${#r_64[@]} ]" "set_r2 $v1";
 	test_mov_reg_u8 $v1 $(( RANDOM % 256 ));
 	test_mov_reg_u32 $v1 $(( RANDOM % (2 ** 32) ));
 }
@@ -65,6 +94,8 @@ test_mov_reg_ptrreg()
 		expected=$(asm_hex<<<"$op (%$2), %$1");
 		err "$c" "$expected" "$code" 
 		# but expected [$op $tgt $src][$expected]";
+	else
+		ok "$*" "${got}";
 	fi;
 }
 test_mov_ptrreg_reg()
@@ -79,30 +110,5 @@ test_mov_ptrreg_reg()
 		err "$c" "$expected" "$got";
 	fi;
 }
-
-test_mov_reg_reg()
-{
-	local c="mov $1 $2";
-	local got=$($c 2>/dev/null)
-	local r=$(echo $got| xxd --ps -r | ndisasm -b 64 -);
-	local v=$(echo $r| tr "," " " | tr -s " " | tr " " "\t");
-	local code=$(cut -f2<<<$v);
-	local op=$(cut -f3<<<$v);
-	local tgt=$(cut -f4<<<$v);
-	local src=$(cut -f5<<<$v);
-	local expected=$(asm_hex<<<"$op %$src, %$tgt");
-	if [ "${got,,}" != "${expected,,}" ]; then
-		err "$c" "$expected" "$got"
-	fi;
-}
-
-set_r2()
-{
-	local v1=$1;
-	local v2=${r_64[$2]};
-	test_mov_reg_reg $v1 $v2;
-	test_mov_ptrreg_reg $v1 $v2;
-	#test_mov_reg_ptrreg $v1 $v2;
-}
-
 run
+

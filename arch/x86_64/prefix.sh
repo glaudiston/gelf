@@ -33,7 +33,7 @@
 #	which are a set of additional SIMD instructions introduced by AMD.
 prefix(){
 	local src="$1";
-	local tgt="$2";
+	local tgt="${2:-}";
 	if is_64bit_uint "$tgt" || is_addr_ptr "$tgt" || is_64bit_register "$src" || is_64bit_register "$tgt" || is_8bit_extended_register "$src"; then
 		rex "$src" "$tgt";
 	fi;

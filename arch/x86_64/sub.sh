@@ -1,5 +1,6 @@
 #!/bin/bash
-if ! declare -F sub_loaded; then sub_loaded(){ :; };
+set -euo pipefail
+. $(dirname $(realpath $BASH_SOURCE))/../../pragma_once.sh || return 0
 . $(dirname $(realpath $BASH_SOURCE))/prefix.sh;
 . $(dirname $(realpath $BASH_SOURCE))/mod_rm.sh;
 . $(dirname $(realpath $BASH_SOURCE))/../../encoding.sh;
@@ -18,8 +19,8 @@ SUB_64bit="\x2B";
 SUB_IMM32="\x81";
 SUB_IMMSE8="\x83" # This depends on ModR/M OpCode
 #SUB_rsp_SHORT="$(prefix subtrahend rsp | xd2esc)\x83\xec"; # Subtract 1 byte(two complement) value from rsp
-SUB_ADDR4_rax_rax="482b04d5";
-SUB_rdx_rsi="$(prefix rdx rsi | xd2esc)${SUB_R}${ModRM}";
+#SUB_ADDR4_rax_rax="482b04d5";
+#SUB_rdx_rsi="$(prefix rdx rsi | xd2esc)${SUB_R}${ModRM}";
 SUB_rsi_rdx="$(prefix rsi rdx | xd2esc)\x29\xf2";
 sub(){
 	local minuend="$1";
@@ -76,4 +77,3 @@ sub(){
 	fi;
 	error not implemented sub $@
 }
-fi;
