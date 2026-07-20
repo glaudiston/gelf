@@ -1,15 +1,15 @@
 function system_call_exec()
 {
 	#TODO we need to map some memory, or use a mapped memory space to store the arrays bytes;
-	local PTR_ARGS="$1";
+	local PTR_ARGS="${1:-}";
 	local args=();
-	eval "args=( $2 )";
+	eval "args=( ${2:-} )";
 	local static_map=( );
-	eval "static_map=( $3 )";
-	local PTR_ENV="$4";
-	local pipe_addr="$5";
-	local pipe_buffer_addr="$6";
-	local pipe_buffer_size="$7";
+	eval "static_map=( ${3:-} )";
+	local PTR_ENV="${4:-}";
+	local pipe_addr="${5:-}";
+	local pipe_buffer_addr="${6:-}";
+	local pipe_buffer_size="${7:-}";
 	local code="";
 	local stdout=1;
 	local dup2_child="";

@@ -1,42 +1,44 @@
 #!/bin/bash
 set -euo pipefail
-. $(dirname $(realpath $BASH_SOURCE))/../../pragma_once.sh || return 0
-
-. $(dirname $(realpath $BASH_SOURCE))/../../arch/system_call_linux_x86.sh
-. $(dirname $(realpath $BASH_SOURCE))/../../arch/x86_64/call_procedure.sh
-. $(dirname $(realpath $BASH_SOURCE))/../../arch/x86_64/ret.sh
-. $(dirname $(realpath $BASH_SOURCE))/../../arch/x86_64/add.sh
-. $(dirname $(realpath $BASH_SOURCE))/../../arch/x86_64/mul.sh
-. $(dirname $(realpath $BASH_SOURCE))/../../arch/x86_64/array.sh
-. $(dirname $(realpath $BASH_SOURCE))/../../arch/x86_64/bind.sh
-. $(dirname $(realpath $BASH_SOURCE))/../../arch/x86_64/bsr.sh
-. $(dirname $(realpath $BASH_SOURCE))/../../arch/x86_64/cmp.sh
-. $(dirname $(realpath $BASH_SOURCE))/../../arch/x86_64/compare.sh
-. $(dirname $(realpath $BASH_SOURCE))/../../arch/x86_64/concat_symbols.sh
-. $(dirname $(realpath $BASH_SOURCE))/../../arch/x86_64/detect_string_length.sh
-. $(dirname $(realpath $BASH_SOURCE))/../../arch/x86_64/div10.sh
-. $(dirname $(realpath $BASH_SOURCE))/../../arch/x86_64/get_arg.sh
-. $(dirname $(realpath $BASH_SOURCE))/../../arch/x86_64/i2s.sh
-. $(dirname $(realpath $BASH_SOURCE))/../../arch/x86_64/ilog10.sh
-. $(dirname $(realpath $BASH_SOURCE))/../../arch/x86_64/jump.sh
-. $(dirname $(realpath $BASH_SOURCE))/../../arch/x86_64/log.sh
-. $(dirname $(realpath $BASH_SOURCE))/../../arch/x86_64/memory.sh
-. $(dirname $(realpath $BASH_SOURCE))/../../arch/x86_64/mod10.sh
-. $(dirname $(realpath $BASH_SOURCE))/../../arch/x86_64/mod_rm.sh
-. $(dirname $(realpath $BASH_SOURCE))/../../arch/x86_64/mov.sh
-. $(dirname $(realpath $BASH_SOURCE))/../../arch/x86_64/prefix.sh
-. $(dirname $(realpath $BASH_SOURCE))/../../arch/x86_64/read_file.sh
-. $(dirname $(realpath $BASH_SOURCE))/../../arch/x86_64/registers.sh
-. $(dirname $(realpath $BASH_SOURCE))/../../arch/x86_64/s2i.sh
-. $(dirname $(realpath $BASH_SOURCE))/../../arch/x86_64/stack.sh
-. $(dirname $(realpath $BASH_SOURCE))/../../arch/x86_64/sub.sh
-. $(dirname $(realpath $BASH_SOURCE))/../../arch/x86_64/sys_exec.sh
-. $(dirname $(realpath $BASH_SOURCE))/../../arch/x86_64/sys_fstat.sh
-. $(dirname $(realpath $BASH_SOURCE))/../../arch/x86_64/sys_geteuid.sh
-. $(dirname $(realpath $BASH_SOURCE))/../../arch/x86_64/sys_open.sh
-. $(dirname $(realpath $BASH_SOURCE))/../../arch/x86_64/sys_read.sh
-. $(dirname $(realpath $BASH_SOURCE))/../../arch/x86_64/sys_write.sh
-. $(dirname $(realpath $BASH_SOURCE))/../../arch/x86_64/syscall.sh
+. "$(dirname "$(realpath "${BASH_SOURCE[0]}")")/../../pragma_once/bash/import_bash.sh";
+import_bash <<-EOF
+	../../types.sh
+	../system_call_linux_x86.sh
+	./registers.sh
+	./call_procedure.sh
+	./ret.sh
+	./add.sh
+	./mul.sh
+	./array.sh
+	./bind.sh
+	./bsr.sh
+	./cmp.sh
+	./compare.sh
+	./concat_symbols.sh
+	./detect_string_length.sh
+	./div10.sh
+	./get_arg.sh
+	./i2s.sh
+	./ilog10.sh
+	./jump.sh
+	./log.sh
+	./memory.sh
+	./mod10.sh
+	./mod_rm.sh
+	./mov.sh
+	./prefix.sh
+	./read_file.sh
+	./s2i.sh
+	./stack.sh
+	./sub.sh
+	./sys_exec.sh
+	./sys_fstat.sh
+	./sys_geteuid.sh
+	./sys_open.sh
+	./sys_read.sh
+	./sys_write.sh
+	./syscall.sh
+EOF
 
 #
 # The x86 instructions have this design in 64bit mode:
@@ -135,9 +137,7 @@ segments=( es cs ss ds fs gs segr6 segr7 )
 MOV="$(( MODRM_MOD_DISPLACEMENT_32 ))";	# \x80 Move using memory as source (32-bit)
 MOVR="$(( MODRM_MOD_NO_EFFECTIVE_ADDRESS ))";	# \xc0 move between registers
 
-
 TEST="\x85"; # 10000101
-IMM="$(( 2#00111000 ))";
 MOV_8BIT="\x88";
 #MOV="\x89";
 MOV_RESOLVE_ADDRESS="\x8b"; # Replace the address pointer with the value pointed from that address

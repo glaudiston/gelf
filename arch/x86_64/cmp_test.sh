@@ -1,6 +1,8 @@
 #!/bin/bash
 set -euo pipefail
-. $(dirname $(realpath $BASH_SOURCE))/test_asm.sh;
+
+. "$(dirname "$(realpath "${BASH_SOURCE[0]}")")/../../pragma_once/bash/import_bash.sh";
+import_bash ./test_asm.sh;
 
 test_cmp_reg_reg(){
 	test_op_reg_reg cmp $@;
@@ -19,11 +21,12 @@ set_operand1(){
 }
 
 run(){
-	local SCRIPT_DIR=$(dirname $(realpath $BASH_SOURCE));
-	. $SCRIPT_DIR/test_asm.sh
-	. $SCRIPT_DIR/cmp.sh
-	. $SCRIPT_DIR/registers.sh
-	. $SCRIPT_DIR/../../fsh/fsh.sh
+	import_bash <<-EOF
+		./test_asm.sh
+		./cmp.sh
+		./registers.sh
+		../../fsh/fsh.sh
+	EOF
 	iterate 0 "[ \$1 -lt ${#r_64[@]} ]" set_operand1;
 }
 run

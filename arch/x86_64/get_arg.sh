@@ -1,6 +1,5 @@
 #!/bin/bash
-. $(dirname $(realpath $BASH_SOURCE))/../../pragma_once.sh || return 0
-. $(dirname $(realpath $BASH_SOURCE))/add.sh
+import_bash add.sh
 #
 #
 # When we start a process the memory is something like:
@@ -151,7 +150,7 @@ get_arg()
 	debug get_arg $@;
 	local args_mmap_ptr="$1";	# the mmap allocated root address where to store parsed/copied arguments.
 	local argn="$2";	# index of the argument starting with 0 to the program name (or function address ptr);
-	local arg_ptr="$3";	# address where to put the pointer to the target address where the argument will be copied into;
+	local arg_ptr="${3:-}";	# address where to put the pointer to the target address where the argument will be copied into;
 
 	# check if this is the last argument (0x0)
 	mov rax "($args_mmap_ptr)";	# set rsi pointing to mmap args allocated space

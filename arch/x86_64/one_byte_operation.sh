@@ -1,8 +1,10 @@
-. $(dirname $(realpath $BASH_SOURCE))/../../pragma_once.sh || return 0
-. $(dirname $(realpath $BASH_SOURCE))/../../encoding.sh
-. $(dirname $(realpath $BASH_SOURCE))/../../types.sh
-. $(dirname $(realpath $BASH_SOURCE))/mod_rm.sh
-. $(dirname $(realpath $BASH_SOURCE))/prefix.sh
+#!/bin/bash
+import_bash <<-EOF
+	./../../encoding.sh
+	./../../types.sh
+	./mod_rm.sh
+	./prefix.sh
+EOF
 
 one_byte_operation(){
 	local op="$1";

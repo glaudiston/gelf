@@ -1,8 +1,9 @@
 #!/bin/bash
-. $(dirname $(realpath $BASH_SOURCE))/../../pragma_once.sh || return 0
-. $(dirname $(realpath $BASH_SOURCE))/prefix.sh;
-. $(dirname $(realpath $BASH_SOURCE))/mod_rm.sh;
-. $(dirname $(realpath $BASH_SOURCE))/../../logger.sh;
+. "$(dirname "$(realpath "${BASH_SOURCE[0]}")")/../../pragma_once/bash/import_bash.sh";
+import_bash <<-EOF
+	./prefix.sh
+	./mod_rm.sh
+EOF
 # signed integer multiply
 imul(){
 	# IMUL_rdx_rax="$(prefix rdx rax | xd2esc)\x0f\xaf\xc2";

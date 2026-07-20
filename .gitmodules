@@ -1,3 +1,9 @@
 [submodule "fsh"]
 	path = fsh
 	url = ../fsh
+[submodule "event-driven"]
+	path = event-driven
+	url = git@github.com:glaudiston/event-driven
+[submodule "pragma_once"]
+	path = pragma_once
+	url = git@github.com:glaudiston/pragma_once

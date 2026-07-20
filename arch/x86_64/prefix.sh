@@ -1,7 +1,9 @@
 #!/bin/bash
-. $(dirname $(realpath $BASH_SOURCE))/../../pragma_once.sh || return 0
-. $(dirname $(realpath $BASH_SOURCE))/registers.sh
-. $(dirname $(realpath $BASH_SOURCE))/rex.sh
+. "$(dirname $(realpath $BASH_SOURCE))/../../pragma_once/bash/import_bash.sh";
+import_bash <<-EOF
+	./registers.sh
+	./rex.sh
+EOF
 # prefix should detect and print all instruction prefixes like:
 # rex: Prefix (0x40 - 0x4F):
 # 	The REX prefix is used in 64-bit mode to extend the instruction set to handle 64-bit operands and additional registers.

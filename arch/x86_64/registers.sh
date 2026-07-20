@@ -1,6 +1,4 @@
 #!/bin/bash
-. $(dirname $(realpath $BASH_SOURCE))/../../pragma_once.sh || return 0
-if ! declare -F is_register >/dev/null; then
 # The x86-64 architecture has a total of 16 general-purpose registers,
 # which are named from R0 to r15. The first 8 registers,
 # R0 to R7, can be accessed using their traditional names (AX, BX, CX, DX, BP, SI, DI, and SP),
@@ -83,8 +81,8 @@ bh=7;	bl=3;	bx=3;	ebx=3;	rbx=3;	# 011
 	r14b=6;	r14w=6;	r14d=6;	r14=6;	# 110
 	r15b=7;	r15w=7;	r15d=7;	r15=7;	# 111
 #		eip	rip		instruction pointer: address of the next instruction to execute.
-declare -a r_8bl=( al cl dl bl ah ch dh bh );
-declare -a r_64=( rax rcx rdx rbx rsp rbp rsi rdi r8 r9 r10 r11 r12 r13 r14 r15 );
+declare -ga r_8bl=( al cl dl bl ah ch dh bh );
+declare -ga r_64=( rax rcx rdx rbx rsp rbp rsi rdi r8 r9 r10 r11 r12 r13 r14 r15 );
 #
 # Note that the smallers registers uses the same space as the bigger ones. changing the small will affect the bigger
 # These sub-registers are commonly used in instruction encoding and can be useful for optimizing code size.
@@ -209,4 +207,3 @@ get_8bit_reg(){
 	printf ${r_8bl[$((r))]};
 }
 
-fi;

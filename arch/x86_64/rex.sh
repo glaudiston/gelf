@@ -1,5 +1,4 @@
 #!/bin/bash
-. $(dirname $(realpath $BASH_SOURCE))/../../pragma_once.sh || return 0
 # THE REX PREFFIX:
 #  in 64bit mode the x86 arch specifies register sizes using prefix bytes.
 #  For example, the same "0xb8" instruction that loads a 32-bit constant into eax can be used with a "0x66" prefix to load a 16-bit constant, or a "0x48" REX prefix to load a 64-bit constant.
@@ -14,8 +13,14 @@
 #  X bit = extends SIB 'index' field, same as R but for the SIB byte (memory operand)
 #  B bit = extends the ModR/M r/m or 'base' field or the SIB field
 #
-. $(dirname $(realpath $BASH_SOURCE))/registers.sh
-. $(dirname $(realpath $BASH_SOURCE))/multi_syntax.sh
+. "$(dirname $(realpath $BASH_SOURCE))/../../pragma_once/bash/import_bash.sh";
+import_bash <<-EOF
+	../../number.sh
+	../../utils.sh
+	./registers.sh
+	./multi_syntax.sh
+EOF
+
 rex(){
 	local r_m=$1;
 	local reg=$2;

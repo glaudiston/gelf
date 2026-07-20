@@ -13,9 +13,9 @@
 function read_file()
 {
 	local TYPE="$1"
-	local stat_addr="$2";
-	local targetMemory="$3";
-	local DATA_LEN="$4";
+	local stat_addr="${2:-}";
+	local targetMemory="${3:-}";
+	local DATA_LEN="${4:-}";
 	# We need to stat the file to get the real value
 	# Memory address of the stat structure
 	# debug read_file

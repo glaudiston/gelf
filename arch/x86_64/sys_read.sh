@@ -2,7 +2,7 @@ function system_call_read()
 {
 	local fd=$1;
 	local len="$2";
-	local data_addr="$3";
+	local data_addr="${3:-}";
 	# by default expect the rdi already have the fd
 	if [ "$fd" != "" ]; then
 		mov rdi $fd;

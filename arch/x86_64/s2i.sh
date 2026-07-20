@@ -1,9 +1,10 @@
 #!/bin/bash
-. $(dirname $(realpath $BASH_SOURCE))/../../pragma_once.sh || return 0
-. $(dirname $(realpath $BASH_SOURCE))/mov.sh
-. $(dirname $(realpath $BASH_SOURCE))/mul.sh
-. $(dirname $(realpath $BASH_SOURCE))/add.sh
-. $(dirname $(realpath $BASH_SOURCE))/cmp.sh
+import_bash <<-EOF
+	./mov.sh
+	./mul.sh
+	./add.sh
+	./cmp.sh
+EOF
 # s2i string to integer
 # given a string address convert it to integer
 s2i()

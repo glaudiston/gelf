@@ -7,8 +7,7 @@ set -eou pipefail
 # 	We can use it to extend the space we have to allocate dynamic pointers after the code in memory over the initial 4096 bytes.
 # sys_mmap	9
 # 	reserve a new memory page space
-. $(dirname $(realpath $BASH_SOURCE))/../../pragma_once.sh || return 0
-. $(dirname $(realpath $BASH_SOURCE))/./mmap.sh
+import_bash ./mmap.sh
 
 is_addr(){
 	is_32bit_uint $1;

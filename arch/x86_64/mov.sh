@@ -1,16 +1,22 @@
 #!/bin/bash
 set -euo pipefail
-. $(dirname $(realpath $BASH_SOURCE))/../../pragma_once.sh || return 0
-. $(dirname $(realpath $BASH_SOURCE))/../../types.sh
-. $(dirname $(realpath $BASH_SOURCE))/../../logger.sh
-. $(dirname $(realpath $BASH_SOURCE))/../../endianness.sh
-. $(dirname $(realpath $BASH_SOURCE))/../../encoding.sh
-. $(dirname $(realpath $BASH_SOURCE))/../../utils.sh
-. $(dirname $(realpath $BASH_SOURCE))/registers.sh
-. $(dirname $(realpath $BASH_SOURCE))/prefix.sh
-. $(dirname $(realpath $BASH_SOURCE))/multi_syntax.sh
-. $(dirname $(realpath $BASH_SOURCE))/mod_rm.sh
-. $(dirname $(realpath $BASH_SOURCE))/bytecode.sh
+. "$(dirname "$(realpath "${BASH_SOURCE[0]}")")/../../pragma_once/bash/import_bash.sh";
+import_bash <<-EOF
+	./../../types.sh
+	./../../logger/bash/logger.sh
+	./../../endianness.sh
+	./../../encoding.sh
+	./../../utils.sh
+	./registers.sh
+	./prefix.sh
+	./multi_syntax.sh
+	./mod_rm.sh
+	./bytecode.sh
+EOF
+
+MOV="$(( MODRM_MOD_DISPLACEMENT_32 ))";	# \x80 Move using memory as source (32-bit)
+MOVR="$(( MODRM_MOD_NO_EFFECTIVE_ADDRESS ))";	# \xc0 move between registers
+IMM="$(( 2#00111000 ))";
 
 # mov intel syntax
 mov(){
@@ -162,7 +168,8 @@ mov_att(){
 			MOD_RM="$( px $(( MODRM_MOD_DISPLACEMENT_REG_POINTER + mod_reg + sib )) ${SIZE_8BITS_1BYTE} )";
 			SIB=$(px $(( 2#00100101 )) ${SIZE_8BITS_1BYTE});
 			local v="$(px "$v2" $SIZE_32BITS_4BYTES)";
-			code="${code}${INSTR_MOV}${MOD_RM}${SIB}${v}";
+			#code="${code}${INSTR_MOV}${MOD_RM}${SIB}${v}";
+			code="${code}$(mov $v2 $v1)";
 		else
 			error not implemented: mov $@
 		fi;

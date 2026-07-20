@@ -1,11 +1,12 @@
 #!/bin/bash
-CUR_SRC=$(dirname $(realpath $BASH_SOURCE));
-. ${CUR_SRC}/../../pragma_once.sh || return 0;
-. ${CUR_SRC}/prefix.sh
-. ${CUR_SRC}/mod_rm.sh
-. ${CUR_SRC}/../../logger.sh
-. ${CUR_SRC}/../../utils.sh
-. ${CUR_SRC}/multiple_one_byte_operations.sh
+. "$(dirname "$(realpath "${BASH_SOURCE[0]}")")/../../pragma_once/bash/import_bash.sh";
+import_bash <<-EOF
+	./prefix.sh
+	./mod_rm.sh
+	../../logger/bash/logger.sh
+	../../utils.sh
+	./multiple_one_byte_operations.sh
+EOF
 # add: given a value or a register on addend, add it to augend
 # addend: can be a register id, a integer value or a address value
 # 	input: register or "[address]" or integer value
@@ -13,9 +14,6 @@ CUR_SRC=$(dirname $(realpath $BASH_SOURCE));
 # augend: register result of add addend and augend
 # 	input: register
 # 	output: added addend and augend
-ADD_FULL="\x81"; # ADD 32 or 64 bit operand (depend on ModR/M
-ADD_M64="$(prefix rax | xd2esc)${ADD_FULL}";
-ADD_M64_rdi="${ADD_M64}";
 ADD_EAX_EAX="\x01\xc0";
 ADD_rsi_rdx="$(prefix rsi rdx | xd2esc)\x01\xF2";
 ADD_V4_rdx="$(prefix v4 rdx | xd2esc)\x81\xC2";

@@ -1,6 +1,7 @@
 #!/bin/bash
-. $(dirname $(realpath $BASH_SOURCE))/../../pragma_once.sh || return 0;
-. $(dirname $(realpath $BASH_SOURCE))/test_asm.sh;
+
+. "$(dirname "$(realpath "${BASH_SOURCE[@]}")")/../../pragma_once/bash/import_bash.sh";
+import_bash ./test_asm.sh;
 
 test_or(){
 	test_op_reg_reg or "$@";
@@ -19,12 +20,12 @@ set_op_b(){
 }
 
 run(){
-	#echo sd $@
-	local SCRIPT_DIR=$(dirname $(realpath $BASH_SOURCE));
-	. $SCRIPT_DIR/../../fsh/fsh.sh
-	. $SCRIPT_DIR/or.sh
-	. $SCRIPT_DIR/test_asm.sh
-	. $SCRIPT_DIR/registers.sh
+	import_bash <<-EOF
+		./../../fsh/fsh.sh
+		./or.sh
+		./test_asm.sh
+		./registers.sh
+	EOF
 	iterate 0 "[ \$1 -lt ${#r_64[@]} ]" set_op_b;
 }
 run

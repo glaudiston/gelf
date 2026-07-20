@@ -1,6 +1,6 @@
 #!/bin/bash
-. $(dirname $(realpath $BASH_SOURCE))/../../pragma_once.sh || return 0
-. $(dirname $(realpath $BASH_SOURCE))/../../fsh/fsh.sh;
+. $(dirname $(realpath $BASH_SOURCE))/../../pragma_once/bash/import_bash.sh
+import_bash ../../fsh/fsh.sh;
 nasm_hex()
 {
 	n=/dev/shm/n-${RANDOM}${RANDOM};
@@ -17,7 +17,7 @@ asm_hex()
 		tr -d '\n';
 }
 
-declare -A colors=(
+declare -gA colors=(
 	[ok]=$'\033[32m' 
 	[error]=$'\033[31m'
 	[reset]=$'\033[0m'

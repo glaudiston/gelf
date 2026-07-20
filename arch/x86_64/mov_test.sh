@@ -1,8 +1,8 @@
 #!/bin/bash
 set -euo pipefail
 
-#. $(dirname $(realpath $BASH_SOURCE))/../../pragma_once.sh || return 0;
-. $(dirname $(realpath $BASH_SOURCE))/test_asm.sh;
+. "$(dirname "$(realpath "${BASH_SOURCE[0]}")")/../../pragma_once/bash/import_bash.sh";
+import_bash ./test_asm.sh;
 
 test_mov_reg_reg()
 {

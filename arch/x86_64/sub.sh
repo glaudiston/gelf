@@ -1,11 +1,14 @@
 #!/bin/bash
 set -euo pipefail
-. $(dirname $(realpath $BASH_SOURCE))/../../pragma_once.sh || return 0
-. $(dirname $(realpath $BASH_SOURCE))/prefix.sh;
-. $(dirname $(realpath $BASH_SOURCE))/mod_rm.sh;
-. $(dirname $(realpath $BASH_SOURCE))/../../encoding.sh;
-. $(dirname $(realpath $BASH_SOURCE))/../../logger.sh;
-. $(dirname $(realpath $BASH_SOURCE))/../../types.sh;
+. "$(dirname "$(realpath "${BASH_SOURCE[0]}")")/../../pragma_once/bash/import_bash.sh";
+import_bash <<-EOF
+	./prefix.sh
+	./mod_rm.sh
+	./../../encoding.sh
+	./../../logger/bash/logger.sh
+	./../../types.sh
+EOF
+
 # SUB
 #    28H: SUB with two 8-bit operands.
 #    29H: SUB with 32-bit operands (or 64bit registers, depends on ModR/M.

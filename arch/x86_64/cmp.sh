@@ -1,13 +1,17 @@
 #!/bin/bash
 set -euo pipefail
 
-. $(dirname $(realpath $BASH_SOURCE))/registers.sh;
-. $(dirname $(realpath $BASH_SOURCE))/prefix.sh;
-. $(dirname $(realpath $BASH_SOURCE))/mod_rm.sh;
-. $(dirname $(realpath $BASH_SOURCE))/../../logger.sh;
-. $(dirname $(realpath $BASH_SOURCE))/../../encoding.sh;
-. $(dirname $(realpath $BASH_SOURCE))/../../number.sh;
-. $(dirname $(realpath $BASH_SOURCE))/test_asm.sh;
+. "$(dirname "$(realpath "${BASH_SOURCE[0]}")")/../../pragma_once/bash/import_bash.sh";
+
+import_bash <<-EOF
+	./registers.sh
+	./prefix.sh
+	./mod_rm.sh
+	./../../logger/bash/logger.sh
+	./../../encoding.sh
+	./../../number.sh
+	./test_asm.sh
+EOF
 # CMP
 cmp(){
 	local v1="$1";

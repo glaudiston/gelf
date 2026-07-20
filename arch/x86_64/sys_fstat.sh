@@ -47,7 +47,7 @@ st_size=$((16#30)); # in the struct stat the offset 0x30 is where we have the fi
 sys_fstat()
 {
 	local stat_addr="$1";
-	local fd="$2";
+	local fd="${2:-}";
 	# rdi: File descriptor number
 	if [ "${fd}" != "" ]; then
 		mov rdi "$fd";

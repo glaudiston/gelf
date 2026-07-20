@@ -1,6 +1,4 @@
 #!/bin/bash
-#!/bin/bash
-. $(dirname $(realpath $BASH_SOURCE))/../../pragma_once.sh
 
 PAGESIZE=$(( 4 * 1024 )); # 4KiB
 # map a memory region
