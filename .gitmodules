@@ -7,3 +7,6 @@
 [submodule "pragma_once"]
 	path = pragma_once
 	url = git@github.com:glaudiston/pragma_once
+[submodule "logger"]
+	path = logger
+	url = git@github.com:glaudiston/logger.git

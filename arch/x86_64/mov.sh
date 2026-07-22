@@ -41,12 +41,121 @@ mov(){
 		return;
 	}
 	fi;
-	mov_att $v2 $v1;
-}
-# mov AT&T syntax
-mov_att(){
-	local v1="$1";
-	local v2="$2";
+	if is_register "$v1"; then
+	{
+		if is_register_ptr "$v2"; then
+		{
+			local prefix;
+			local opcode;
+			local modrm;
+			local displacement_8bit="";
+			local sib="";
+			prefix=$(prefix "$v1" "$v2");
+			local v2_r;
+			v2_r=$( echo $v2 | tr -d '()' );
+			local mov_resolve_address="8b";
+			opcode="${mov_resolve_address}";
+			local mod_reg=$(( v1 << 3 )); # 000 0
+			if is_register "$v1"; then
+				modrm="$(px "$(( MODRM_MOD_DISPLACEMENT_REG_POINTER + mod_reg + v2_r ))" "$SIZE_8BITS_1BYTE")";
+			fi;
+			if [[ $((v2_r)) == "$rsp" ]]; then # special case for rsp
+				local scale="0"; # 1x
+				local index="$((2#100 << 3))"; # no index for sib
+				local base="$(( v2_r ))"; # the register, in this case rsp
+				sib="$(px $(( scale | index | base )) "$SIZE_8BITS_1BYTE")";
+			fi;
+			if [[ $((v2_r)) == "$rbp" ]]; then # special case rbp
+				displacement_8bit="00";
+				modrm="$(px "$(( MODRM_MOD_DISPLACEMENT_8 + mod_reg + v2_r ))" "$SIZE_8BITS_1BYTE")";
+			fi;
+			local code="${prefix}${opcode}${modrm}${displacement_8bit}${sib}"
+			printf "%s" "${code}";
+			debug "asm: mov " "$@" "; # $code";
+			return;
+		}
+		fi;
+		if is_register "$v2"; then
+			local prefix opcode modrm;
+			prefix="$(prefix "$v1" "$v2")";
+			opcode="89";
+			modrm="$(px $(( MODRM_MOD_NO_EFFECTIVE_ADDRESS | (v2 << 3) | v1 )) "$SIZE_8BITS_1BYTE")";
+			local code="${prefix}${opcode}${modrm}";
+			printf "%s" "$code"
+			debug "asm: mov " "$@" "; # $code";
+			return;
+		fi;
+		if is_addr_ptr "$v2"; then
+		{
+			if is_64bit_register "$v1" && is_32bit_uint "$v2_r"; then
+			{
+				local opcode="${mov_resolve_address}";
+				local use_sib=$(( 1 << 2 ));
+				local mod=$((MODRM_MOD_DISPLACEMENT_REG_POINTER << 6));
+				local r=$((v2 << 3));
+				local m=$(( use_sib ));
+				local modrm_v=$(( mod | r | m ));
+				local modrm;
+				modrm="$(px "$modrm_v" "$SIZE_8BITS_1BYTE")";
+				local scale="0";
+				local index="$((2#011 << 3))";
+				local base="$(( 2#001 ))";
+				local sib="$(( scale | index | base ))";
+				local displacement=$(px $v1_r $SIZE_32BITS_4BYTES);
+				local instr="${prefix}${opcode}${modrm}${sib}${displacement}";
+				printf "${instr}";
+				debug "asm: mov $@; # $code";
+				return;
+			}
+			fi;
+			printf "${prefix}${opcode}${modrm}${sib}${imm32}";
+			return
+		}
+		fi;
+		if is_64bit_uint "$v2"; then
+		{
+			local prefix="";
+			is_64bit_extended_register $v1 && prefix="41";
+			local opcode=$( printf %02x $(( 16#b8 + v1)) )
+			local modrm=""
+			local sib=""
+			local imm32=$(px "$v2" "$SIZE_32BITS_4BYTES")
+			printf "${prefix}${opcode}${modrm}${sib}${imm32}"
+			return;
+		}
+		fi;
+		if is_32bit_sint "$v2"; then
+		{
+			local prefix;
+			prefix=$(prefix "$v1" "$v2");
+			local opcode=c7
+			local modrm="";
+			local sib=$rsp;
+			local mod_reg=0;
+			modrm="$(px "$(( MODRM_MOD_NO_EFFECTIVE_ADDRESS + mod_reg + v1 ))" "$SIZE_8BITS_1BYTE")";
+			local sib=""
+			local imm32=$(px "$v2" "$SIZE_32BITS_4BYTES")
+			printf "${prefix}${opcode}${modrm}${sib}${imm32}"
+			return;
+		}
+		fi;
+		if is_64bit_sint "$v2"; then
+		{
+			local prefix="";
+			prefix=$(prefix "$v1" "$v2");
+			local opcode=$( printf %02x $(( 16#b8 + v1)) )
+			local modrm=""
+			local sib=""
+			local imm32=$(px "$v2" "$SIZE_64BITS_8BYTES")
+			printf "${prefix}${opcode}${modrm}${sib}${imm32}"
+			return;
+		}
+		fi;
+	}
+	fi;
+	# AT&T syntax
+	v2=$1
+	v1=$2
 	local code="";
 	local prefix=$(prefix "$v2" "$v1");
 	code="${code}${prefix}";
@@ -59,10 +168,10 @@ mov_att(){
 		if is_register "$v1_r"; then
 			local mod_reg=$(( v2 << 3 )); # 000 0
 			if is_register "$v2"; then
-				modrm="$(px "$(( MODRM_MOD_DISPLACEMENT_REG_POINTER + mod_reg + v1_r ))" $SIZE_8BITS_1BYTE)";
+				modrm="$(px "$(( MODRM_MOD_DISPLACEMENT_REG_POINTER + mod_reg + v1_r ))" "$SIZE_8BITS_1BYTE")";
 			fi;
-			printf "${code}${modrm}";
-			debug "asm: mov $@; # $code";
+			printf "%s" "${code}${modrm}";
+			debug "asm: mov " "$@" "; # $code";
 			return;
 		fi;
 		if is_32bit_uint "$v1_r" && is_64bit_register "$v2"; then
@@ -73,7 +182,8 @@ mov_att(){
 			local r=$((v2 << 3));
 			local m=$(( use_sib ));
 			local modrm_v=$(( mod | r | m ));
-			local modrm="$(px $modrm_v $SIZE_8BITS_1BYTE)";
+			local modrm;
+			modrm="$(px "$modrm_v" "$SIZE_8BITS_1BYTE")";
 			local scale="0";
 			local index="$((2#011 << 3))";
 			local base="$(( 2#001 ))";
@@ -143,7 +253,7 @@ mov_att(){
 				fi;
 			fi;
 			code="${code}${modrm}";
-			debug "asm: mov $@; # $code";
+			debug "asm: mov " "$@" "; # $code";
 			echo -n "$code";
 			return;
 		}
@@ -153,7 +263,7 @@ mov_att(){
 			code="${code}${modrm}";
 			local rv="$(echo -en "${code}")";
 			echo -n $rv;
-			debug "mov $@; # $rv";
+			debug "mov " "$@" "; # $rv";
 			return;
 		elif is_valid_number "$v2"; then
 			# if 32 bits addr
@@ -184,7 +294,7 @@ mov_att(){
 			code="${rex}${mov_8bit}";
 			code="${code}$(px $(( MODRM_MOD_NO_EFFECTIVE_ADDRESS + $(( v1 << 3 )) + v2 )) $SIZE_8BITS_1BYTE)";
 			echo -n "${code}";
-			debug "asm: mov $@; # $code"
+			debug "asm: mov " "$@" "; # $code"
 			return;
 		fi;
 		if is_valid_number "$v2"; then
@@ -210,13 +320,13 @@ mov_att(){
 			local displ32="$(px $v2 $SIZE_32BITS_4BYTES)";
 			local instr="${prefix}${opcode}${modrm}${sib}${displ32}";
 			echo -n "${instr}";
-			debug "asm: mov $@; # $code"
+			debug "asm: mov " "$@" "; # $code"
 			return;
 		}
 		fi;
 	}
 	fi;
-	debug mov $@: out [$code];
+	debug "mov" "$@" ": out [$code]";
 	echo -n $code;
 }
 

@@ -232,6 +232,8 @@ get_arg_count()
 	code="${code}$(mov r14 rsp)";
 	code="${code}$(add r14 r15)"; # this allows set r15 as displacement and use this code in function get args
 	code="${code}$(mov r14 "(r14)")";
-	code="${code}$(mov $addr "r14")";
+	debug a addr="[$addr]"
+	code="${code}$(mov "$addr" "r14")";
+	debug v addr="[$addr]"
 	echo -en "${code}";
 }

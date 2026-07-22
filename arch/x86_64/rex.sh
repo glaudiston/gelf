@@ -36,9 +36,6 @@ rex(){
 	local R=0;	# 1 if source is a register from r8 to r15
 	local X=0;
 	local B=0;	# 1 if target(base) is a register from r8 to r15
-	if is_64bit_extended_register "$reg"; then
-		R=1;
-	fi;
 	if is_64bit_extended_register "$r_m"; then
 		B=1;
 	fi;
@@ -53,8 +50,25 @@ rex(){
 		R=0;
 		B=0;
 	fi;
-	if  { is_64bit_extended_register "$r_m" && is_8bit_sint "$reg"; }; then
+	if { is_64bit_extended_register "$r_m" && is_8bit_sint "$reg"; }; then
 		R=0;
 	fi
+	if is_64bit_extended_register "$reg"; then
+		R=1;
+	fi;
+	if is_64bit_register "$r_m" && ! is_64bit_extended_register "$r_m"; then
+		if is_64bit_extended_register "$reg" && ! is_64bit_extended_register_ptr "$reg"; then
+			R=1;
+		else
+			R=0;
+		fi;
+	fi;
+	if is_64bit_extended_register_ptr "$reg"; then
+		B=1;
+	fi;
+	if is_64bit_extended_register "$r_m" && ! is_64bit_extended_register_ptr "$r_m" && is_register_ptr "$reg" && ! is_64bit_extended_register_ptr "$reg"; then
+		R=1;
+		B=0;
+	fi;
 	printf "%02x" $(( (2#0100 << 4) + (W<<3) + (R<<2) + (X<<1) + B ));
 }

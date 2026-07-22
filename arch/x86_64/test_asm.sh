@@ -1,12 +1,17 @@
 #!/bin/bash
-. $(dirname $(realpath $BASH_SOURCE))/../../pragma_once/bash/import_bash.sh
+. "$(dirname "$(realpath "${BASH_SOURCE[0]}")")/../../pragma_once/bash/import_bash.sh";
 import_bash ../../fsh/fsh.sh;
 nasm_hex()
 {
 	n=/dev/shm/n-${RANDOM}${RANDOM};
 	cat > $n.asm; nasm -f elf64 -l $n.lst $n.asm;
-	cat $n.lst | tr -s " " | cut -d" " -f4;
+	cat $n.lst | tr -s " " | cut -d" " -f4 | tr -d '\n-';
 	rm -fr $n.lst $n.asm;
+}
+
+nasm_code()
+{
+	xxd --ps -r <<<"$@" | ndisasm -b 64 - | tr -s " " | cut -d " " -f3-;
 }
 
 asm_hex()
@@ -29,7 +34,7 @@ test_logger(){
 		rc=${colors[reset]};
 		c=${colors[$1]};
 	};
-	echo -e "$c$1$rc: ${@:2}";
+	echo -e "$c$1$rc:" "${@:2}";
 }
 ok(){
 	test_logger ok "[$1] == [${2,,ii}]";
@@ -43,24 +48,68 @@ err(){
 }
 
 test_op_reg_reg(){
-	local got="$($@ 2>/dev/null)";
-	local expected="$(nasm_hex<<<"$1 $2, $3")";
+	local got;
+	got="$("$@" 2>/dev/null)";
+	local expected;
+	expected="$(nasm_hex<<<"$1 $2, $3")";
 	if [ "${got,,}" != "${expected,,}" ]; then
-		local given="$@";
+		local given;
+		given="$*";
 		err "$given" "$expected" "$got":
 		return;
 	fi;
 	ok "$*" "${got}";
 }
 
-test_op_reg_u8(){
-	local u8=$(( RANDOM % ( 2 ** 8 ) - (2 ** 7) ));
-	local got="$($@ $u8 2>>/tmp/gelf.log)";
-	local expected="$(nasm_hex<<<"$1 $2, $u8")";
+test_op_ubits_reg(){
+	local ubits="$2";
+	[ "$ubits" == 64 ] && ubits=63; # bash does not support 64 so fallback to 63bit
+	local r=$RANDOM$RANDOM$RANDOM$RANDOM
+	local uval=$(( r % ( 2 ** ubits ) - (2 ** (ubits-1)) ));
+	local got;
+	got="$("$1" "$uval" "$3" 2>>/tmp/gelf.log)";
+	local expected;
+	expected="$(nasm_hex<<<"$1 $uval, $3")";
 	if [ "${got,,}" != "${expected,,}" ]; then
-		local given="$@ $u8";
-		err "$given" "$expected" "$got";
+		local given="$1 $2 $uval";
+		err "$given" "$expected" "$got that is $(nasm_code "$got")";
 		return;
 	fi;
-	ok "$* $u8" "${got}";
+	ok "$1 $2 $uval" "${got}";
+}
+test_op_u8_reg(){
+	test_op_ubits_reg $1 8 $2;
+}
+test_op_u32_reg(){
+	test_op_ubits_reg $1 32 $2;
+}
+test_op_u64_reg(){
+	test_op_ubits_reg $1 64 $2;
+}
+
+test_op_reg_ubits(){
+	local ubits="$3";
+	[ "$ubits" == 64 ] && ubits=63; # bash does not support 64 so fallback to 63bit
+	local r=$RANDOM$RANDOM$RANDOM$RANDOM
+	local uval=$(( r % ( 2 ** ubits ) - (2 ** (ubits-1)) ));
+	local got;
+	got="$("$1" "$2" "$uval" 2>>/tmp/gelf.log)";
+	local expected;
+	expected="$(nasm_hex<<<"$1 $2, $uval")";
+	if [ "${got,,}" != "${expected,,}" ]; then
+		local given="$1 $2 $uval";
+		err "$given" "$expected" "$got that is $(nasm_code "$got")";
+		return;
+	fi;
+	ok "$1 $2 $uval" "${got}";
+}
+
+test_op_reg_u8(){
+	test_op_reg_ubits "$1" "$2" 8;
+}
+test_op_reg_u32(){
+	test_op_reg_ubits "$1" "$2" 32;
+}
+test_op_reg_u64(){
+	test_op_reg_ubits "$1" "$2" 64;
 }

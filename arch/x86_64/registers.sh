@@ -139,6 +139,15 @@ is_64bit_extended_register(){
 	return 1;
 }
 
+is_64bit_extended_register_ptr(){
+	if [[ "$1" =~ ^\(.*\)$ ]]; then
+		if is_64bit_extended_register "$(printf "%s" "$1" | tr -d '()')"; then
+			return 0;
+		fi;
+	fi;
+	return 1;
+}
+
 is_8bit_extended_register(){
 	local v="$1";
 	if [[ "${v,,}" =~ (spl|bpl|sil|dil) ]]; then
