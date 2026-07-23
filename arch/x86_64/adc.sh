@@ -8,29 +8,32 @@ import_bash <<-EOF
 	./one_byte_operation.sh
 	./multiple_operation.sh
 EOF
-or(){
-	debug "asm: or $@"
+adc(){
+	debug "asm: adc $@"
 	if is_register "$1" && is_8bit_sint "$2"; then
-		multiple_operation or "$1" "$2";
+		multiple_operation adc "$1" "$2";
 		return;
 	fi
 	if is_register "$1" && is_32bit_sint "$2"; then
 		if [[ "$1" == "rax" ]]; then
 			local code;
 			prefix=$(prefix "$1" "$2")
-			opcode=0d
+			opcode="$(px 21 $SIZE_8BITS_1BYTE)"
 			imm32=$(px "$2" "$SIZE_32BITS_4BYTES")
 			code="${prefix}${opcode}${imm32}"
 			printf %s "$code";
 			return;
 		fi;
-		multiple_operation or "$1" "$2";
+		multiple_operation adc "$1" "$2";
 		return;
 	fi
-	local op=09;
+	local idx;
+	idx=$(multiple_operation_map_idx adc)
+	local op=$(( 16#09 + idx));
 	one_byte_operation "$op" "$1" "$2";
 }
 
 # accept args to the bash script, useful for debugging
-[ "$#" -gt 0 ] && or "$@" || :;
+[ "$#" -gt 0 ] && adc "$@" || :;
+
 

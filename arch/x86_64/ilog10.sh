@@ -63,7 +63,7 @@ ilog10()
 	printf "${MOVSBL_V4_rdx_EDX}$(px $guess_map_addr $SIZE_32BITS_4BYTES)";
 	local power_map_addr=$((guess_map_addr + ilog10_guess_map_size));
 	printf "${CMP_V4_rdx_8_rax}$(px $power_map_addr $SIZE_32BITS_4BYTES)";
-	printf "${SBB_0_EDX}";
+	printf %s "$(sbb edx 0)";
 	if [ "$ret_addr" != "" ]; then
 		# mov "(rsi)" rsi;
 		#1 0000 480FB6FA 	movzx %dl,%rdi

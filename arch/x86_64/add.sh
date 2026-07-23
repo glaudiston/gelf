@@ -5,7 +5,7 @@ import_bash <<-EOF
 	./mod_rm.sh
 	../../logger/bash/logger.sh
 	../../utils.sh
-	./multiple_one_byte_operations.sh
+	./multiple_operation.sh
 EOF
 # add: given a value or a register on addend, add it to augend
 # addend: can be a register id, a integer value or a address value
@@ -30,7 +30,7 @@ add(){
 	local modrm_opcode;
 	modrm_opcode="$(one_byte_op_map_idx add)"
 	if is_register "$addend" && is_8bit_sint "$augend"; then
-		multiple_one_byte_operation add "$addend" "$augend";
+		multiple_operation add "$addend" "$augend";
 		return;
 	fi
 	local ADD_SHORT="83"; # ADD 8 or 16 bit operand (depend on ModR/M opcode first bit(most significant (bit 7)) been zero) and the ModR/M opcode

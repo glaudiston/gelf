@@ -4,7 +4,7 @@
 import_bash <<-EOF
 	./../../logger/bash/logger.sh
 	./one_byte_operation.sh
-	./multiple_one_byte_operations.sh
+	./multiple_operation.sh
 EOF
 and(){
 	local v1="${1,,}";
@@ -14,13 +14,13 @@ and(){
 	debug "asm: and $*"
 	if is_register "$1"; then
 		if is_8bit_sint "$2"; then
-			multiple_one_byte_operation and "$1" "$2";
+			multiple_operation and "$1" "$2";
 			return;
 		fi;
 		if is_32bit_sint "$2"; then
-			prefix="$(prefix "$v1" "$v2")";
 			if [[ "$v1" == "rax" ]]; then # rax has its own opcode
 			{
+				prefix="$(prefix "$v1" "$v2")";
 				opcode="25";
 				imm32="$(px "$v2" "$SIZE_32BITS_4BYTES")"
 				code="${prefix}${opcode}${imm32}"
@@ -28,11 +28,7 @@ and(){
 				return;
 			}
 			fi;
-			opcode=81;
-			modrm="$(px "$((MODRM_MOD_NO_EFFECTIVE_ADDRESS | MODRM_SIB | v1))" "$SIZE_8BITS_1BYTE")";
-			imm32="$(px "$v2" "$SIZE_32BITS_4BYTES")"
-			code="${prefix}${opcode}${modrm}${imm32}"
-			printf "%s" "$code";
+			multiple_operation and "$1" "$2";
 			return;
 		fi;
 	fi;

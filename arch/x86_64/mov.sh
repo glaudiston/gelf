@@ -1,6 +1,7 @@
 #!/bin/bash
 set -euo pipefail
 . "$(dirname "$(realpath "${BASH_SOURCE[0]}")")/../../pragma_once/bash/import_bash.sh";
+
 import_bash <<-EOF
 	./../../types.sh
 	./../../logger/bash/logger.sh
@@ -231,5 +232,4 @@ REP="\xf3"; # repeat until rcx
 #MOVZX_SIL_rsi="\x48\x0F\xB6\xF6";
 #MOVZX_SIL_rdi="\x48\x0F\xB6\xFE";
 MOVZX_DL_rdi="480fb6fa";
-SBB_0_EDX="83da00";
 MOVSBL_V4_rdx_EDX="0FBE1415";

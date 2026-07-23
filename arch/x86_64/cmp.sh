@@ -10,7 +10,7 @@ import_bash <<-EOF
 	./../../logger/bash/logger.sh
 	./../../encoding.sh
 	./../../number.sh
-	./multiple_one_byte_operations.sh
+	./multiple_operation.sh
 EOF
 # CMP
 cmp(){
@@ -94,7 +94,7 @@ cmp(){
 			{
 				# | REX.W + 83 /7 ib | CMP r/m64, imm8 | MI | Valid | N.E. | Compare imm8 with r/m64. |
 				# /7 means modrm.reg = 7; this is why we use MODRM_OPCODE_CMP
-				code="$(multiple_one_byte_operation cmp "$v1" "$v2")"
+				code="$(multiple_operation cmp "$v1" "$v2")"
 				printf %s "$code";
 				debug "asm: cmp $*; # $code"
 				return;
@@ -109,16 +109,7 @@ cmp(){
 				debug "asm: cmp $*; # $code";
 				return;
 			fi
-			b2="$(( 16#04 + (v1 << 3) ))";
-			prefix=$(prefix "$v1" "$v2");
-			opcode=81
-			local op_idx;
-			op_idx="$(one_byte_op_map_idx cmp)";
-			modrm="$(px "$(( MODRM_MOD_NO_EFFECTIVE_ADDRESS | op_idx << 3| v1))" "${SIZE_8BITS_1BYTE}")"
-			imm32="$(px "$v2" "$SIZE_32BITS_4BYTES")"
-			code="${prefix}${opcode}${modrm}${imm32}"; # cmp rax v4;
-			printf %s "${code}";
-			debug "asm: cmp $*; # $code";
+			multiple_operation cmp "$v1" "$v2";
 			return;
 		}
 		fi;

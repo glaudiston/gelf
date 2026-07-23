@@ -7,6 +7,7 @@ import_bash <<-EOF
 	./../../encoding.sh
 	./../../logger/bash/logger.sh
 	./../../types.sh
+	./multiple_operation.sh
 EOF
 
 # SUB

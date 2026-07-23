@@ -22,6 +22,18 @@ imul(){
 	fi;
 	if is_register "$multiplier"; then
 		if is_valid_number "$multiplicand"; then
+			if is_32bit_sint "$multiplicand"; then
+				local code;
+				local prefix opcode modrm imm32;
+				prefix="$p";
+				opcode=69
+				modrm="$(px "$(( MODRM_MOD_NO_EFFECTIVE_ADDRESS | multiplier))" "$SIZE_8BITS_1BYTE")"
+				imm32="$(px "$multiplicand" "$SIZE_32BITS_4BYTES")"
+				code="${prefix}${opcode}${modrm}${imm32}"
+				printf %s "$code"
+				debug "imul $*; # $code";
+				return;
+			fi;
 			# 486BF60A	# imul $multiplier0,%rsi ; imul rsi,rsi,byte +0xa
 			#
 			local b1="6b";
