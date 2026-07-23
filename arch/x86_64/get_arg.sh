@@ -1,5 +1,11 @@
 #!/bin/bash
-import_bash add.sh
+set -euo pipefail
+. "$(dirname "$(realpath "${BASH_SOURCE[0]}")")/../../pragma_once/bash/import_bash.sh";
+
+import_bash <<-EOF
+	add.sh
+	mov.sh
+EOF
 #
 #
 # When we start a process the memory is something like:
@@ -76,17 +82,18 @@ detect_argsize()
 	# to find the arg size, use rcx as rsi
 	# increment rcx by 8
 	local PTR_SIZE=8
-	local proc_arg=$({
+	local proc_arg;
+	proc_arg=$({
 		local ARGUMENT_DISPLACEMENT=$PTR_SIZE;
 		mov $r_out $r_in; # mov rcx rsi;
 		add $r_out $ARGUMENT_DISPLACEMENT $r_out;
 		# mov to the real address (not pointer to address)
-		mov $r_out "($r_out)"; # resolve pointer to address
+		mov $r_out [$r_out]; # resolve pointer to address
 		# and subtract rcx - rsi (resulting in the result(str len) at rcx)
 		str_null_size_detection=$({
 			# if rcx is zero, then we the input is the last argument and we are unable to detect size using method;
 			# so fallback to string size detection
-			mov $r_in "($r_in)"; # resolve pointer to address
+			mov $r_in [$r_in]; # resolve pointer to address
 			# now we have a problem:
 			#  We do know how to detect a string length. but we don't know if this is a string.
 			#  a string is a ptr to bytes, a int is just the bytes.
@@ -97,36 +104,37 @@ detect_argsize()
 			detect_string_length $r_in $r_out;
 		});
 		fast_str_size_detection=$({
-			mov $r_in "($r_in)"; # resolve pointer to address
+			mov $r_in [$r_in]; # resolve pointer to address
 			sub $r_out $r_in;
 		#	dec $r_out; # because it counts the null byte
-			jump $(xcnt<<<$str_null_size_detection);
+			jump "$(xcnt<<<"$str_null_size_detection")";
 		});
-		fast_str_size_detection_size=$(xcnt<<<$fast_str_size_detection);
+		fast_str_size_detection_size="$(xcnt<<<"$fast_str_size_detection")";
 		cmp $r_out 0; # no argument; ptr == NULL
-		jz $(xcnt<<<$fast_str_size_detection); #
-		printf $fast_str_size_detection; # this only works when we have a next value; that is why we jump over if zero.
-		printf "$str_null_size_detection";
+		jz "$(xcnt<<<"$fast_str_size_detection")"; #
+		printf "%s" "$fast_str_size_detection"; # this only works when we have a next value; that is why we jump over if zero.
+		printf "%s" "$str_null_size_detection";
 	});
-	local func_arg=$({
+	local func_arg;
+	func_arg=$({
 		mov $r_in rsp;
 		add $r_in $(( 24 + (argn * 16) )); # retval_ptr + (previous rbp) + argc + ( type + argn_ptr )
 		# at this point r_in == arg_type;
-		mov $r_in "($r_in)";
-		cmp $r_in $SYMBOL_TYPE_HARD_CODED;
+		mov $r_in [$r_in];
+		cmp "$r_in" "$SYMBOL_TYPE_HARD_CODED";
 		#cmp $r_out $SYMBOL_TYPE_HARD_CODED;
 		hardcoded_size_detection=$({
 			mov $r_out 8; # 8 bytes ( integer )
 		})
-		jnz $(xcnt<<<$hardcoded_size_detection);
-		printf $hardcoded_size_detection;
-		mov $r_out 8;
-		je $(xcnt<<<$proc_arg)
+		jnz "$(xcnt<<<"$hardcoded_size_detection")";
+		printf "%s" "$hardcoded_size_detection";
+		mov "$r_out" 8;
+		je "$(xcnt<<<"$proc_arg")"
 	});
 	cmp r15 0; # r15 is zero only on root stack frame layer, so we don't have types on args
-	jz $(xcnt<<<$func_arg); # if zero goto proc_arg
-	printf $func_arg;
-	printf $proc_arg;
+	jz "$(xcnt<<<"$func_arg")"; # if zero goto proc_arg
+	printf "%s" "$func_arg";
+	printf "%s" "$proc_arg";
 }
 
 # get_arg should abstract two scenarios
@@ -147,29 +155,31 @@ detect_argsize()
 #
 get_arg()
 {
-	debug get_arg $@;
+	debug "get_arg $*";
 	local args_mmap_ptr="$1";	# the mmap allocated root address where to store parsed/copied arguments.
 	local argn="$2";	# index of the argument starting with 0 to the program name (or function address ptr);
 	local arg_ptr="${3:-}";	# address where to put the pointer to the target address where the argument will be copied into;
 
 	# check if this is the last argument (0x0)
-	mov rax "($args_mmap_ptr)";	# set rsi pointing to mmap args allocated space
-	mov rsi "(rax)";	# move the mmap first value to rsi that should 
+	mov rax ["$args_mmap_ptr"];	# set rsi pointing to mmap args allocated space
+	mov rsi [rax];	# move the mmap first value to rsi that should 
 	cmp rsi 0;		# the first 8 bytes in mmap are the ptr to the last argument
 				#  if zero, not initalized;
 
-	local init_argsptr=$({
+	local init_argsptr;
+	init_argsptr=$({
 		# set the mmap address as initial value
 		# so when add 8 will reach the first valid ptr to an empty valid mmap space
 		mov rsi rax;	# set args_mmap_ptr to itself
 	});
-	jne $(xcnt<<<$init_argsptr);
-	printf $init_argsptr;
+	jne "$(xcnt<<<"$init_argsptr")";
+	printf "%s" "$init_argsptr";
 
 	add rsi 8;		# adding 8 bytes we are expected to reach a valid empty mmap space to set the copied argument data
 	mov "$arg_ptr" rsi;	# store rsi ptr value inside the target addr, then in the first 8 mmap bytes we have the ptr to the last parsed argument
-	mov "(rax)" rsi;	# set the args_mmap_ptr value to the position where to write the argument;
-	local func_arg=$({
+	mov [rax] rsi;	# set the args_mmap_ptr value to the position where to write the argument;
+	local func_arg;
+	func_arg=$({
 		# this should be used only on call functions
 		# so we use typed data and we have the return addr ptr on rsp
 		add r15 rsp ; # r15 is argc
@@ -177,27 +187,28 @@ get_arg()
 		sub r15 rsp;
 		add rsi $(( 8 * (1 + argn * 2) )); # "1 +" the first 8 bytes are the argc *2 because each argument has the type prefix byte
 	});
-	local process_arg=$({
+	local process_arg;
+	process_arg=$({
 		# in process root level we don't have typed args and rsp points to argc
 		mov rsi rsp;
-		add rsi $(( 8 * (1 + argn) )); # +1 because the first arg is the argc
-		jump $(xcnt<<<${func_arg});
+		add rsi "$(( 8 * (1 + argn) ))"; # +1 because the first arg is the argc
+		jump "$(xcnt<<<"$func_arg")";
 	});
 	cmp r15 0; # if r15 has value means we are not in root level and rsp is the return value
-	jnz $(xcnt<<<${process_arg}); # we already should have the last cmp r15, 0 on the ZF
-	printf $process_arg;
-	printf $func_arg;
-	detect_argsize $argn;
+	jnz "$(xcnt<<<"${process_arg}")"; # we already should have the last cmp r15, 0 on the ZF
+	printf "%s" "$process_arg";
+	printf "%s" "$func_arg";
+	detect_argsize "$argn";
 	# now rcx has the string size
 	cmp r15 0; # check again if in root process or function (zero on root)
 	skip_type=$({
-		printf $func_arg;
+		printf "%s" "$func_arg";
 		add rsi 8;
 	});
-	jz $(xcnt<<<$skip_type);
-	printf $skip_type;
+	jz "$(xcnt<<<"$skip_type")";
+	printf "%s" "$skip_type";
 
-	mov rdi "($arg_ptr)"; # update the root of args memory space (first ptr bytes) to the first free space (end of used memory)
+	mov rdi ["$arg_ptr"]; # update the root of args memory space (first ptr bytes) to the first free space (end of used memory)
 	# here rax have the args_mmap_ptr
 	movs rsi rdi rcx; # copy the (rsi) contents to (rdi), limit by rcx bytes using movsb
 	# but it should be 64 bit aligned

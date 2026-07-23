@@ -4,7 +4,7 @@ bsr(){
 	local r2="$2";
 	local code="";
 	local modrm="$MODRM_MOD_NO_EFFECTIVE_ADDRESS";
-	if [ "$r1" == "(rax)" ]; then
+	if [ "$r1" == "[rax]" ]; then
 		modrm="$MODRM_MOD_DISPLACEMENT_REG_POINTER";
 	fi
 	local rc=$(( modrm + ( ${r1,,} << 3 ) + ( ${r2,,} ) ));

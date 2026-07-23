@@ -5,14 +5,15 @@ import_bash ./test_asm.sh;
 
 set_addend(){
 	local augend=$1;
-	local addend=${r_64[$2]};
-	test_op_reg_reg add $augend $addend;
+	local addend="${r_64[$2]}";
+	test_op_reg_reg add "$augend" "$addend";
 }
 
 set_augend(){
 	local v=${r_64[$1]};
 	iterate $1 "[ \$1 -lt ${#r_64[@]} ]" "set_addend $v";
-	test_op_reg_u8 add $v;
+	test_op_reg_s8 add "$v";
+	test_op_reg_s32 add "$v";
 }
 
 run(){

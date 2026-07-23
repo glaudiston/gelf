@@ -28,12 +28,12 @@ i2s(){
 		mov rdi rax;
 		cmp rdi $SYMBOL_TYPE_HARD_CODED;
 		local resolve_value=$({
-			mov rax "(rax)"; # resolve the mem, resulting in the int value be in stack
+			mov rax [rax]; # resolve the mem, resulting in the int value be in stack
 		})
 		add rax 8; # add to rsp+40 (rsp+32+8) (retvaladdr+argc+i2s_ptr_type+i2s_ptr+arg_type) (8 bytes each);
 		jz $(xcnt<<<$resolve_value)
 		printf $resolve_value;
-		mov rax "(rax)"; # resolve stack addr in reg to mem where the int value is
+		mov rax [rax]; # resolve stack addr in reg to mem where the int value is
 		cmp rax 0;
 		local return_if_zero="$({
 			add rax 48; # 0x30; asc digit 0

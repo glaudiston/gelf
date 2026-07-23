@@ -64,25 +64,37 @@ flags=( ID VIP VIF AC VM RF NT IOPL OF DF IF TF SF ZF AF PF CF );
 #
 #Here is a table of all the registers in x86_64 with their sizes:
 # 8bit(hi,low)	16bits	32bits	64bits	bitval
-ah=4;	al=0;	ax=0;	eax=0;	rax=0;	# 000
-ch=5;	cl=1;	cx=1;	ecx=1;	rcx=1;	# 001	special because `rep` and others? uses it
-dh=6;	dl=2;	dx=2;	edx=2;	rdx=2;	# 010
-bh=7;	bl=3;	bx=3;	ebx=3;	rbx=3;	# 011
-	spl=4;	sp=4;	esp=4;	rsp=4;	# 100	processor controlled pointing to stack pointer
-	bpl=5;	bp=5;	ebp=5;	rbp=5;	# 101
-	sil=6;	si=6;	esi=6;	rsi=6;	# 110
-	dil=7;	di=7;	edi=7;	rdi=7;	# 111
-	r8b=0;	r8w=0;	r8d=0;	r8=0;	# 000
-	r9b=1;	r9w=1;	r9d=1;	r9=1;	# 001
-	r10b=2;	r10w=2;	r10d=2;	r10=2;	# 010
-	r11b=3;	r11w=3;	r11d=3; r11=3;	# 011
-	r12b=4;	r12w=4;	r12d=4;	r12=4;	# 100
-	r13b=5;	r13w=5;	r13d=5;	r13=5;	# 101
-	r14b=6;	r14w=6;	r14d=6;	r14=6;	# 110
-	r15b=7;	r15w=7;	r15d=7;	r15=7;	# 111
+declare -xg \
+	al=0	ax=0	eax=0	rax=0	`# 000` \
+	cl=1	cx=1	ecx=1	rcx=1	`# 001	special because "rep" uses it` \
+	dl=2	dx=2	edx=2	rdx=2	`# 010` \
+	bl=3	bx=3	ebx=3	rbx=3	`# 011` \
+ah=4	spl=4	sp=4	esp=4	rsp=4	`# 100	processor controlled pointing to stack pointer` \
+ch=5	bpl=5	bp=5	ebp=5	rbp=5	`# 101` \
+dh=6	sil=6	si=6	esi=6	rsi=6	`# 110` \
+bh=7	dil=7	di=7	edi=7	rdi=7	`# 111` \
+`# extended registers` \
+	r8b=0	r8w=0	r8d=0	r8=0	`# 000` \
+	r9b=1	r9w=1	r9d=1	r9=1	`# 001` \
+	r10b=2	r10w=2	r10d=2	r10=2	`# 010` \
+	r11b=3	r11w=3	r11d=3	r11=3	`# 011` \
+	r12b=4	r12w=4	r12d=4	r12=4	`# 100` \
+	r13b=5	r13w=5	r13d=5	r13=5	`# 101` \
+	r14b=6	r14w=6	r14d=6	r14=6	`# 110` \
+	r15b=7	r15w=7	r15d=7	r15=7	`# 111`
 #		eip	rip		instruction pointer: address of the next instruction to execute.
-declare -ga r_8bl=( al cl dl bl ah ch dh bh );
-declare -ga r_64=( rax rcx rdx rbx rsp rbp rsi rdi r8 r9 r10 r11 r12 r13 r14 r15 );
+declare -xga r_8l=( al cl dl bl ); # x86 original 8 bit registers
+declare -xga r_8h=( ah ch dh bh ); # legacy 8bit hi registers added by amd before x64 can not have rex prefix
+declare -xga r_8_legacy=( "${r_8l[@]}" "${r_8h[@]}" ); # can no be used with rex prefix
+declare -xga r_8=( "${r_8l[@]}" spl bpl sil dil r8b r9b r10b r11b r12b r13b r14b r15b ); # requires rex prefix
+declare -xga r_8x=( "${r_8[@]:8}" );
+declare -xga r_16=( ax cx dx bx sp bp si di r8w r9w r10w r11w r12w r13w r14w r15w );
+declare -xga r_16x=( "${r_16[@]:8}" );
+declare -xga r_32=( eax ecx edx ebx esp ebp esi edi r8d r9d r10d r11d r12d r13d r14d r15d );
+declare -xga r_32x=( "${r_32[@]:8}" );
+declare -xga r_64=( rax rcx rdx rbx rsp rbp rsi rdi r8 r9 r10 r11 r12 r13 r14 r15 );
+declare -xga r_64x=( "${r_64[@]:8}" )
+declare -xga r_x=( "${r_8x[@]}" "${r_16x[@]}" "${r_32x[@]}" "${r_64x[@]}" );
 #
 # Note that the smallers registers uses the same space as the bigger ones. changing the small will affect the bigger
 # These sub-registers are commonly used in instruction encoding and can be useful for optimizing code size.
@@ -100,8 +112,8 @@ declare -ga r_64=( rax rcx rdx rbx rsp rbp rsi rdi r8 r9 r10 r11 r12 r13 r14 r15
 #
 
 is_8bit_register(){
-	local v="$1";
-	if [[ "${v,,}" =~ ^(al|cl|dl|bl|spl|bpl|sil|dil|r8b|r9b|r10b|r11b|r12b|r13b|r14b|r15b)$ ]]; then
+	local v="${1,,}";
+	if [[ "${v}" =~ ^(al|cl|dl|bl|spl|bpl|sil|dil|r8b|r9b|r10b|r11b|r12b|r13b|r14b|r15b)$ ]]; then
 		return 0;
 	fi
 	return 1;
@@ -130,7 +142,6 @@ is_32bit_register(){
 	fi;
 	return 1;
 }
-
 is_64bit_extended_register(){
 	local v="$1";
 	if [[ "${v,,}" =~ r([8-9]|1[0-5]) ]]; then
@@ -162,6 +173,16 @@ is_64bit_register(){
 		return 0
 	fi;
 	return 1;
+}
+
+is_extended_register(){
+	local v="${1,,}";
+	[[ " ${r_x[*]} " =~ " $v " ]];
+}
+
+is_extended_register_ptr(){
+	local v="${1,,}";
+	is_ptr "$v" && is_extended_register "$(ptr "${v}")"
 }
 
 is_128bit_register(){
@@ -203,12 +224,7 @@ is_register(){
 }
 
 is_register_ptr(){
-	if [[ "$1" =~ ^\[.*\]$ ]]; then
-		if is_register "$(printf "%s" "$1" | tr -d '[]')"; then
-			return 0;
-		fi;
-	fi;
-	return 1;
+	[[ "$1" =~ ^\[(.*)\]$ ]] && is_register "${BASH_REMATCH[1]}"
 }
 
 get_8bit_reg(){

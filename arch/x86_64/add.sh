@@ -26,6 +26,7 @@ add(){
 	debug "begin: add $@"
 	local augend="$1";
 	local addend="$2";
+	local prefix opcode modrm imm32;
 	if is_register "$addend" && is_8bit_sint "$augend"; then
 		multiple_one_byte_operation add "$addend" "$augend";
 		return;
@@ -62,20 +63,35 @@ add(){
 		}
 		fi;
 	}
-	elif is_valid_number "$addend"; then
+	elif is_register "$augend" && is_valid_number "$addend"; then
 	{
-		if is_register "$augend"; then
-			if [ $addend -lt 128 ]; then
-			{
+		if [[ "$(number_bits "$addend")" -le 8 ]]; then
+		{
 				r=$(( MODRM_MOD_NO_EFFECTIVE_ADDRESS + MODRM_OPCODE_ADD + ${augend,,} ))
-				code="${code}${p}${ADD_SHORT}$(px $r $SIZE_8BITS_1BYTE)";
-				code="${code}$(px $addend $SIZE_8BITS_1BYTE)";
-				debug "asm: add $@; # $(echo -n "$code")"
+				code="${code}${p}${ADD_SHORT}$(px "$r" "$SIZE_8BITS_1BYTE")";
+				code="${code}$(px "$addend" "$SIZE_8BITS_1BYTE")";
+				debug "asm: add $*; # $(echo -n "$code")"
 				echo -n "${code}";
 				return;
-			}
-			fi;
+		}
 		fi;
+		if [[ "$augend" == rax ]]; then
+			prefix=$p
+			opcode=05; # 32bit addend
+			imm32="$(px "$addend" "$SIZE_32BITS_4BYTES")"
+			code="${prefix}${opcode}${imm32}";
+			debug "asm: add $*; # $(echo -n "$code")"
+			echo -n "${code}";
+			return
+		fi;
+		prefix=$p
+		opcode=81; # 32bit addend
+		modrm="$(px "$(( MODRM_MOD_NO_EFFECTIVE_ADDRESS | augend ))" "$SIZE_8BITS_1BYTE")";
+		imm32="$(px "$addend" "$SIZE_32BITS_4BYTES")"
+		code="${prefix}${opcode}${modrm}${imm32}";
+		debug "asm: add $*; # $(echo -n "$code")"
+		echo -n "${code}";
+		return;
 	}
 	else
 	{

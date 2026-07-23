@@ -21,54 +21,45 @@ import_bash <<-EOF
 	./multi_syntax.sh
 EOF
 
-rex(){
-	local r_m=$1;
-	local reg=$2;
-	if ! {
-		is_addr_ptr "$reg" || 
-		is_64bit_register "$r_m" ||
-		is_64bit_register "$reg" ||
-		is_8bit_extended_register "$r_m";
-	}; then
-		return;
-	fi;
-	local W=1;
-	local R=0;	# 1 if source is a register from r8 to r15
-	local X=0;
-	local B=0;	# 1 if target(base) is a register from r8 to r15
-	if is_64bit_extended_register "$r_m"; then
-		B=1;
-	fi;
-	if is_8bit_extended_register "$r_m"; then
-		R=1;
-	fi;
-	if is_8bit_extended_register "$reg" || { is_64bit_extended_register "$reg" && is_8bit_sint "$r_m"; }; then
-		B=1;
-	fi;
-	if is_8bit_extended_register "$r_m" && is_8bit_register "$reg" && ! is_8bit_extended_register "$reg"; then
-		W=0;
-		R=0;
-		B=0;
-	fi;
-	if { is_64bit_extended_register "$r_m" && is_8bit_sint "$reg"; }; then
-		R=0;
+# rex receives the r/m (first register or memory address) and reg (second register parameter)
+# and defines the prefix of the bytecode
+#
+# The REX output is 8 bits, the constant 0100 followed to 4 variables (1 bit each):
+# REX byte: 0100|W|R|X|B
+# Where
+# W: Promotes operation to 64-bit width (1) or keeps 32-bit (0)
+# R: Extends the ModR/M reg field to access registers r8–r15
+# X: Extends the SIB index field to access r8–r15
+# B: Extends the ModR/M r/m field to access r8–r15
+#
+rex() {
+	local r_m="$1"  # ModR/M r/m field
+	local reg="$2"  # ModR/M reg field
+	
+	local W=0 R=0 X=0 B=0
+
+	# Only set if 64-bit operand is explicitly required
+	if is_64bit_register "$r_m" || is_64bit_register "$reg" || is_64bit_extended_register_ptr "$r_m" || is_64bit_extended_register_ptr "$reg"; then
+		W=1
 	fi
-	if is_64bit_extended_register "$reg"; then
-		R=1;
-	fi;
-	if is_64bit_register "$r_m" && ! is_64bit_extended_register "$r_m"; then
-		if is_64bit_extended_register "$reg" && ! is_64bit_extended_register_ptr "$reg"; then
-			R=1;
-		else
-			R=0;
-		fi;
-	fi;
-	if is_64bit_extended_register_ptr "$reg"; then
-		B=1;
-	fi;
-	if is_64bit_extended_register "$r_m" && ! is_64bit_extended_register_ptr "$r_m" && is_register_ptr "$reg" && ! is_64bit_extended_register_ptr "$reg"; then
-		R=1;
-		B=0;
-	fi;
-	printf "%02x" $(( (2#0100 << 4) + (W<<3) + (R<<2) + (X<<1) + B ));
+
+	if is_extended_register "$reg" || { is_extended_register "$r_m" && is_register_ptr "$reg"; }; then
+		R=1
+	fi
+
+	# Extends SIB index - requires parsing memory string
+	if is_ptr "$r_m" && is_extended_index "$r_m"; then
+		X=1
+	fi
+
+	# Extends 'r/m' field
+	if {
+		{ is_extended_register "$r_m" || is_extended_register_ptr "$r_m"; } ||
+		{ is_extended_register_ptr "$reg" && ! is_register_ptr "$r_m"; }
+	} && ! { is_extended_register "$r_m" && is_register_ptr "$reg" && ! is_extended_register_ptr "$reg"; };
+	then
+		B=1
+	fi
+	
+	printf "%02x" $(( 2#0100<<4 | W<<3 | R<<2 | X<<1 | B ))
 }
