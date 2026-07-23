@@ -37,7 +37,7 @@ test_logger(){
 	echo -e "$c$1$rc:" "${@:2}";
 }
 ok(){
-	test_logger ok "[$1] == [${2,,ii}]";
+	[ -v VERBOSE ] && test_logger ok "[$1] == [${2,,ii}]";
 }
 err(){
 	local given="$1";

@@ -15,7 +15,8 @@ set_op_a(){
 set_op_b(){
 	local v=${r_64[$1]};
 	iterate 0 "[ \$1 -lt ${#r_64[@]} ]" "set_op_a $v";
-	test_op_reg_u8 and $v;
+	test_op_reg_s8 and $v;
+	test_op_reg_s32 and $v;
 }
 
 run(){

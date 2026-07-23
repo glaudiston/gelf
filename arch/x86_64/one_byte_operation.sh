@@ -6,6 +6,7 @@ import_bash <<-EOF
 	./prefix.sh
 EOF
 
+# one byte are few ones like opcode 31 that does not have nothing after the modrm
 one_byte_operation(){
 	local op="$1";
 	local v1="$3";
@@ -19,5 +20,5 @@ one_byte_operation(){
 		c="$c${modrm}";
 	fi;
 	printf "${c}";
-	debug "asm: $@; # $c";
+	debug "asm: $*; # $c";
 }

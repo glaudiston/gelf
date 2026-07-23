@@ -10,7 +10,7 @@ import_bash <<-EOF
 	./../../logger/bash/logger.sh
 	./../../encoding.sh
 	./../../number.sh
-	./test_asm.sh
+	./multiple_one_byte_operations.sh
 EOF
 # CMP
 cmp(){
@@ -20,29 +20,29 @@ cmp(){
 	local mod_rm="";
 	local code="";
 	code="${code}$(prefix "$v1" "$v2")";
-	debug "cmp $@..."
+	debug "cmp $*..."
 	if is_8bit_register "$v1"; then
 	{
 		opcode="38";
 		if is_8bit_register "$v2"; then
 		{
-			mod_rm="$(px $((MODRM_MOD_NO_EFFECTIVE_ADDRESS + (v2 << 3) + v1 )) $SIZE_8BITS_1BYTE)";
+			mod_rm="$(px "$((MODRM_MOD_NO_EFFECTIVE_ADDRESS + (v2 << 3) + v1 ))" "$SIZE_8BITS_1BYTE")";
 			code="${code}${opcode}${mod_rm}";
 			echo -en "$code";
-			debug "asm: cmp $@; # $code";
+			debug "asm: cmp $*; # $code";
 			return;
 		}
 		fi;
 		if is_valid_number "$v2"; then
 		{
-			if [ "$v2" -lt 256 ]; then # TODO not sure if 127 or 256
+			if is_8bit_sint "$v2"; then
 			{
-				imm8="$(px "$v2" $SIZE_8BITS_1BYTE)"; # immediate value with 8 bits
+				imm8="$(px "$v2" "$SIZE_8BITS_1BYTE")"; # immediate value with 8 bits
 				if [ "$v1" = "al" ]; then
 				{
-					code="${code}3c$(px "${imm8}" $SIZE_8BITS_1BYTE)"; # only valid to %al: cmp %al, imm8;
+					code="${code}3c$(px "${imm8}" "$SIZE_8BITS_1BYTE")"; # only valid to %al: cmp %al, imm8;
 					echo -en "$code";
-					debug "asm: cmp $@; # $code";
+					debug "asm: cmp $*; # $code";
 					return;
 				}
 				fi;
@@ -74,9 +74,9 @@ cmp(){
 				#  4880FE00          o64 cmp sil,0x0
 				#  4880FF00          o64 cmp dil,0x0
 				#
-				opcode="$( px $(( 16#f8 + v1 )) $SIZE_8BITS_1BYTE)";
+				opcode="$( px "$(( 16#f8 + v1 ))" "$SIZE_8BITS_1BYTE")";
 				code="${code}80${opcode}${imm8}";
-				debug "asm: cmp $@; # $code";
+				debug "asm: cmp $*; # $code";
 				echo -en "$code";
 				return;
 			}
@@ -90,36 +90,44 @@ cmp(){
 	{
 		if is_valid_number "$v2"; then
 		{
-			if [ "$v2" -gt -128 -a "$v2" -lt 128 ]; then
+			if is_8bit_sint "$v2"; then
 			{
 				# | REX.W + 83 /7 ib | CMP r/m64, imm8 | MI | Valid | N.E. | Compare imm8 with r/m64. |
 				# /7 means modrm.reg = 7; this is why we use MODRM_OPCODE_CMP
-				local cmp=83; # only if most significant bit(bit 7) of the next byte is 1 and depending on opcode(bits 6-3) And ModR/M opcode
-				# v1 here is the 64bit base register and should go in the modrm.rm part.(last 3 bits)
-				local opcode=$cmp; # hex cmp opcode=83
-				# code="$(printf "%02x" $(( (2#0100 << 4) + (W<<3) + (R<<2) + (X<<1) + B )))";
-				local cmp_v1="${cmp}$(px $(( MODRM_MOD_NO_EFFECTIVE_ADDRESS + MODRM_OPCODE_CMP + v1 )) $SIZE_8BITS_1BYTE)";
-				# we need to call rex again because here we are using intel syntax (imm8 later)
-				code="$code${cmp_v1}$(px $v2 $SIZE_8BITS_1BYTE)";
-				local rv=$(echo -en "${code}");
-				debug "asm: cmp $@; # $rv"
-				echo -n "$rv";
+				code="$(multiple_one_byte_operation cmp "$v1" "$v2")"
+				printf %s "$code";
+				debug "asm: cmp $*; # $code"
 				return;
 			}
 			fi;
-			b1="39";
+			if [ "$v1" == "rax" ]; then
+				prefix="$(prefix "$v1" "$v2")"
+				opcode=3d
+				imm32="$(px "$v2" "$SIZE_32BITS_4BYTES")"
+				code="${prefix}${opcode}${imm32}";
+				printf %s "${code}";
+				debug "asm: cmp $*; # $code";
+				return;
+			fi
 			b2="$(( 16#04 + (v1 << 3) ))";
-			b3="25";
-			code="${code}${b1}${b2}${b3}"; # cmp rax v4;
-			debub "asm: cmp $@; # $code";
-			echo $code;
+			prefix=$(prefix "$v1" "$v2");
+			opcode=81
+			local op_idx;
+			op_idx="$(one_byte_op_map_idx cmp)";
+			modrm="$(px "$(( MODRM_MOD_NO_EFFECTIVE_ADDRESS | op_idx << 3| v1))" "${SIZE_8BITS_1BYTE}")"
+			imm32="$(px "$v2" "$SIZE_32BITS_4BYTES")"
+			code="${prefix}${opcode}${modrm}${imm32}"; # cmp rax v4;
+			printf %s "${code}";
+			debug "asm: cmp $*; # $code";
+			return;
 		}
 		fi;
 		if is_64bit_register "$v2"; then
 			local b1="39";
-			local b2="$(px $((MODRM_MOD_NO_EFFECTIVE_ADDRESS + (v2 << 3) + v1 )) $SIZE_8BITS_1BYTE)";
+			local b2;
+			b2="$(px "$((MODRM_MOD_NO_EFFECTIVE_ADDRESS + (v2 << 3) + v1 ))" "$SIZE_8BITS_1BYTE")";
 			local rv="${code}${b1}${b2}";
-			debug "asm: cmp $@; # $rv";
+			debug "asm: cmp $*; # $rv";
 			echo -n "$rv";
 			return;
 		fi;

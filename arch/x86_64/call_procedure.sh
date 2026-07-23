@@ -1,4 +1,6 @@
 #!/bin/bash
+. "$(dirname "$(realpath "${BASH_SOURCE[0]}")")/../../pragma_once/bash/import_bash.sh";
+import_bash ./multiple_one_byte_operations.sh
 
 # call procedure
 # Intel Ref: Table B-15.
@@ -54,7 +56,9 @@ function call_procedure()
 	error "call not implemented for this address size: CURRENT: $CURRENT, TARGET: $TARGET, RELATIVE: $RELATIVE";
 
 	FAR_CALL="9a";
-	MODRM="$(px $(( MODRM_MOD_NO_EFFECTIVE_ADDRESS + MODRM_OPCODE_SUB + rsp )) $SIZE_8BITS_1BYTE)";
+	local modrm_opcode;
+	modrm_opcode="$(one_byte_op_map_idx sub)"
+	MODRM="$(px $(( MODRM_MOD_NO_EFFECTIVE_ADDRESS | modrm_opcode | rsp )) "$SIZE_8BITS_1BYTE")";
 	addr="$(( 16#000100b8 ))"
 	BYTES="e8${CALL_ADDR}";
 	printf "${BYTES}";
