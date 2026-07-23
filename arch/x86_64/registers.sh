@@ -140,8 +140,8 @@ is_64bit_extended_register(){
 }
 
 is_64bit_extended_register_ptr(){
-	if [[ "$1" =~ ^\(.*\)$ ]]; then
-		if is_64bit_extended_register "$(printf "%s" "$1" | tr -d '()')"; then
+	if [[ "$1" =~ ^\[.*\]$ ]]; then
+		if is_64bit_extended_register "$(printf "%s" "$1" | tr -d '[]')"; then
 			return 0;
 		fi;
 	fi;
@@ -203,8 +203,8 @@ is_register(){
 }
 
 is_register_ptr(){
-	if [[ "$1" =~ ^\(.*\)$ ]]; then
-		if is_register $(printf "$1" | tr -d '()'); then
+	if [[ "$1" =~ ^\[.*\]$ ]]; then
+		if is_register "$(printf "%s" "$1" | tr -d '[]')"; then
 			return 0;
 		fi;
 	fi;

@@ -61,6 +61,50 @@ test_op_reg_reg(){
 	ok "$*" "${got}";
 }
 
+test_op_ptrreg_reg() {
+	local got;
+	got="$("$1" "[$2]" "$3" 2>/dev/null)";
+	local expected;
+	expected="$(nasm_hex<<<"$1 [$2], $3")";
+	if [ "${got,,}" != "${expected,,}" ]; then
+		local given;
+		given="$1 [$2] $3";
+		err "$given" "$expected" "$got":
+		return;
+	fi;
+	ok "$1 [$2] $3" "${got}";
+}
+
+test_op_reg_ptrreg() {
+	local got;
+	got="$("$1" "$2" "[$3]" 2>/dev/null)";
+	local expected;
+	expected="$(nasm_hex<<<"$1 $2, [$3]")";
+	if [ "${got,,}" != "${expected,,}" ]; then
+		local given;
+		given="$1 $2 [$3]";
+		err "$given" "$expected" "$got":
+		return;
+	fi;
+	ok "$1 $2 [$3]" "${got}";
+}
+
+test_op_ptrsbits_reg(){
+	local ubits="$2";
+	[ "$ubits" == 64 ] && ubits=63; # bash does not support 64 so fallback to 63bit
+	local r=$RANDOM$RANDOM$RANDOM$RANDOM
+	local uval=$(( r % ( 2 ** (ubits-1) ) * (RANDOM % 2 ? 1 : -1) ));
+	local got;
+	got="$("$1" "[$uval]" "$3" 2>>/tmp/gelf.log)";
+	local expected;
+	expected="$(nasm_hex<<<"$1 [abs $uval], $3")";
+	if [ "${got,,}" != "${expected,,}" ]; then
+		local given="$1 [$uval] $3";
+		err "$given" "$expected" "$got that is $(nasm_code "$got")";
+		return;
+	fi;
+	ok "$1 [$uval] $3" "${got}";
+}
 test_op_ubits_reg(){
 	local ubits="$2";
 	[ "$ubits" == 64 ] && ubits=63; # bash does not support 64 so fallback to 63bit
@@ -71,14 +115,17 @@ test_op_ubits_reg(){
 	local expected;
 	expected="$(nasm_hex<<<"$1 $uval, $3")";
 	if [ "${got,,}" != "${expected,,}" ]; then
-		local given="$1 $2 $uval";
+		local given="$1 $uval $3";
 		err "$given" "$expected" "$got that is $(nasm_code "$got")";
 		return;
 	fi;
-	ok "$1 $2 $uval" "${got}";
+	ok "$1 $uval $3" "${got}";
 }
 test_op_u8_reg(){
 	test_op_ubits_reg $1 8 $2;
+}
+test_op_ptrs32_reg(){
+	test_op_ptrsbits_reg $1 32 $2;
 }
 test_op_u32_reg(){
 	test_op_ubits_reg $1 32 $2;

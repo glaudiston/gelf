@@ -3,14 +3,10 @@
 . "$(dirname "$(realpath "${BASH_SOURCE[0]}")")/../../pragma_once/bash/import_bash.sh";
 import_bash ./test_asm.sh;
 
-test_add_reg_reg(){
-	test_op_reg_reg add $@;
-}
-
 set_addend(){
 	local augend=$1;
 	local addend=${r_64[$2]};
-	test_add_reg_reg $augend $addend;
+	test_op_reg_reg add $augend $addend;
 }
 
 set_augend(){

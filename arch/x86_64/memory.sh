@@ -10,17 +10,18 @@ set -eou pipefail
 import_bash ./mmap.sh
 
 is_addr(){
-	is_32bit_uint $1;
+	is_32bit_sint $1;
 }
 
 is_addr_ptr() {
-	if ! [[ "$1" =~ ^\(.*\)$ ]]; then
-		return 1 # no
+	if ! [[ "$1" =~ ^\[.*\]$ ]]; then
+		return 1; # no
 	fi;
 	# resolve pointer address value
-	local v=$( echo $1 | tr -d '()' );
-	is_32bit_uint $v;
+	local v=$( echo $1 | tr -d '[]' );
+	is_32bit_sint $v;
 }
+
 sys_mprotect()
 {
 	mov 10 rax;
@@ -28,3 +29,4 @@ sys_mprotect()
 	mov $2 rsi; # length size
 	mov $3 rdx; # protection flags
 }
+
