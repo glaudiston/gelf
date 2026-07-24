@@ -48,7 +48,7 @@ rex() {
 	fi
 
 	# Extends SIB index - requires parsing memory string
-	if is_ptr "$r_m" && is_extended_index "$r_m"; then
+	if is_ptr "$r_m" `# && is_extended_index "$r_m"`; then
 		X=1
 	fi
 

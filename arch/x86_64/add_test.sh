@@ -11,7 +11,7 @@ set_addend(){
 
 set_augend(){
 	local v=${r_64[$1]};
-	iterate $1 "[ \$1 -lt ${#r_64[@]} ]" "set_addend $v";
+	iterate "$1" "[ \$1 -lt ${#r_64[@]} ]" "set_addend $v";
 	test_op_reg_s8 add "$v";
 	test_op_reg_s32 add "$v";
 }

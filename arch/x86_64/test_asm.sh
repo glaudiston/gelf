@@ -23,8 +23,8 @@ asm_hex()
 }
 
 declare -gA colors=(
-	[ok]=$'\033[32m' 
-	[error]=$'\033[31m'
+	[PASS]=$'\033[32m' 
+	[FAIL]=$'\033[31m'
 	[reset]=$'\033[0m'
 )
 test_logger(){
@@ -37,13 +37,15 @@ test_logger(){
 	echo -e "$c$1$rc:" "${@:2}";
 }
 ok(){
-	[ -v VERBOSE ] && test_logger ok "[$1] == [${2,,ii}]";
+	if [[ -v VERBOSE ]]; then
+		test_logger PASS "$1; # ${2,,ii}";
+	fi;
 }
 err(){
 	local given="$1";
 	local expected="${2,,}";
 	local got="${3,,}";
-	test_logger error "given [$given] expected [${expected}] but got [${got}]";
+	test_logger FAIL "given [$given] expected [${expected}] but got [${got}]";
 	return 1;
 }
 

@@ -28,7 +28,7 @@ add(){
 	local addend="$2";
 	local prefix opcode modrm imm32;
 	local modrm_opcode;
-	modrm_opcode="$(one_byte_op_map_idx add)"
+	modrm_opcode="$(multiple_operation_map_idx add)"
 	if is_register "$addend" && is_8bit_sint "$augend"; then
 		multiple_operation add "$addend" "$augend";
 		return;

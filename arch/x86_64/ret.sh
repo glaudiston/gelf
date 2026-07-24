@@ -20,7 +20,7 @@ function ret()
 	if [ "$symbol_value" != "" ]; then
 		mov rdi ${symbol_value:=0};
 		if [ "$symbol_type" != $SYMBOL_TYPE_HARD_CODED ]; then
-			mov rdi "(rdi)";
+			mov rdi [rdi];
 		fi;
 	fi;
 	# run RET

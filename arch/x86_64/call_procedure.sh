@@ -1,6 +1,4 @@
 #!/bin/bash
-. "$(dirname "$(realpath "${BASH_SOURCE[0]}")")/../../pragma_once/bash/import_bash.sh";
-import_bash ./multiple_one_byte_operations.sh
 
 # call procedure
 # Intel Ref: Table B-15.

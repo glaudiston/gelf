@@ -46,6 +46,7 @@ mov(){
 		return;
 	}
 	fi;
+	local mov_resolve_address="8b";
 	if is_register "$v1"; then
 	{
 		if is_register_ptr "$v2"; then
@@ -58,7 +59,6 @@ mov(){
 			prefix=$(prefix "$v1" "$v2");
 			local v2_r;
 			v2_r=$( echo $v2 | tr -d '[]' );
-			local mov_resolve_address="8b";
 			opcode="${mov_resolve_address}";
 			local mod_reg=$(( v1 << 3 )); # 000 0
 			if is_register "$v1"; then
@@ -92,6 +92,8 @@ mov(){
 		fi;
 		if is_addr_ptr "$v2"; then
 		{
+			local v2_r;
+			v2_r=$(ptr "$v2")
 			if is_64bit_register "$v1" && is_32bit_uint "$v2_r"; then
 			{
 				local opcode="${mov_resolve_address}";

@@ -176,7 +176,7 @@ get_arg()
 	printf "%s" "$init_argsptr";
 
 	add rsi 8;		# adding 8 bytes we are expected to reach a valid empty mmap space to set the copied argument data
-	mov "$arg_ptr" rsi;	# store rsi ptr value inside the target addr, then in the first 8 mmap bytes we have the ptr to the last parsed argument
+	mov ["$arg_ptr"] rsi;	# store rsi ptr value inside the target addr, then in the first 8 mmap bytes we have the ptr to the last parsed argument
 	mov [rax] rsi;	# set the args_mmap_ptr value to the position where to write the argument;
 	local func_arg;
 	func_arg=$({
@@ -214,7 +214,7 @@ get_arg()
 	# but it should be 64 bit aligned
 	or rdi 7; # set the last 3 bits to on (7i = 111b);
 	inc rdi;  # the next byte is aligned and free;
-	mov "$args_mmap_ptr" rdi;	# ensure the first 8 mmap bytes have the ptr to the first free mmap position
+	mov ["$args_mmap_ptr"] rdi;	# ensure the first 8 mmap bytes have the ptr to the first free mmap position
 }
 
 # The RSP (Register Stack Pointer) integer value is by convention the argc(argument count)
@@ -236,15 +236,11 @@ get_arg_count()
 	# because in inner functions I will be able to recover it using a variable
 	#
 	# # TODO HOW TO ALLOCATE A DYNAMIC VARIABLE IN MEMORY?
-	# 	This function should receive the variable position (hex) to set
+	# 	This function should receive the variable position [hex] to set
 	# 	This function should copy the pointer value currently set at rsp and copy it to the address
 	local addr="$1"; # memory where to put the argc count
-	local code="";
-	code="${code}$(mov r14 rsp)";
-	code="${code}$(add r14 r15)"; # this allows set r15 as displacement and use this code in function get args
-	code="${code}$(mov r14 "(r14)")";
-	debug a addr="[$addr]"
-	code="${code}$(mov "$addr" "r14")";
-	debug v addr="[$addr]"
-	echo -en "${code}";
+	mov r14 rsp;
+	add r14 r15; # this allows set r15 as displacement and use this code in function get args
+	mov r14 [r14];
+	mov ["$addr"] r14;
 }

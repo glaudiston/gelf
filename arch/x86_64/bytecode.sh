@@ -297,7 +297,7 @@ function get_read_size()
 	local target_register="$2";
 	local st_size=$((16#30)); # in the stuct stat the offset 0x30 is where we have the file size;
 	mov rsi $(( stat_addr + st_size ));
-	mov rsi '(rsi)';
+	mov rsi [rsi];
 	cmp rsi 0; # 64bit cmp rsi, 00
 	local default_value_code="$(mov rsi "$PAGESIZE")";
 	jg $(xcnt<<<$default_value_code);
@@ -346,7 +346,7 @@ function ret()
 	if [ "$symbol_value" != "" ]; then
 		mov rdi ${symbol_value:=0};
 		if [ "$symbol_type" != $SYMBOL_TYPE_HARD_CODED ]; then
-			mov rdi "(rdi)";
+			mov rdi [rdi];
 		fi;
 	fi;
 	# run RET
@@ -361,7 +361,7 @@ function system_call_exit()
 	code="${code}$(mov rax $SYS_EXIT)";
 	code="${code}$(mov rdi ${exit_code:=0})";
 	if [ "$symbol_type" != $SYMBOL_TYPE_HARD_CODED ]; then
-		code="${code}$(mov rdi "(rdi)")";
+		code="${code}$(mov rdi [rdi])";
 	fi;
 	code="${code}$(syscall)"
 	echo -n "${code}" | xdr | base64 -w0;
@@ -401,7 +401,7 @@ function system_call_dup2()
 	local new_fd="$2";
 	mov rax "${SYS_DUP2}";
 	mov rdi "${old_fd_addr}";
-	mov rdi "(rdi)";
+	mov rdi [rdi];
 	mov rsi "${new_fd}";
 	syscall;
 }
@@ -413,23 +413,22 @@ set_increment()
 	local value=$2;
 	local value_type=$3;
 	mov rdx "$addr";
-	mov rdx "(rdx)";
+	mov rdx [rdx];
 	if [ "$value" == 1 ]; then
 		inc rdx;
 	elif is_valid_number "$value" && [ "$value_type" == $SYMBOL_TYPE_HARD_CODED ]; then
 		add rdx "${value}";
 	elif is_valid_number "$value" && [ "$value_type" == $SYMBOL_TYPE_DYNAMIC ]; then
 		mov rsi "${value}";
-		mov rsi "(rsi)";
+		mov rsi [rsi];
 		add rdx "rsi";
 	else
 		mov rsi "${value}";
-		mov rsi "(rsi)";
-		mov rsi "(rsi)";
+		mov rsi [rsi];
+		mov rsi [rsi];
 		add rdx rsi;
 	fi;
 	mov "$addr" rdx;
-	echo -en "${code}";
 }
 
 init_bloc(){
