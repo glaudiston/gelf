@@ -24,12 +24,12 @@ Here are some key concepts in the assembly language:
 
 GELF uses the following instructions:
 
-*   `MOV` moves data from one register to another.
-*   `ADD` adds two values.
-*   `SUB` subtracts one value from another.
-*   `MUL` multiplies two values.
-*   `DIV` divides one value by another.
-*   `JMP` jumps unconditionally to a target address.
+*   `mov` moves data from one register to another.
+*   `add` adds two values.
+*   `sub` subtracts one value from another.
+*   `mul` multiplies two values.
+*   `div` divides one value by another.
+*   `jml` jumps unconditionally to a target address.
 
 ### Registers
 

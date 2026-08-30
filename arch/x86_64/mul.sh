@@ -6,12 +6,12 @@ import_bash <<-EOF
 EOF
 # signed integer multiply
 imul(){
-	# IMUL_rdx_rax="$(prefix rdx rax | xd2esc)\x0f\xaf\xc2";
-	local multiplier="$1";
-	local multiplicand="$2";
-	local p="$(prefix "$multiplicand" "$multiplier")";
+	local prefix opcode modrm sib displacement imm;
+	local multiplicand="$1";
+	local multiplier="$2";
 	if is_valid_number "$multiplier"; then
-		# 480fafc2	imul %rdx,%rax
+	{
+		local p="$(prefix "$multiplicand" "$multiplier" 1)";
 		local b1="0f";
 		local b2="af";
 		local b3="$(px $(( MODRM_MOD_NO_EFFECTIVE_ADDRESS + (multiplier << 3) + multiplicand)) $SIZE_8BITS_1BYTE)";
@@ -19,14 +19,16 @@ imul(){
 		echo -n "$c";
 		debug "imul $@; # $c"
 		return;
+	}
 	fi;
-	if is_register "$multiplier"; then
-		if is_valid_number "$multiplicand"; then
-			if is_32bit_sint "$multiplicand"; then
+	if is_register "$multiplicand"; then
+		if is_valid_number "$multiplier"; then
+		{
+			if is_32bit_sint "$multiplier"; then
 				local code;
 				local prefix opcode modrm imm32;
 				prefix="$p";
-				opcode=69
+				opcode=69; # hex value
 				modrm="$(px "$(( MODRM_MOD_NO_EFFECTIVE_ADDRESS | multiplier))" "$SIZE_8BITS_1BYTE")"
 				imm32="$(px "$multiplicand" "$SIZE_32BITS_4BYTES")"
 				code="${prefix}${opcode}${modrm}${imm32}"
@@ -44,14 +46,18 @@ imul(){
 			echo -n "$c";
 			debug "imul $@; # $c"
 			return;
+		}
 		fi;
-		if is_register "$multiplicand"; then
-			local prefix="$p";
-			local opcode="0faf";
-			local modrm="$(px $(( MODRM_MOD_NO_EFFECTIVE_ADDRESS + (multiplier << 3) + multiplicand )) $SIZE_8BITS_1BYTE)";
+		if is_register "$multiplier"; then
+		{
+			prefix="$(prefix "$multiplier" "$multiplicand" "1" )"; # we are using complex opcode
+			opcode="0faf";
+			modrm="$(px $(( MODRM_MOD_NO_EFFECTIVE_ADDRESS + (multiplicand << 3) + multiplier )) $SIZE_8BITS_1BYTE)";
 			printf "${prefix}${opcode}${modrm}"
 			return;
+		}
 		fi;
 	fi;
+	# 480fafc2	imul %rdx,%rax
 	error not implemented: imul $@
 }

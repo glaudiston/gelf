@@ -57,7 +57,7 @@ test_op_reg_reg(){
 	if [ "${got,,}" != "${expected,,}" ]; then
 		local given;
 		given="$*";
-		err "$given" "$expected" "$got":
+		err "$given" "$expected" "$got";
 		return;
 	fi;
 	ok "$*" "${got}";

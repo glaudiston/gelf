@@ -70,7 +70,7 @@ EOF
 # When a process is started by the OS, it selects some physical memory space according with the "Program Hearders"(that should be called segment headers); And when the process runs it is in a user mode that only see the virtual memory; So each process has his own 0x010078;
 #
 # In program segments we can set if a virtual memory block is Read, Writable, Executable and the memory block size;
-segments=( es cs ss ds fs gs segr6 segr7 )
+declare -agx segments=( es cs ss ds fs gs segr6 segr7 )
 #The 16-Bit Segment Registers are:
 #CS	Code Segment
 #DS	Data Segment

@@ -1,3 +1,6 @@
+#!/bin/bash
+set -euo pipefail
+. "$(dirname "$(realpath "${BASH_SOURCE[0]}")")/../../pragma_once/bash/import_bash.sh";
 
 function push(){
 	local reg="$1";

@@ -6,18 +6,18 @@ import_bash <<-EOF
 	test_asm.sh
 EOF
 
-set_multiplicand(){
-	local multiplier=$1;
-	local multiplicand="${r_64[$2]}";
-	test_op_reg_reg imul "$multiplier" "$multiplicand";
-}
 set_multiplier(){
+	local multiplicand=$1;
+	local multiplier="${r_64[$2]}";
+	test_op_reg_reg imul "$multiplicand" "$multiplier";
+}
+set_multiplicand(){
 	local v=${r_64[$1]};
-	iterate 0 "[ \$1 -lt ${#r_64[@]} ]" "set_multiplicand $v";
+	iterate 0 "[ \$1 -lt ${#r_64[@]} ]" "set_multiplier $v";
 	test_op_reg_s8 imul "$v"
 	test_op_reg_s32 imul "$v"
 }
 run(){
-	iterate 0 "[ \$1 -lt ${#r_64[@]} ]" set_multiplier;
+	iterate 0 "[ \$1 -lt ${#r_64[@]} ]" set_multiplicand;
 }
 run
