@@ -33,35 +33,39 @@ EOF
 # B: Extends the ModR/M r/m field to access r8–r15
 #
 rex() {
-	local r_m="$1"  # ModR/M r/m field
-	local reg="$2"  # ModR/M reg field
+	# source and targets normally are r_m and reg for most operations (e.g. add, or, mov),
+	# but it can be inversed depending on operation (e.g. mul)
+	local target="$1";	# ModR/M r/m field
+	local source="$2";	# ModR/M reg field
+	local complex_opcode="${3:-0}";	# for complex instructions like imul (0faf) we need a different set of rules for R
 	
-	local W=0 R=0 X=0 B=0
+	local W=0 R=0 X=0 B=0;
 
 	# Only set if 64-bit operand is explicitly required
-	if is_64bit_register "$r_m" || is_64bit_register "$reg" || is_64bit_extended_register_ptr "$r_m" || is_64bit_extended_register_ptr "$reg"; then
+	if is_64bit_register "$target" || is_64bit_register "$source" || is_64bit_extended_register_ptr "$target" || is_64bit_extended_register_ptr "$source"; then
 		W=1
 	fi
 
-	if is_extended_register "$reg" || { is_extended_register "$r_m" && is_register_ptr "$reg"; }; then
+	if is_extended_register "$source" || 
+		{ is_extended_register "$target" && { is_register_ptr "$source" || { [ "$complex_opcode" == "1" ] && is_valid_number "$source"; }; }; }; then
 		R=1
 	fi
 
 	# Extends SIB index - requires parsing memory string
-	if is_ptr "$r_m" `# && is_extended_index "$r_m"`; then
+	if is_ptr "$target" && !is_register "$target"; then
 		X=1
 	fi
 
 	# Extends 'r/m' field
 	if {
-		{ is_extended_register "$r_m" || is_extended_register_ptr "$r_m"; } ||
-		{ is_extended_register_ptr "$reg" && ! is_register_ptr "$r_m"; }
-	} && ! { is_extended_register "$r_m" && is_register_ptr "$reg" && ! is_extended_register_ptr "$reg"; };
+		{ is_extended_register "$target" || is_extended_register_ptr "$target"; } ||
+		{ is_extended_register_ptr "$source" && ! is_register_ptr "$target"; }
+	} && ! { is_extended_register "$target" && is_register_ptr "$source" && ! is_extended_register_ptr "$source"; };
 	then
 		B=1
 	fi
 	
-	if [[ "$(( W + R + X + B ))" != 0 ]]; then
+	if [[ "$(( W | R | X | B ))" == 1 ]]; then
 		printf "%02x" $(( 2#0100<<4 | W<<3 | R<<2 | X<<1 | B ))
 	fi
 }

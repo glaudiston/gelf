@@ -36,8 +36,9 @@ EOF
 prefix(){
 	local src="$1";
 	local tgt="${2:-}";
+	local complex_opcode="${3:-0}"
 	if is_64bit_uint "$tgt" || is_addr_ptr "$tgt" || is_64bit_register "$src" || is_64bit_register "$tgt" || is_8bit_extended_register "$src"; then
-		rex "$src" "$tgt";
+		rex "$src" "$tgt" "${complex_opcode}";
 	fi;
 	if is_16bit_register "$src" || is_16bit_register "$tgt"; then
 		local osize="66";
