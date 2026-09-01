@@ -26,7 +26,8 @@ cmp(){
 		opcode="38";
 		if is_8bit_register "$v2"; then
 		{
-			mod_rm="$(px "$((MODRM_MOD_NO_EFFECTIVE_ADDRESS + (v2 << 3) + v1 ))" "$SIZE_8BITS_1BYTE")";
+			#mod_rm="$(px "$((MODRM_MOD_NO_EFFECTIVE_ADDRESS + (v2 << 3) + v1 ))" "$SIZE_8BITS_1BYTE")";
+			mod_rm=$(modrm "$v1" "$v2");
 			code="${code}${opcode}${mod_rm}";
 			echo -en "$code";
 			debug "asm: cmp $*; # $code";
@@ -116,7 +117,8 @@ cmp(){
 		if is_64bit_register "$v2"; then
 			local b1="39";
 			local b2;
-			b2="$(px "$((MODRM_MOD_NO_EFFECTIVE_ADDRESS + (v2 << 3) + v1 ))" "$SIZE_8BITS_1BYTE")";
+			#b2="$(px "$((MODRM_MOD_NO_EFFECTIVE_ADDRESS + (v2 << 3) + v1 ))" "$SIZE_8BITS_1BYTE")";
+			b2=$(modrm "$v2" "$v1");
 			local rv="${code}${b1}${b2}";
 			debug "asm: cmp $*; # $rv";
 			echo -n "$rv";

@@ -3,7 +3,7 @@ set -euo pipefail
 . "$(dirname "$(realpath "${BASH_SOURCE[0]}")")/../../pragma_once/bash/import_bash.sh";
 import_bash <<-EOF
 	../../types.sh
-	../system_call_linux_x86.sh
+	../../osabi/linux/system_call_linux_x86.sh
 	./registers.sh
 	./call_procedure.sh
 	./ret.sh
@@ -143,8 +143,8 @@ MOV_8BIT="\x88";
 MOV_RESOLVE_ADDRESS="\x8b"; # Replace the address pointer with the value pointed from that address
 # perform a bitwise AND using register
 test(){
-	local v1="$1";
-	local v2="$2";
+	local v1="${1:-}";
+	local v2="${2:-}";
 	v2="${v2:=$v1}";
 	local prefix="$(prefix "$v1" "$v2")";
 	local opcode="85";
@@ -328,8 +328,8 @@ function getpagesize()
 
 function ret()
 {
-	local symbol_value="$1";
-	local symbol_type="$2";
+	local symbol_value="${1:-}";
+	local symbol_type="${2:-}";
 	# Types for return
 	# Near return (same segment)
 	local NEAR_RET="c3";

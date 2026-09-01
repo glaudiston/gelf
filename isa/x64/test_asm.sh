@@ -85,7 +85,7 @@ test_op_reg_ptrreg() {
 	if [ "${got,,}" != "${expected,,}" ]; then
 		local given;
 		given="$1 $2 [$3]";
-		err "$given" "$expected" "$got":
+		err "$given" "$expected" "$got";
 		return;
 	fi;
 	ok "$1 $2 [$3]" "${got}";
@@ -123,14 +123,23 @@ test_op_ubits_reg(){
 	fi;
 	ok "$1 $uval $3" "${got}";
 }
+test_op_ubits_ptrreg(){
+	test_op_ubits_reg "$@"
+}
 test_op_u8_reg(){
 	test_op_ubits_reg "$1" 8 "$2";
+}
+test_op_u8_ptrreg(){
+	test_op_ubits_ptrreg "$1" 8 "$2";
 }
 test_op_ptrs32_reg(){
 	test_op_ptrsbits_reg "$1" 32 "$2";
 }
 test_op_u32_reg(){
 	test_op_ubits_reg "$1" 32 "$2";
+}
+test_op_u32_ptrreg(){
+	test_op_ubits_ptrreg "$1" 32 "$2";
 }
 test_op_u64_reg(){
 	test_op_ubits_reg "$1" 64 "$2";

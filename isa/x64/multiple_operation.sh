@@ -41,6 +41,7 @@ multiple_operation(){
 	fi;
 	op_idx="$(multiple_operation_map_idx "$op")"
 	modrm="$(px "$(( MODRM_MOD_NO_EFFECTIVE_ADDRESS | op_idx << 3 | v1 ))" "$SIZE_8BITS_1BYTE")";
+	#modrm=$(modrm "$v1" "$op_idx")
 	code="${prefix}${opcode}${modrm}${imm}"
 	printf %s "$code"
 	debug "asm: $op $v1 $v2; # $code"

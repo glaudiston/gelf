@@ -4,6 +4,7 @@ import_bash <<-EOF
 	../../types.sh
 	../../encoding.sh
 	../../number.sh
+	../../utils.sh
 	./registers.sh
 	./memory.sh
 EOF
@@ -27,15 +28,17 @@ declare -xg MODRM_MOD_NO_EFFECTIVE_ADDRESS=$(( 3 << 6 ));	# If mod is 11, the op
 declare -xg MODRM_SIB=$((4 << 3)); # 100
 
 modrm(){
-	local v1="$1";
-	local v2="$2";
+	local v1 v1_r v2 v2_r mod;
+	v1="$1";
+	v2="$2";
 	if is_ptr "$v1"; then
 	{
-		local v1_r=$( ptr "$v1" );
+		v1_r=$( ptr "$v1" );
 		local mod_reg=$(( v2 << 3 )); # 000 0
 		if is_register "$v1_r"; then
 			if is_register "$v2"; then
-				local modrm_v=$(( MODRM_MOD_DISPLACEMENT_REG_POINTER | mod_reg | v1_r ));
+				mod=$MODRM_MOD_DISPLACEMENT_REG_POINTER;
+				local modrm_v=$(( mod | mod_reg | v1_r ));
 				px "$modrm_v" $SIZE_8BITS_1BYTE;
 				return;
 			fi;
@@ -53,8 +56,9 @@ modrm(){
 	if is_valid_number "$v1"; then
 	{
 		local mod_reg=0;
-		modrm="$(px "$(( MODRM_MOD_NO_EFFECTIVE_ADDRESS | mod_reg | v2 ))" $SIZE_8BITS_1BYTE)";
-		printf "%s" "$modrm";
+		local modrm_v;
+		modrm_v="$(px "$(( MODRM_MOD_NO_EFFECTIVE_ADDRESS | mod_reg | v2 ))" $SIZE_8BITS_1BYTE)";
+		printf "%s" "$modrm_v";
 		return;
 	}
 	fi;
@@ -64,13 +68,15 @@ modrm(){
 		if is_ptr "$v2"; then	# resolve pointer address value
 		{
 			local v2_r="$(ptr "$v2")";
+			local modrm_v;
+			echo $v2_r
 			if is_register "$v2_r"; then
 				local mod_reg=$(( v1 << 3 )); # 000 0
 				if is_register "$v1"; then
-					modrm="$(px "$(( MODRM_MOD_DISPLACEMENT_REG_POINTER | mod_reg | v2_r ))" "$SIZE_8BITS_1BYTE")";
+					modrm_v="$(px "$(( MODRM_MOD_DISPLACEMENT_REG_POINTER | mod_reg | v2_r ))" "$SIZE_8BITS_1BYTE")";
 				fi;
 			fi;
-			printf "${modrm}";
+			printf "${modrm_v}";
 			return;
 		}
 		fi;

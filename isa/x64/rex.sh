@@ -19,6 +19,7 @@ import_bash <<-EOF
 	../../utils.sh
 	./registers.sh
 	./multi_syntax.sh
+	./memory.sh
 EOF
 
 # rex receives the r/m (first register or memory address) and reg (second register parameter)

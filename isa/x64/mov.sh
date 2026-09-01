@@ -13,6 +13,7 @@ import_bash <<-EOF
 	./multi_syntax.sh
 	./mod_rm.sh
 	./bytecode.sh
+	./sib.sh
 EOF
 
 MOV="$(( MODRM_MOD_DISPLACEMENT_32 ))";	# \x80 Move using memory as source (32-bit)
@@ -25,21 +26,14 @@ mov(){
 	local v2="$2";
 	if is_register_ptr "$v1" && is_64bit_register "$v2"; then
 	{
-		local prefix;
+		local prefix modrm sib opcode;
+		local v1_r mod;
 		prefix="$(rex "$1" "$2")";
-		local opcode=89;
-		local v1_r=$(echo "$v1" | tr -d '[]')
-		local mod=$(( v1_r == rbp ));
-		local modrm=$(px $(( MODRM_MOD_DISPLACEMENT_REG_POINTER | (mod << 6)| ($v2 << 3) | $v1_r )) $SIZE_8BITS_1BYTE);
-		local sib=$({
-		[ $(( v1_r )) == $(( rsp )) ] && {
-			local scale=0;
-			local base=$((v1_r));
-			local index=$((v1_r));
-			px "$(( (scale<<5) | (base<<3) | index ))" $SIZE_8BITS_1BYTE;
-		}
-		[ $(( v1_r )) == $(( rbp )) ] && printf 00;
-		});
+		opcode=89;
+		resolve_ptr v1_r "$v1"
+		mod=$(( v1_r == rbp ));
+		modrm=$(px $(( MODRM_MOD_DISPLACEMENT_REG_POINTER | (mod << 6)| ($v2 << 3) | $v1_r )) $SIZE_8BITS_1BYTE);
+		sib=$(sib "$v1");
 		local code="${prefix}${opcode}${modrm}${sib}";
 		printf "%s" "$code";
 		debug "asm: mov " "$@" "; # $code";
@@ -96,10 +90,12 @@ mov(){
 			v2_r=$(ptr "$v2")
 			if is_64bit_register "$v1" && is_32bit_uint "$v2_r"; then
 			{
+				local prefix;
+				prefix="$(prefix "$v1" "$v2")";
 				local opcode="${mov_resolve_address}";
 				local use_sib=$(( 1 << 2 ));
 				local mod=$((MODRM_MOD_DISPLACEMENT_REG_POINTER << 6));
-				local r=$((v2 << 3));
+				local r=$(( v1 << 3));
 				local m=$(( use_sib ));
 				local modrm_v=$(( mod | r | m ));
 				local modrm;
@@ -108,7 +104,7 @@ mov(){
 				local index="$((2#011 << 3))";
 				local base="$(( 2#001 ))";
 				local sib="$(( scale | index | base ))";
-				local displacement=$(px $v1_r $SIZE_32BITS_4BYTES);
+				local displacement=$(px $v2_r $SIZE_32BITS_4BYTES);
 				local instr="${prefix}${opcode}${modrm}${sib}${displacement}";
 				printf "${instr}";
 				debug "asm: mov $@; # $code";

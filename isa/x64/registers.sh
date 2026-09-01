@@ -1,4 +1,8 @@
 #!/bin/bash
+. "$(dirname "$(realpath "${BASH_SOURCE[0]}")")/../../pragma_once/bash/import_bash.sh";
+import_bash <<-EOF
+	../../utils.sh
+EOF
 # The x86-64 architecture has a total of 16 general-purpose registers,
 # which are named from R0 to r15. The first 8 registers,
 # R0 to R7, can be accessed using their traditional names (AX, BX, CX, DX, BP, SI, DI, and SP),
@@ -151,8 +155,10 @@ is_64bit_extended_register(){
 }
 
 is_64bit_extended_register_ptr(){
-	if [[ "$1" =~ ^\[.*\]$ ]]; then
-		if is_64bit_extended_register "$(printf "%s" "$1" | tr -d '[]')"; then
+	if is_register_ptr "$1"; then
+		local v;
+		resolve_ptr v $1;
+		if is_64bit_extended_register "$v"; then
 			return 0;
 		fi;
 	fi;
@@ -182,7 +188,9 @@ is_extended_register(){
 
 is_extended_register_ptr(){
 	local v="${1,,}";
-	is_ptr "$v" && is_extended_register "$(ptr "${v}")"
+	local rv;
+	resolve_ptr rv "$v";
+	is_ptr "$v" && is_extended_register "$rv"
 }
 
 is_128bit_register(){
@@ -229,6 +237,6 @@ is_register_ptr(){
 
 get_8bit_reg(){
 	local r="$1";
-	printf ${r_8bl[$((r))]};
+	printf ${r_8[$((r))]};
 }
 

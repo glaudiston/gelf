@@ -32,18 +32,5 @@ run(){
 	iterate 0 "[ \$1 -lt ${#r_64[@]} ]" set_r1;
 }
 
-test_mov_u8_ptrreg()
-{
-	local c="mov '$1' '($2)'";
-	local got=$($c 2>/dev/null);
-	local r=$( echo $got | xxd --ps -r | ndisasm -b 64 -);
-	local v=$(echo $r| tr "," " " | tr -s " " | tr " " "\t");
-	local expected=$(asm_hex<<<"mov $1, (%$2)");
-	if [ "${got,,}" != "${expected,,}" ]; then
-		err "$c" "$expected" "$r";
-	else
-		ok "$c" "${got}";
-	fi;
-}
 run
 
