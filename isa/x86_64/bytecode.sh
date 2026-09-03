@@ -254,12 +254,7 @@ inc(){
 # http://ref.x86asm.net/coder64.html
 . $(dirname $(realpath $BASH_SOURCE))/one_byte_operation.sh
 . $(dirname $(realpath $BASH_SOURCE))/or.sh
-
-xor(){
-	debug "asm: xor $@"
-	local op=31;
-	one_byte_operation "$op" "$1" "$2";
-}
+. $(dirname $(realpath $BASH_SOURCE))/xor.sh
 
 #MOV_DATA_rax="$(prefix v4 rax | xd2esc)\x0f\xb6\x06"; # movzbq (%rsi), %rax
 SHR_V1_rax="$(prefix v1 rax | xd2esc)\xc1\xe8";

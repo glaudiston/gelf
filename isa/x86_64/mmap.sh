@@ -63,10 +63,10 @@ function sys_mmap()
 	#
 	if is_64bit_register "$fd"; then
 		mov r10 $MAP_PRIVATE;
-		[ r8 != $fd ] && mov r8 $fd;
+		[ r8 != "$fd" ] && mov r8 "$fd";
 	elif [ "$fd" != "" ]; then
 		mov r10 $MAP_PRIVATE;
-		mov r8 $fd;
+		mov r8 "$fd";
 	else
 		# no file descriptor, so allocate a new empty block (/dev/zero)
 		mov r10 $(( MAP_PRIVATE + MAP_ANONYMOUS ));
@@ -76,29 +76,31 @@ function sys_mmap()
 	#    mov r9, 0     ; offset
 	xor r9 r9
 	#    mov rax, 9    ; mmap system call number
-	mov rax $SYS_MMAP;
+	mov rax "$SYS_MMAP";
 	syscall;
 	cmp rax 0
-	local retry_anon="$({
-		mov rax $SYS_MMAP;
+	local retry_anon;
+	retry_anon="$({
+		mov rax "$SYS_MMAP";
 		mov r10 $(( MAP_PRIVATE + MAP_ANONYMOUS ));
 		syscall;
 		cmp rax 0;
-		local read_code=$({
+		local read_code;
+		read_code=$({
 			# then we need to read the data to that location
 			push rax;
 			mov rdi r8;
 			system_call_read "" "rsi";
 			# now we need to store the rax to the st_size
 			local ptr_size=8;
-			mov $(( ptr + ptr_size + st_size )) rax; # update the stat size with the read byte count;
+			mov "[$(( ptr + ptr_size + st_size ))]" rax; # update the stat size with the read byte count;
 			pop rax;
 		});
-		jng $(xcnt<<<$read_code);
-		printf $read_code
+		jng "$(xcnt<<<"$read_code")";
+		printf %s "$read_code"
 	})";
-	jnl $(xcnt<<<$retry_anon);
-	printf $retry_anon;
-	mov $ptr rax;
+	jnl "$(xcnt<<<"$retry_anon")";
+	printf "%s" "$retry_anon";
+	mov "[$ptr]" rax;
 }
 

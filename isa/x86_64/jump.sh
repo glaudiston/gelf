@@ -85,9 +85,9 @@ jl(){
 	echo -n "${opcode}$(px "$v" 1)";
 }
 jnl(){
-	local v="$1";
-	local opcode="7d";
-	echo -n $opcode$(px "$v" 1 );
+	local jnl_v="$1";
+	local jnl_opcode="7d";
+	echo -n $jnl_opcode$(px "$jnl_v" 1 );
 }
 jge(){
 	jnl $@;
@@ -157,7 +157,7 @@ jump_if_equal(){
 function jump()
 {
 	local TARGET_ADDR="$1";
-	local CURRENT_ADDR="$2";
+	local CURRENT_ADDR="${2-0}";
 	local relative=$(( TARGET_ADDR - CURRENT_ADDR ))
 	# debug "jump: TARGET_ADDR:[$(printf %x $TARGET_ADDR)], CURRENT_ADDR:[$( printf %x ${TARGET_ADDR})]"
 	local OPCODE_SIZE=1;

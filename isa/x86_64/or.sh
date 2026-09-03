@@ -10,27 +10,30 @@ import_bash <<-EOF
 EOF
 or(){
 	debug "asm: or $@"
-	if is_register "$1" && is_8bit_sint "$2"; then
-		multiple_operation or "$1" "$2";
+	local a b;
+	a="${1:-}";
+	b="${2:-}";
+	if is_register "$a" && is_8bit_sint "$b"; then
+		multiple_operation or "$a" "$b";
 		return;
 	fi
-	if is_register "$1" && is_32bit_sint "$2"; then
+	if is_register "$a" && is_32bit_sint "$b"; then
 		if [[ "$1" == "rax" ]]; then
 			local code;
-			prefix=$(prefix "$1" "$2")
+			prefix=$(prefix "$a" "$b")
 			opcode=0d
-			imm32=$(px "$2" "$SIZE_32BITS_4BYTES")
+			imm32=$(px "$b" "$SIZE_32BITS_4BYTES")
 			code="${prefix}${opcode}${imm32}"
 			printf %s "$code";
 			return;
 		fi;
-		multiple_operation or "$1" "$2";
+		multiple_operation or "$a" "$b";
 		return;
 	fi
 	local op=09;
-	one_byte_operation "$op" "$1" "$2";
+	one_byte_operation "$op" "$a" "$b";
 }
 
 # accept args to the bash script, useful for debugging
-[ "$#" -gt 0 ] && or "$@" || :;
+[ "$#" -gt 1 ] && or "$@" || :;
 

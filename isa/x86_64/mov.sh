@@ -36,7 +36,7 @@ mov(){
 		sib=$(sib "$v1");
 		local code="${prefix}${opcode}${modrm}${sib}";
 		printf "%s" "$code";
-		debug "asm: mov " "$@" "; # $code";
+		debug "asm: mov $1 $2; # $code";
 		return;
 	}
 	fi;
@@ -70,19 +70,21 @@ mov(){
 			fi;
 			local code="${prefix}${opcode}${modrm}${displacement_8bit}${sib}"
 			printf "%s" "${code}";
-			debug "asm: mov " "$@" "; # $code";
+			debug "asm: mov $1 $2; # $code";
 			return;
 		}
 		fi;
 		if is_register "$v2"; then
+		{
 			local prefix opcode modrm;
 			prefix="$(prefix "$v1" "$v2")";
 			opcode="89";
 			modrm="$(px $(( MODRM_MOD_NO_EFFECTIVE_ADDRESS | (v2 << 3) | v1 )) "$SIZE_8BITS_1BYTE")";
 			local code="${prefix}${opcode}${modrm}";
 			printf "%s" "$code"
-			debug "asm: mov " "$@" "; # $code";
+			debug "asm: mov $1 $2; # $code";
 			return;
+		}
 		fi;
 		if is_addr_ptr "$v2"; then
 		{
@@ -107,7 +109,7 @@ mov(){
 				local displacement=$(px $v2_r $SIZE_32BITS_4BYTES);
 				local instr="${prefix}${opcode}${modrm}${sib}${displacement}";
 				printf "${instr}";
-				debug "asm: mov $@; # $code";
+				debug "asm: mov $1 $2; # $instr";
 				return;
 			}
 			fi;
@@ -123,7 +125,9 @@ mov(){
 			local modrm=""
 			local sib=""
 			local imm32=$(px "$v2" "$SIZE_32BITS_4BYTES")
-			printf "${prefix}${opcode}${modrm}${sib}${imm32}"
+			local code="${prefix}${opcode}${modrm}${sib}${imm32}"
+			printf "%s" "$code";
+			debug "asm: mov $1 $2; # $code - 64bui";
 			return;
 		}
 		fi;
@@ -137,8 +141,11 @@ mov(){
 			local mod_reg=0;
 			modrm="$(px "$(( MODRM_MOD_NO_EFFECTIVE_ADDRESS + mod_reg + v1 ))" "$SIZE_8BITS_1BYTE")";
 			local sib=""
-			local imm32=$(px "$v2" "$SIZE_32BITS_4BYTES")
-			printf "${prefix}${opcode}${modrm}${sib}${imm32}"
+			local imm32;
+			imm32=$(px "$v2" "$SIZE_32BITS_4BYTES");
+			local code="${prefix}${opcode}${modrm}${sib}${imm32}";
+			printf "%s" "$code";
+			debug "asm: mov $1 $2; # $code - 32bsi";
 			return;
 		}
 		fi;
@@ -146,13 +153,13 @@ mov(){
 		{
 			local prefix="";
 			prefix=$(prefix "$v1" "$v2");
-			local opcode=$( printf %02x $(( 16#b8 + v1)) )
+			local opcode=$( printf %02x $(( 16#b8 + v1)) );
 			local modrm=""
 			local sib=""
 			local imm32=$(px "$v2" "$SIZE_64BITS_8BYTES")
 			local code="${prefix}${opcode}${modrm}${sib}${imm32}"
 			printf "%s" "$code";
-			debug "asm: mov " "$@" "; # $code";
+			debug "asm: mov $1 $2; # $code - 64bsi";
 			return;
 		}
 		fi;
@@ -170,11 +177,11 @@ mov(){
 		imm32="$(px "$v1_r" "$SIZE_32BITS_4BYTES")"
 		local code="${prefix}${opcode}${modrm}${sib}${imm32}"
 		printf "%s" "$code";
-		debug "asm: mov " "$@" "; # $code";
+		debug "asm: mov $1 $2; # $code";
 		return;
 	}
 	fi;
-	error "not implemented: mov $@"
+	error "not implemented: mov $1 $2; $(backtrace)"
 }
 
 movs(){

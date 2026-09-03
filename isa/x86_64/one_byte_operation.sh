@@ -20,5 +20,5 @@ one_byte_operation(){
 		c="$c${modrm}";
 	fi;
 	printf "${c}";
-	debug "asm: $*; # $c";
+	debug "asm: one_byte_op[$1] $2 $3; # $c";
 }

@@ -116,49 +116,29 @@ declare -xga r_x=( "${r_8x[@]}" "${r_16x[@]}" "${r_32x[@]}" "${r_64x[@]}" );
 #
 
 is_8bit_register(){
-	local v="${1,,}";
-	if [[ "${v}" =~ ^(al|cl|dl|bl|spl|bpl|sil|dil|r8b|r9b|r10b|r11b|r12b|r13b|r14b|r15b)$ ]]; then
-		return 0;
-	fi
-	return 1;
+	[[ "${1,,}" =~ ^(al|cl|dl|bl|spl|bpl|sil|dil|r8b|r9b|r10b|r11b|r12b|r13b|r14b|r15b)$ ]]
 }
 
 is_8bit_legacy_register(){
-	local v="$1";
-	if [[ "${v,,}" =~ ^(al|cl|dl|bl|ah|ch|dh|bh)$ ]]; then
-		return 0;
-	fi
-	return 1;
+	[[ "${1,,}" =~ ^(al|cl|dl|bl|ah|ch|dh|bh)$ ]];
 }
 
 is_16bit_register(){
-	local v="$1";
-	if [[ "${v,,}" =~ ^(ax|cx|dx|bx|sp|bp|si|di|r8w|r9w|r10w|r11w|r12w|r13w|r14w|r15w)$ ]]; then
-		return 0;
-	fi
-	return 1;
+	[[ "${1,,}" =~ ^(ax|cx|dx|bx|sp|bp|si|di|r8w|r9w|r10w|r11w|r12w|r13w|r14w|r15w)$ ]]
 }
 
 is_32bit_register(){
-	local v="$1";
-	if [[ "${v,,}" =~ ^(eax|ecx|edx|ebx|esp|ebp|esi|edi|r8d|r9d|r10d|r11d|r12d|r13d|r14d|r15d)$ ]]; then
-		return 0;
-	fi;
-	return 1;
+	[[ "${1,,}" =~ ^(eax|ecx|edx|ebx|esp|ebp|esi|edi|r8d|r9d|r10d|r11d|r12d|r13d|r14d|r15d)$ ]]
 }
 is_64bit_extended_register(){
-	local v="$1";
-	if [[ "${v,,}" =~ r([8-9]|1[0-5]) ]]; then
-		return 0;
-	fi;
-	return 1;
+	[[ "${1,,}" =~ r([8-9]|1[0-5]) ]]
 }
 
 is_64bit_extended_register_ptr(){
 	if is_register_ptr "$1"; then
-		local v;
-		resolve_ptr v $1;
-		if is_64bit_extended_register "$v"; then
+		local _v;
+		resolve_ptr _v "$1";
+		if is_64bit_extended_register "$_v"; then
 			return 0;
 		fi;
 	fi;
@@ -166,69 +146,41 @@ is_64bit_extended_register_ptr(){
 }
 
 is_8bit_extended_register(){
-	local v="$1";
-	if [[ "${v,,}" =~ (spl|bpl|sil|dil) ]]; then
-		return 0;
-	fi;
-	return 1;
+	[[ "${1,,}" =~ ^([sb]p|[sd]i)l$ ]]
 }
 
 is_64bit_register(){
-	local v="${1,,}";
-	if [[ "$v" =~ ^(rax|rcx|rdx|rbx|rsp|rbp|rsi|rdi|r8|r9|r10|r11|r12|r13|r14|r15)$ ]]; then
-		return 0
-	fi;
-	return 1;
+	[[ "${1,,}" =~ ^r([acdb]x|[sb]p|[sd]i|[89]|1[0-5])$ ]]
 }
 
 is_extended_register(){
-	local v="${1,,}";
-	[[ " ${r_x[*]} " =~ " $v " ]];
+	[[ "${1,,}" =~ ^r([89]|1[0-5])[bwd]?$ ]]
 }
 
 is_extended_register_ptr(){
-	local v="${1,,}";
-	local rv;
-	resolve_ptr rv "$v";
-	is_ptr "$v" && is_extended_register "$rv"
+	[[ "${1,,}" =~ ^\[r([89]|1[0-5])[bwd]?\]$ ]]
 }
 
 is_128bit_register(){
-	local v="${1,,}";
-	if [[ "$v" =~ ^(xmm([0-9]|1[0-5]))$ ]]; then
-		return 0
-	fi;
-	return 1;
+	[[ "${1,,}" =~ ^(xmm([0-9]|1[0-5]))$ ]]
 }
 
 is_256bit_register(){
-	local v="$1";
-	if [[ "${v,,}" =~ ^(ymm([0-9]|1[0-5]))$ ]]; then
-		return 0
-	fi;
-	return 1;
+	[[ "${1,,}" =~ ^(ymm([0-9]|1[0-5]))$ ]]
 }
 
 is_512bit_register(){
-	local v="$1";
-	if [[ "${v,,}" =~ ^(zmm([12]?[0-9]|3[01]))$ ]]; then
-		return 0
-	fi;
-	return 1;
+	[[ "${1,,}" =~ ^(zmm([12]?[0-9]|3[01]))$ ]]
 }
 
 is_register(){
-	local v="$1";
-	if is_512bit_register "$v" ||
-		is_256bit_register "$v" ||
-		is_128bit_register "$v" ||
-		is_64bit_register "$v" ||
-		is_32bit_register "$v" ||
-		is_16bit_register "$v" ||
-		is_8bit_register "$v"; then
-		return 0;
-	fi;
-	return 1;
+	is_512bit_register "$1" ||
+	is_256bit_register "$1" ||
+	is_128bit_register "$1" ||
+	is_64bit_register "$1" ||
+	is_32bit_register "$1" ||
+	is_16bit_register "$1" ||
+	is_8bit_register "$1"
 }
 
 is_register_ptr(){
@@ -236,7 +188,6 @@ is_register_ptr(){
 }
 
 get_8bit_reg(){
-	local r="$1";
-	printf ${r_8[$((r))]};
+	printf %s "${r_8[$(($1))]}";
 }
 

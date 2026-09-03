@@ -100,6 +100,7 @@ test_op_ptrsbits_reg(){
 	got="$("$1" "[$uval]" "$3" 2>>/tmp/gelf.log)";
 	local expected;
 	expected="$(nasm_hex<<<"$1 [abs $uval], $3")";
+	#echo given $1 [$uval] $3 got $got\; expected $expected
 	if [ "${got,,}" != "${expected,,}" ]; then
 		local given="$1 [$uval] $3";
 		err "$given" "$expected" "$got that is $(nasm_code "$got")";
@@ -170,7 +171,9 @@ test_op_reg_ubits(){
 	local got;
 	got="$("$1" "$2" "$uval" 2>>/tmp/gelf.log)";
 	local expected;
-	expected="$(nasm_hex<<<"$1 $2, $uval")";
+	local nasm_code="$1 $2, $uval";
+	expected="$(nasm_hex<<<"$nasm_code")";
+	#echo "nasm_code=$nasm_code; expected $expected; got $got"
 	if [ "${got,,}" != "${expected,,}" ]; then
 		local given="$1 $2 $uval";
 		err "$given" "$expected" "$got that is $(nasm_code "$got")";
