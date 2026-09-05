@@ -23,7 +23,7 @@ function system_call_exec()
 			mov rax $SYS_READ;
 			mov rdi "${pipe_in}"; mov rdi [edi]; # fd
 			mov rsi "${pipe_buffer_addr}"; # buff
-			mov "$((pipe_buffer_addr - 8))" rsi; # set the pointer to the buffer allowing concat to work
+			mov "[$((pipe_buffer_addr - 8))]" rsi; # set the pointer to the buffer allowing concat to work
 			mov rdx "${pipe_buffer_size}"; # count
 			syscall;
 		})";
@@ -40,10 +40,10 @@ function system_call_exec()
 			if [ "${static_map[$i]}" == 0 ]; then # it's a dynamic command, resolve it
 				mov rax [rax];
 			fi;
-			mov "$(( PTR_ARGS + i*8 ))" rax;
+			mov "[$(( PTR_ARGS + i*8 ))]" rax;
 		}; done
 		xor rax rax;
-		mov "$(( PTR_ARGS + ${#args[@]} * 8 ))" rax;
+		mov "[$(( PTR_ARGS + ${#args[@]} * 8 ))]" rax;
 		mov rdi ${args[0]};
 		if [ "${static_map[0]}" == 0 ]; then # it's a dynamic command, resolve it
 			mov rdi [rdi];

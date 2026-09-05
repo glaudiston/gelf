@@ -1,3 +1,6 @@
+#!/usr/bin/env bash
+. "$(dirname "$(realpath "${BASH_SOURCE[0]}")")/../../pragma_once/bash/import_bash.sh";
+import_bash ./sbb.sh
 # ilog10 returns the integer log base 10 of the value in r1 register.
 # 	Step 1: Get the guess value from ilog_guess_map using the bit index(aka ilog2/bsr);
 # 	Step 2: Subtract 1 from guess when the value is less than the power value recovered using the guess.
@@ -40,7 +43,7 @@ ilog10()
 		mov rdx [rax];
 		add rax 8; # next byte is the argument value
 		mov rax [rax];
-		cmp rdx $SYMBOL_TYPE_HARD_CODED; # is argument hard coded ?
+		cmp rdx "$SYMBOL_TYPE_HARD_CODED"; # is argument hard coded ?
 		local resolve_rax=$(mov rax [rax];); # only need to resolve more for non hardcoded addresses ones
 		jz $(xcnt<<<$resolve_rax); # hard coded values does not need to resolve pointers to other memory address;
 		printf "$resolve_rax";

@@ -10,7 +10,7 @@ import_bash <<-EOF
 	../../logger/bash/logger.sh
 EOF
 
-declare -xga multiple_operation_map=( "add" "or" "adc" "ssb" "and" "sub" "xor" "cmp" );
+declare -xga multiple_operation_map=( "add" "or" "adc" "sbb" "and" "sub" "xor" "cmp" );
 multiple_operation_map_idx(){
 	local i l;
 	l="${#multiple_operation_map[@]}";

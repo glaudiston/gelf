@@ -14,15 +14,15 @@ concat_symbol_instr(){
 	if [ "$idx" == 1 ]; then # on first item zero r8 to accum the size
 		xor r8 r8;
 		push r8;	# create zeroed target space at stack;
-		mov $dyn_addr rsp;
+		mov "[$dyn_addr]" rsp;
 	fi;
 	if [ "$size" -eq -1 ]; then
-		mov rsi "(${addr})"; # source is addr
+		mov rsi "[${addr}]"; # source is addr
 		detect_string_length rsi rdx rax; # the return is set at rdx
 		mov rcx rdx;
 		# but we need it on rcx because REP decrements it
 	elif [ "$size" -eq -2 ]; then # procedure pointer
-		mov rsi "($addr)"; # source addr
+		mov rsi "[$addr]"; # source addr
 		# the return is set at rdx
 		mov rcx rdx;
 		# but we need it on rcx because REP decrements it

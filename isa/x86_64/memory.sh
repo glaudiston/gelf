@@ -45,9 +45,9 @@ is_addr_ptr() {
 
 sys_mprotect()
 {
-	mov 10 rax;
-	mov "$1" rdi; # start address
-	mov "$2" rsi; # length size
-	mov "$3" rdx; # protection flags
+	mov rax 10;
+	mov rdi "$1"; # start address
+	mov rsi "$2"; # length size
+	mov rdx "$3"; # protection flags
 }
 

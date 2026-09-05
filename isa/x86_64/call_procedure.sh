@@ -43,10 +43,10 @@ function call_procedure()
 	if [ "$(( (RELATIVE >= - ( 1 << ( DISPLACEMENT_BITS -1 ) )) && (RELATIVE <= ( 1 << ( DISPLACEMENT_BITS -1) ) -1) ))" -eq 1 ]; then
 		local OPCODE_CALL_NEAR="e8"; #direct call with 32bit displacement
 		local NEAR_ADDR_V="$(px $RELATIVE $SIZE_32BITS_4BYTES)"; # call addr
-		printf "${OPCODE_CALL_NEAR}${NEAR_ADDR_V}";
+		printf %s "${OPCODE_CALL_NEAR}${NEAR_ADDR_V}";
 		if [ "$retval_addr" != "" ]; then
 			#mov "(rdi)" rdi;
-			mov $retval_addr rdi;
+			mov "[$retval_addr]" rdi;
 		fi;
 		pop rbp;
 		return;
@@ -62,7 +62,7 @@ function call_procedure()
 	printf "${BYTES}";
 	if [ "$retval_addr" != "" ]; then
 		#mov "(rdi)" rdi;
-		mov $retval_addr rdi;
+		mov "[$retval_addr]" rdi;
 	fi;
 }
 

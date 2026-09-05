@@ -53,7 +53,7 @@ rex() {
 	fi
 
 	# Extends SIB index - requires parsing memory string
-	if is_ptr "$target" && !is_register "$target"; then
+	if is_ptr "$target" && ! is_register "$target"; then
 		X=1
 	fi
 

@@ -277,7 +277,7 @@ SYS_GETEUID=107;
 
 sys_close()
 {
-	mov $SYS_CLOSE rax;
+	mov rax "$SYS_CLOSE";
 	syscall;
 }
 
@@ -423,7 +423,7 @@ set_increment()
 		mov rsi [rsi];
 		add rdx rsi;
 	fi;
-	mov "$addr" rdx;
+	mov "[$addr]" rdx;
 }
 
 init_bloc(){

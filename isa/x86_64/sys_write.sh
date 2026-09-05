@@ -52,7 +52,7 @@ function system_call_write_dyn_addr()
 	if is_64bit_register $data_addr_v; then
 		[ rsi != $data_addr_v ] && mov rsi $data_addr_v;
 	else
-		mov rsi "($data_addr_v)";
+		mov rsi "[$data_addr_v]";
 		data_len=0;
 	fi
 	if [ "${data_len}" == "0" ]; then
@@ -60,7 +60,7 @@ function system_call_write_dyn_addr()
 	else
 		if [ "${type}" == "${SYMBOL_TYPE_DYNAMIC}" ]; then
 			local ptr_size=8;
-			mov rdx "($(( data_addr_v + ptr_size + st_size )))"
+			mov rdx "[$(( data_addr_v + ptr_size + st_size ))]"
 		else
 			mov rdx $data_len;
 		fi;
