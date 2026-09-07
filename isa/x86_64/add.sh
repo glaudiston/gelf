@@ -14,16 +14,8 @@ EOF
 # augend: register result of add addend and augend
 # 	input: register
 # 	output: added addend and augend
-ADD_EAX_EAX="\x01\xc0";
-ADD_rsi_rdx="$(prefix rsi rdx | xd2esc)\x01\xF2";
-ADD_V4_rdx="$(prefix v4 rdx | xd2esc)\x81\xC2";
-ADD_V4_rdi="$(prefix v4 rdi | xd2esc)\x81\xC7";
-ADD_addend5_addend4="$(prefix addend5 addend4 | xd2esc)\x01\xfe";
-ADD_addend5_rax="$(prefix addend5 rax | xd2esc)\x01\xF8";
-ADD_addend5_rsi="$(prefix addend5 rsi | xd2esc)\x01\xFE";
-ADD_rdx_r8="$(prefix rdx r8 | xd2esc)\x01\xd0";
 add(){
-	debug "begin: add $@"
+	debug "begin: add $1 $2"
 	local augend="$1";
 	local addend="$2";
 	local prefix opcode modrm imm32;
@@ -93,8 +85,8 @@ add(){
 	}
 	else
 	{
-		error "mem ref not implemented yet: [add $@]"
+		error "mem ref not implemented yet: [add $1 $2]"
 	}
 	fi;
-	error "not implemented: add $@"
+	error "not implemented: add $1 $2"
 };

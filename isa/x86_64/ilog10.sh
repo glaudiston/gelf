@@ -1,6 +1,13 @@
 #!/usr/bin/env bash
 . "$(dirname "$(realpath "${BASH_SOURCE[0]}")")/../../pragma_once/bash/import_bash.sh";
-import_bash ./sbb.sh
+import_bash <<-EOF
+	./mov.sh
+	./add.sh
+	./cmp.sh
+	./sbb.sh
+	../../internal_functions.sh
+EOF
+internal_function_register ".ilog10" ilog10
 # ilog10 returns the integer log base 10 of the value in r1 register.
 # 	Step 1: Get the guess value from ilog_guess_map using the bit index(aka ilog2/bsr);
 # 	Step 2: Subtract 1 from guess when the value is less than the power value recovered using the guess.

@@ -18,13 +18,7 @@ EOF
 #    80H /n: SUB with immediate data and 8-bit operands.
 #    81H /n: SUB with immediate data and 16-bit or 32-bit operands.
 #    83H /n: SUB with immediate data and sign-extended 8-bit or 32-bit operands.
-SUB_R="\x29";
-SUB_64bit="\x2B";
-SUB_IMM32="\x81";
-SUB_IMMSE8="\x83" # This depends on ModR/M OpCode
-#SUB_rsp_SHORT="$(prefix subtrahend rsp | xd2esc)\x83\xec"; # Subtract 1 byte(two complement) value from rsp
 #SUB_ADDR4_rax_rax="482b04d5";
-#SUB_rdx_rsi="$(prefix rdx rsi | xd2esc)${SUB_R}${ModRM}";
 SUB_rsi_rdx="$(prefix rsi rdx | xd2esc)\x29\xf2";
 sub(){
 	local minuend="$1";
@@ -51,17 +45,41 @@ sub(){
 		fi;
 	}
 	fi;
-	if is_valid_number "$subtrahend" && is_8bit_sint "$subtrahend"; then
+	if is_valid_number "$subtrahend"; then
 	{
-		#4883E801          sub rax,byte +0x1
-		#48832801          sub qword [rax],byte +0x1
-		if is_register "$minuend"; then
-			opcode1="83";
-			opcode2=$(px $(( 16#e8 + minuend )) $SIZE_8BITS_1BYTE);
-			c="${p}${opcode1}${opcode2}$(px $subtrahend $SIZE_8BITS_1BYTE)";
-			debug "asm: sub $@; # $c";
-			echo -n $c;
-			return;
+		if is_8bit_sint "$subtrahend"; then
+		{
+			#4883E801          sub rax,byte +0x1
+			#48832801          sub qword [rax],byte +0x1
+			if is_register "$minuend"; then
+				opcode1="83";
+				opcode2=$(px $(( 16#e8 + minuend )) "$SIZE_8BITS_1BYTE");
+				c="${p}${opcode1}${opcode2}$(px "$subtrahend" "$SIZE_8BITS_1BYTE")";
+				debug "asm: sub $1 $2; # $c";
+				echo -n "$c";
+				return;
+			fi;
+		}
+		fi;
+		if is_32bit_sint "$subtrahend"; then
+		{
+			if is_register "$minuend"; then
+				local prefix opcode modrm sib imm32;
+				prefix="$p";
+				if [[ "$minuend" == rax ]]; then
+					opcode="2d";
+					modrm="";
+				else
+					opcode="81";
+					modrm=$(px $(( 16#e8 + minuend )) "$SIZE_8BITS_1BYTE");
+				fi;
+				imm32=$(px "$subtrahend" "$SIZE_32BITS_4BYTES")
+				c="${prefix}${opcode}${modrm}${imm32}";
+				debug "asm: sub $1 $2; # $c";
+				echo -n "$c";
+				return;
+			fi;
+		}
 		fi;
 	}
 	fi;

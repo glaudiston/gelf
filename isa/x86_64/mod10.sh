@@ -6,6 +6,6 @@ mod10(){
 	# lea    (%rax,%rax,4),%eax
 	code="${code}${LEA_rax_rax_4}";
 	# add    %eax,%eax
-	code="${code}${ADD_EAX_EAX}";
+	code="${code}$(add eax eax | b64_2esc)";
 	echo -en "$code" | base64 -w0;
 }

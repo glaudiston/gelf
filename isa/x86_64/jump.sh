@@ -194,6 +194,7 @@ function bytecode_jump_short()
 
 jump_relative(){
 	local relative=$1;
+	local CODE="";
 	local short_jump_response=$(bytecode_jump_short "${relative}")
 	if [ "$(echo -n "${short_jump_response}" | xcnt)" -gt 0 ];then
 		echo -n "${short_jump_response}";

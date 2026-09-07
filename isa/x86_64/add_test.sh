@@ -21,8 +21,8 @@ run(){
 		./test_asm.sh
 		./add.sh
 		../../fsh/fsh.sh
+		./registers.sh
 	EOF
-	import_bash ./registers.sh
 	iterate 0 "[ \$1 -lt ${#r_64[@]} ]" set_augend;
 }
 run

@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 set -euo pipefail
 . "$(dirname "$(realpath "${BASH_SOURCE[0]}")")/../../pragma_once/bash/import_bash.sh";
 import_bash <<-EOF
@@ -6,7 +6,11 @@ import_bash <<-EOF
 	./mul.sh
 	./add.sh
 	./cmp.sh
+	../../internal_functions.sh
 EOF
+
+internal_function_register ".s2i" s2i
+
 # s2i string to integer
 # given a string address convert it to integer
 s2i()
