@@ -6,7 +6,7 @@ enum {
 	MANDATORY,
 	OPTIONAL,
 } required_type;
-typedef unsigned char bool;
+//typedef unsigned char bool;
 typedef enum e_prefix_type {
 	PREFIX_NONE,
 	REX,	// REX Prefix (0x40 - 0x4F):
@@ -111,7 +111,7 @@ enum e_immediate_type {
 	IMM32,
 	IMM64
 };
-typedef unsigned char bool;
+//typedef unsigned char bool;
 enum e_operand_mode {
 	R,
 	W,

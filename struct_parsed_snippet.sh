@@ -1,6 +1,6 @@
 #!/bin/bash
 #
-# The concept of the snippet parser is to create a table will all data we need to generate the executable binary output
+# The concept of the snippet parser is to create a table will all data we need to generate the executable binary output. This choice is due the missing json support on bash.
 #
 # the result shoulb be a csv line with:
 # 1 snippet_type
@@ -142,9 +142,9 @@ struct_parsed_snippet(){
 
 	local snippet_usages=0
 
-	local snippet_return="$(eval echo -n \${$SNIPPET_COLUMN_RETURN})";
-	local snippet_dependencies="$(eval echo -n \${$SNIPPET_COLUMN_DEPENDENCIES})";
-	local snippet_data_flags="$(eval echo -n \${$SNIPPET_COLUMN_DATA_FLAGS})"
+	local snippet_return="$(eval echo -n \${$SNIPPET_COLUMN_RETURN:-})";
+	local snippet_dependencies="$(eval echo -n \${$SNIPPET_COLUMN_DEPENDENCIES:-})";
+	local snippet_data_flags="$(eval echo -n \${$SNIPPET_COLUMN_DATA_FLAGS:-})"
 
 	local snippet_result="";
 	snippet_result="${snippet_result}${snippet_type}";

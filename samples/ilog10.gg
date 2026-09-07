@@ -1,0 +1,6 @@
+:	ns	@1
+:	na	[]	.s2i	ns
+:	n	!	na
+:	c	[]	.ilog10	n
+:	x	!	c
+!	sys_exit	x

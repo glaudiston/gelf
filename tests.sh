@@ -1,14 +1,17 @@
 #!/bin/bash
 #
-# tests should be functions prefixed with test_A
+# tests should be functions prefixed with test_
 #
+set -euo pipefail
+. "$(dirname "$(realpath "${BASH_SOURCE[0]}")")/pragma_once/bash/import_bash.sh";
+import_bash xd.sh
 
-test_arch_x86_64(){
-	for f in arch/x86_64/*_test.sh; do
+test_isa_x86_64(){
+	for f in isa/x86_64/*_test.sh; do
 		echo -n "   - $f\t...";
 		local got=$($f || error "$f");
 		if grep -q ERROR<<<"$got"; then
-			error "arch test $f failed: $got";
+			error "ISA test $f failed: $got";
 			return 1;
 		fi;
 		pass "$f";
@@ -16,22 +19,13 @@ test_arch_x86_64(){
 }
 
 test_sys_exit_code(){
-	compile_test <<EOF
-:	v	42
-!	sys_exit	v
-EOF
-	run_test
-	expect $? 42
+	compile_test <samples/exit_42.gg;
+	run_test;
+	expect $? 42;
 }
 
 test_hello_world(){
-	compile_test <<EOF
-:	stdout	1
-:	m	hello world
-!	sys_write	stdout	m
-:	with no error	0
-!	sys_exit	with no error
-EOF
+	compile_test <samples/hello_world.gg
 	o=$(run_test);
 	expect $? 0 "hello world" "$o";
 }
@@ -46,7 +40,7 @@ test_hello_world_base64(){
 :	ok	0
 !	sys_exit	ok
 EOF
-	o="$(run_test | xxd --ps)";
+	o="$(run_test | xd)";
 	eo="68656c6c6f09776f726c640a";
 	expect $? 0 "$eo" "$o";
 }
@@ -59,8 +53,8 @@ test_sys_write_hard_coded_value(){
 :	with no error	0
 !	sys_exit	with no error
 EOF
-	o=$(run_test | xxd);
-	eo="$(echo -n 0000010000000000 | xxd --ps -r | xxd)"; # little endian value of 65536 (64bit)
+	o=$(run_test | xd);
+	eo="$(echo -n 0000010000000000 | xxd --ps -r | xd)"; # little endian value of 65536 (64bit)
 	expect $? 0 "$eo" "$o";
 }
 
@@ -91,7 +85,7 @@ EOF
 # so the read will stop at the first \x00 byte
 test_read_text_file(){
 	local tmpfile=/dev/shm/gelf-test-$RANDOM
-	head /dev/random | xxd > $tmpfile;
+	head /dev/random | xd > $tmpfile;
 	chk=$(md5sum $tmpfile | cut -d " " -f1);
 	compile_test <<EOF
 :	file name	$tmpfile
@@ -219,11 +213,11 @@ test_concat_stat_dyn_symbols(){
 :	d	0
 !	sys_exit	d
 EOF
-    {
-    	o=$(run_test "abc" "def")
-    	expect $? 0 "xptoabcdef" "$o"
-    	o=$(run_test "abc" "def" "ghi")
-    	expect $? 0 "xptoabcdef" "$o"
+	{
+		o=$(run_test "abc" "def")
+		expect $? 0 "xptoabcdef" "$o"
+		o=$(run_test "abc" "def" "ghi")
+		expect $? 0 "xptoabcdef" "$o"
 	} | tr '\n' '; '
 }
 
@@ -380,34 +374,7 @@ EOF
 }
 
 test_recursive_exec_fib(){
-	compile_test <<EOF
-:	p	@0
-:	astr	@1
-:	bstr	@2
-:	limitstr	@3
-:	aa	[]	.s2i	astr
-:	a	!	aa
-:	ba	[]	.s2i	bstr
-:	b	!	ba
-:	la	[]	.s2i	limitstr
-:	limit	!	la
-:	fib	+	a	b
-:	ok	0
-:	fiba	[]	.i2s	fib
-:	fibstr	!	fiba
-:	stdout	1
-:	end	{
-	!	sys_write	stdout	limitstr
-	!	sys_exit	ok
-}
-:	continue	?	fib	limit
-!	continue	?=	end
-:	delim	,
-!	sys_write	stdout	fibstr
-!	sys_write	stdout	delim
-!	p	bstr	fibstr	limitstr
-!	sys_exit	ok
-EOF
+	compile_test <samples/recursive_exec_fibonacci.gg
 	o=$(run_test 0 1 13)
 	expect $? 0 "1,2,3,5,8,13" "$o"
 }
@@ -559,27 +526,43 @@ EOF
 }
 
 test_ilog10(){
-	compile_test <<EOF
-:	ns	@1
-:	na	[]	.s2i	ns
-:	n	!	na
-:	c	[]	.ilog10	n
-:	x	!	c
-!	sys_exit	x
-EOF
+	compile_test <samples/ilog10.gg
 	# our current code uses rax to decode the number string into value;
 	# so only asc string values that fit in rax can be used;
 	# this means the last valid number to test is: 99999999
 	# rax: 0x3939393939393939
 	numbers_to_test="$({
-		local x; for (( i=0; i<8; i++ )); do x=$RANDOM$x; echo $(( ${x:0:i+1} % (2 ** 32))); done
+		local x; for (( i=0; i<8; i++ )); do x=$RANDOM${x:-}; echo $(( ${x:0:i+1} % (2 ** 32))); done
 	} | sort -n | uniq)";
+	local n;
 	for n in $numbers_to_test; do
 		echo -n "n=$n..." #| tee /dev/stderr;
 		local l=$(echo "scale=18; l($n)/l(10)" | bc -l | sed 's/^[.].*/0/; s/[.].*//');
-		o=$(run_test $n);
+		local o=$(run_test $n);
 		expect $? $l #| tee /dev/stderr;
 	done;
+}
+
+test_read_byte(){
+	compile_test <samples/read_byte.gg
+	local rnd=$(( RANDOM % 10 ))
+	local o=$(echo -n "$rnd" | run_test)
+	expect $? 0 "$o" "$rnd"
+}
+
+test_read_line(){
+	local text=$(cat /dev/random | xd | head);
+	compile_test <samples/read_line.gg;
+	local o=$(echo "$text" | run_test);
+	local eo=$(echo "$text" | head -1);
+	expect $? 0 "$eo" "$o"
+}
+
+test_bootstrap(){
+	compile_test <samples/bootstrap.gg
+	local o=$(run_test samples/exit_42.gg| md5sum);
+	local eo=$(echo "86fd3b3d07e6b8be241419434ff96d83  -"); # cat tests/test_sys_exit_code | md5sum
+	expect $? 0 "$eo" "$o";
 }
 
 . ./test_suite.sh

@@ -68,6 +68,10 @@ Maybe someday this can be a new lang... then here I go with some notes about it
 - allowing automation / text mode control
 - portable, but what if emulated in any env ?
 - what if a language can detect the target algorithm and suggest the best one ?
+- we should encorage functional approach but allow low level breakdown... also even if the code is functional the build should get the to raw inline code to have performance boost instead of abstracted functions copied to bytecode.
+- what if the language compile process have some test hash to ensure we don't re-run succeed tests for isolated functions that was already tested with the same tests and same arch in past and pass... so we can save a lot in build process.. same for build... not just a simple cache, but a smart cache
+- what if each func arg auto generates a custom type to it, limited to the scope of this function? it can enforce that contract readability and type assert. or only accept one custom argument type for a function what is limited to that scope;
+- Generics support but it needs a template of that generics ... so the func will be full of noise ...
 
 ASM
 ===

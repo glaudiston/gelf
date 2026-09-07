@@ -1,0 +1,9 @@
+#	read one byte from stdin
+:	stdin	1
+:	b	<b	stdin
+:	vc	[]	.i2s	b
+:	v	!	vc
+:	out	1
+!	sys_write	out	v
+:	ok	0
+!	sys_exit	ok

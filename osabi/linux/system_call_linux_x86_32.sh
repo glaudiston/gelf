@@ -1,7 +1,7 @@
 #!/bin/bash
 #
 # This should have all 32bit specific code
-# The ones shared to x64_64 should be at system_call_x64.sh
+# The ones shared to x86_64 should be at system_call_x64.sh
 #
 # System Interrupt call table for 64bit linux:
 # http://www.cpu2.net/linuxabi.html
@@ -32,7 +32,7 @@
 # Instruction Pointer: Address of the next instruction to execute.
 #  EIP(32)
 #
-. arch/system_call_linux_x86.sh
+. "$(dirname "${BASH_SOURCES[0]}")"/system_call_linux_x86.sh
 
 MOV_EAX="\xb8";
 MOV_EDX="\xba";

@@ -297,3 +297,11 @@ qemu-run:
 	# make -j 30 # use 30 cpu cores to build fast
 	# make isoimage FDARGS="initrd=/init.cpio" FDINITRD="${CPIO_FILE_PATH}";
 	qemu-system-x86_64 -enable-kvm -cdrom image.iso -m 128M;
+
+gelf-bash: ## compile and load a bash builtin extension
+	gcc bash_extension.c \
+		-s -ffunction-sections -fdata-sections -Wl,--gc-sections \
+	-shared -fPIC -I/usr/include/bash -I/usr/include/bash/include -I/usr/include/bash/builtins -I/usr/lib/bash -I. -o gelf-bash.so
+	# to use it, run:
+	# enable -d gelf
+	# enable -f ./gelf-bash.so gelf

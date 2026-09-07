@@ -1,0 +1,7 @@
+cmd:	/usr/bin/uname
+arg:	-m
+r:!	cmd	arg
+o<1!	r
+e<2!	r
+ok:	0
+exit	ok

@@ -1,8 +1,12 @@
 #!/bin/bash
 # given a value and a size(defalt 8), return the expected hex dumped bytes in little endianness
+# depends on:
+# sed (gnu version)
+# tac (binutils)
+# tr (binutils)
 
-if ! declare -F endianess_loaded>/dev/null; then endianess_loaded(){ :; };
-. ./utils.sh; # just for reference, we already sourced at main
+import_bash ./utils.sh; # just for reference, we already sourced at main
+import_bash ./logger/bash/logger.sh
 
 export LC_ALL=C
 function printBigEndian(){
@@ -12,14 +16,14 @@ function printBigEndian(){
 	SIZE="${SIZE:=8}"
 	local l=$((SIZE * 2));
 	printf "%0${l}x\n" "${VALUE}" |
-		sed 's/.*\(.\{'$l'\}\)$/\1/g;s/\(..\)/\\x\1/g;' # truncates and escape
+		sed 's/.*\(.\{'"$l"'\}\)$/\1/g;s/\(..\)/\\x\1/g;' # truncates and escape
 }
 
 # given a value and a optional size(default 8), return the expected hex dumped bytes in little endianness
 function printLittleEndian(){
 	local VALUE="$1"
 	local SIZE="$2"
-	if [ "$SIZE" == "" ]; then
+	if [[ "$SIZE" == "" ]]; then
 		error empty size, using default 64 bits
 	fi;
 	printBigEndian "$VALUE" "$SIZE" |
@@ -38,12 +42,12 @@ function printEndianValue(){
 	integerValue="$1";
 	size_in_bytes="${2}";
 	isLittle="1";
-	if [ ${integerValue} -lt 0 ]; then
+	if [[ ${integerValue} -lt 0 ]]; then
 		negativeBitValue=$(( 1 << size_in_bytes * 8 - 1 )) 
 		integerValue=$(( negativeBitValue * 2 + integerValue ))
 	fi;
 
-	if [ "$isLittle" == 1 ]; then
+	if [[ "$isLittle" == 1 ]]; then
 		printLittleEndian "$integerValue" "$size_in_bytes";
 	else
 		printBigEndian "$integerValue" "$size_in_bytes";
@@ -58,4 +62,3 @@ function detect_endianness()
 	}  </proc/self/exe;
 }
 
-fi;

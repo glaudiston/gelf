@@ -1,0 +1,10 @@
+Diagnostics:
+  Suppress: [ "pp_including_mainfile_in_preamble", "undeclared_var_use", "bool_redeclaration" ]
+  UnusedIncludes: Strict
+CompileFlags:
+  Add:
+    - -I/usr/include/bash
+    - -I/usr/include/bash/include
+    - -I/usr/include/bash/builtins
+    - -I/usr/lib/bash
+    - -I.

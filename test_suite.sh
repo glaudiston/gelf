@@ -1,3 +1,6 @@
+#!/bin/bash
+set -euo pipefail
+
 RED='\033[0;31m';
 GREEN='\033[0;32m';
 NC='\033[0m';
@@ -38,15 +41,15 @@ run_test(){
 	};
 	done
 	#echo "run command: [$cmd]" >&2;
-	eval ${cmd}
+	eval "${cmd}"
 	#${elf_name} $@ # this does not work because empty arguments are removed
 }
 
 expect(){
-	local r="$1";
-	local er="$2";
-	local eo="$3";
-	local o="$4";
+	local r="${1:-}";
+	local er="${2:-}";
+	local eo="${3:-}";
+	local o="${4:-}";
 	if [ "$r" != "$er" ]; then
 		fail "expected [${er}] but got [$r] at exit code";
 		return 1;
@@ -81,8 +84,8 @@ Resume:
 
 run_all(){
 	local test_list=$({
-		[ "$1" == "" ] && 
-			{ cat $0 | grep -E "^test_[^(]*\(\)\{" | cut -d "(" -f1; } ||
+		[ $# -eq 0 ] && 
+			declare -f | grep -E ^test_ | cut -d ' ' -f1 ||
 			echo $@;
 	});
 	local test_count=$(echo "$test_list" | grep -c "");

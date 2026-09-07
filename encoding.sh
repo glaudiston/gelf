@@ -1,7 +1,5 @@
 #!/bin/bash
-
-if ! declare -F encode_array_to_b64_csv >/dev/null; then
-. $(dirname $(realpath $BASH_SOURCE))/endianness.sh
+import_bash ./endianness.sh
 encode_array_to_b64_csv() {
 	local IFS=$'\t'
 	local array=($@)
@@ -17,13 +15,13 @@ encode_array_to_b64_csv() {
 
 decode_b64_csv_to_array() {
 	local IFS=$'\t'
-	local a=();
+	local -a a=();
 	local i=0;
 	for item in $(echo -n "$@" | tr , '\t');
 	do
-		a[$i]=$(echo -n "$item" | base64 -d);
+		a[i]=$(echo -n "$item" | base64 -d);
 		#debug "$i=[${a[$i]}]"
-		let i++;
+		(( i++ ));
 	done;
 	echo -n "${a[@]}";
 }
@@ -37,4 +35,3 @@ xd2esc(){ sed "s/\(..\)/\\\\x\1/g"; }
 xd2b64(){ xdr | base64 -w0; }
 b64_2esc(){ base64 -d | xxd --ps | xd2esc | tr -d '\n'; }
 b64cnt(){ base64 -d | wc -c; }
-fi;

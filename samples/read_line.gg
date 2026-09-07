@@ -1,0 +1,18 @@
+:	read line	{
+	:	source	@1
+	:	prefix	@2
+	:	next byte	<b	source
+	:	text	prefix	next byte
+	:	end line	Cg==
+	:	done	?	next byte	end line
+	!	done	?=	return	text
+	:	rcmd	[]	read line	source	prefix
+	:	rv	!	rcmd
+	ret	rv
+}
+:	stdin	1
+:	empty	
+:	r	[]	read line	stdin	empty
+:	out	!	r
+:	ok	0
+!	sys_exit	ok

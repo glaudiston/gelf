@@ -1,5 +1,4 @@
 #!/bin/bash
-
 # ELF GLOBAL CONSTANTS
 
 # ELF HEADER CONSTANTS

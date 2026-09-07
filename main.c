@@ -1,6 +1,6 @@
 #include <elf.h>
 #include <stdio.h>
-
+// this is just a test file, for the actual code see Makefile and elf_fn.sh
 int main(int argc, char *argv[]) {
   printf("sizeof Elf64_Shdr:\t%li\n", sizeof(Elf64_Shdr));
   printf("sizeof Elf64_Phdr:\t%li\n", sizeof(Elf64_Phdr));

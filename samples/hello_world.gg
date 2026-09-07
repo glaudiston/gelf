@@ -1,0 +1,5 @@
+:	stdout	1
+:	m	hello world
+!	sys_write	stdout	m
+:	with no error	0
+!	sys_exit	with no error
